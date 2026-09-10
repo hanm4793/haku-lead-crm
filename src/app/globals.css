@@ -1,0 +1,135 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.5rem;
+
+  --background: #f4f6fa;
+  --foreground: #0f1c33;
+  --card: #ffffff;
+  --card-foreground: #0f1c33;
+  --popover: #ffffff;
+  --popover-foreground: #0f1c33;
+  --primary: #12479e;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2f9;
+  --secondary-foreground: #12479e;
+  --muted: #f1f4f9;
+  --muted-foreground: #6b7a94;
+  --accent: #e8effb;
+  --accent-foreground: #12479e;
+  --destructive: #d92d20;
+  --destructive-foreground: #ffffff;
+  --border: #e3e8f0;
+  --input: #dfe5ef;
+  --ring: #2f6fd0;
+
+  /* THACO brand */
+  --brand: #12479e;
+  --brand-dark: #0d3577;
+  --sidebar: #1b4da6;
+  --sidebar-foreground: #ffffff;
+  --sidebar-accent: #2a63c4;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #2f66bd;
+  --sidebar-ring: #7fb0ff;
+
+  /* Semantic status colors (khớp bảng phân loại khách) */
+  --status-khqt: #1f6feb;
+  --status-gdtd: #d97706;
+  --status-khd: #059669;
+  --status-chua-lh: #64748b;
+  --status-fail: #e11d48;
+
+  /* Chart palette */
+  --chart-1: #12479e;
+  --chart-2: #0f9d8f;
+  --chart-3: #f59e0b;
+  --chart-4: #e11d48;
+  --chart-5: #7c3aed;
+  --chart-6: #0ea5e9;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-brand: var(--brand);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+
+  --color-khqt: var(--status-khqt);
+  --color-gdtd: var(--status-gdtd);
+  --color-khd: var(--status-khd);
+  --color-chua-lh: var(--status-chua-lh);
+  --color-fail: var(--status-fail);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Bảng lead rất rộng nên scrollbar ngang phải luôn nhìn thấy được */
+  .thin-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #c2cbdb transparent;
+  }
+  .thin-scrollbar::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb {
+    background: #c2cbdb;
+    border-radius: 999px;
+  }
+  .thin-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@utility no-spin {
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+}
