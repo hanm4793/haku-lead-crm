@@ -97,38 +97,32 @@ function isLeadAction(actionType: string): boolean {
   );
 }
 
-function firstLeadMetric(
-  values: ActionValue[] | undefined,
-  parse: (value?: string) => number | null,
-) {
+function canonicalLeadAction(values: ActionValue[] | undefined) {
   if (!values) return null;
   for (const preferred of PREFERRED_LEAD_ACTIONS) {
-    const match = values.find((item) => item.action_type === preferred);
-    if (match) return parse(match.value);
+    for (const item of values) {
+      if (item.action_type !== preferred) continue;
+      const value = finiteNumber(item.value);
+      if (value !== null) return { actionType: preferred, value };
+    }
   }
-  const match = values.find(
-    (item) => typeof item.action_type === "string" && isLeadAction(item.action_type),
-  );
-  return match ? parse(match.value) : null;
-}
-
-function sumLeadActions(values: ActionValue[] | undefined): number | null {
-  if (!values) return null;
-  const seenActionTypes = new Set<string>();
-  let total = 0;
-  let found = false;
-
   for (const item of values) {
     const actionType = item.action_type;
-    if (!actionType || seenActionTypes.has(actionType) || !isLeadAction(actionType)) continue;
-    seenActionTypes.add(actionType);
+    if (!actionType || !isLeadAction(actionType)) continue;
     const value = finiteNumber(item.value);
-    if (value === null) continue;
-    total += value;
-    found = true;
+    if (value !== null) return { actionType, value };
   }
+  return null;
+}
 
-  return found ? Math.round(total) : null;
+function matchingLeadCost(values: ActionValue[] | undefined, actionType: string): number | null {
+  if (!values) return null;
+  for (const item of values) {
+    if (item.action_type !== actionType) continue;
+    const value = finiteNumber(item.value);
+    if (value !== null) return value;
+  }
+  return null;
 }
 
 function errorMessage(error: unknown): string {
@@ -178,6 +172,7 @@ export async function syncFacebookInsights(options?: {
         continue;
       }
 
+      const leadAction = canonicalLeadAction(row.actions);
       const values = {
         level: "campaign" as const,
         objectId,
@@ -188,11 +183,13 @@ export async function syncFacebookInsights(options?: {
         impressions: integer(row.impressions),
         clicks: integer(row.clicks),
         reach: integer(row.reach),
-        leads: sumLeadActions(row.actions),
+        leads: leadAction ? Math.round(leadAction.value) : null,
         cpc: finiteNumber(row.cpc),
         cpm: finiteNumber(row.cpm),
         ctr: finiteNumber(row.ctr),
-        costPerLead: firstLeadMetric(row.cost_per_action_type, finiteNumber),
+        costPerLead: leadAction
+          ? matchingLeadCost(row.cost_per_action_type, leadAction.actionType)
+          : null,
         syncedAt: new Date(),
       };
 

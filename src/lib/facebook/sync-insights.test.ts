@@ -182,7 +182,7 @@ describe("syncFacebookInsights", () => {
     expect(db.select).not.toHaveBeenCalled();
   });
 
-  it("sums distinct lead action types and rounds the finite total", async () => {
+  it("uses one prioritized lead action and its matching cost without summing aliases", async () => {
     const { db, inserted } = createDb();
     mocks.getDb.mockReturnValue(db);
     mocks.graphGetAllData.mockResolvedValue([
@@ -190,10 +190,15 @@ describe("syncFacebookInsights", () => {
         campaign_id: "campaign-1",
         date_start: "2026-09-01",
         actions: [
-          { action_type: "lead", value: "1.4" },
-          { action_type: "onsite_conversion.messaging_lead", value: "2.4" },
-          { action_type: "lead", value: "1.4" },
+          { action_type: "onsite_conversion.messaging_lead", value: "2" },
+          { action_type: "onsite_conversion.lead_grouped", value: "3" },
+          { action_type: "lead", value: "3" },
           { action_type: "purchase", value: "99" },
+        ],
+        cost_per_action_type: [
+          { action_type: "onsite_conversion.messaging_lead", value: "15" },
+          { action_type: "onsite_conversion.lead_grouped", value: "10" },
+          { action_type: "lead", value: "10" },
         ],
       },
     ]);
@@ -202,7 +207,30 @@ describe("syncFacebookInsights", () => {
 
     expect(inserted).toContainEqual({
       table: metaAdInsights,
-      values: expect.objectContaining({ leads: 4 }),
+      values: expect.objectContaining({ leads: 3, costPerLead: 10 }),
+    });
+  });
+
+  it("matches cost per lead to the selected lower-priority action type", async () => {
+    const { db, inserted } = createDb();
+    mocks.getDb.mockReturnValue(db);
+    mocks.graphGetAllData.mockResolvedValue([
+      {
+        campaign_id: "campaign-1",
+        date_start: "2026-09-01",
+        actions: [{ action_type: "onsite_conversion.lead_grouped", value: "2.4" }],
+        cost_per_action_type: [
+          { action_type: "lead", value: "99" },
+          { action_type: "onsite_conversion.lead_grouped", value: "12.5" },
+        ],
+      },
+    ]);
+
+    await syncFacebookInsights({ since: "2026-09-01", until: "2026-09-01" });
+
+    expect(inserted).toContainEqual({
+      table: metaAdInsights,
+      values: expect.objectContaining({ leads: 2, costPerLead: 12.5 }),
     });
   });
 
