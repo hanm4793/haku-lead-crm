@@ -33,6 +33,16 @@ function formatSyncTime(iso: string): string {
   });
 }
 
+function SyncTimeLabel({ iso }: { iso: string }) {
+  const [label, setLabel] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setLabel(formatSyncTime(iso));
+  }, [iso]);
+
+  return <span className="font-medium">{label ?? "…"}</span>;
+}
+
 function statusBadge(status: string) {
   if (status === "ok") {
     return <Badge variant="success">Thành công</Badge>;
@@ -45,21 +55,29 @@ function statusBadge(status: string) {
 
 export function FacebookSyncPanel({
   configured,
+  dbConfigured,
   lastLeadSync,
+  lastSyncError,
   isAdmin,
 }: {
   configured: boolean;
+  dbConfigured: boolean;
   lastLeadSync: LastLeadSyncInfo;
+  lastSyncError: string | null;
   isAdmin: boolean;
 }) {
   const router = useRouter();
-  const [pending, setPending] = React.useState(false);
+  const [pendingSync, setPendingSync] = React.useState(false);
+  const [pendingPurge, setPendingPurge] = React.useState(false);
   const [purgeOpen, setPurgeOpen] = React.useState(false);
   const [actionFeedback, setActionFeedback] = React.useState<string | null>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
 
+  const actionsBlocked = !dbConfigured;
+  const anyPending = pendingSync || pendingPurge;
+
   async function runSync() {
-    setPending(true);
+    setPendingSync(true);
     setActionFeedback(null);
     setActionError(null);
     try {
@@ -74,13 +92,13 @@ export function FacebookSyncPanel({
       );
       router.refresh();
     } finally {
-      setPending(false);
+      setPendingSync(false);
     }
   }
 
   async function runPurge() {
     setPurgeOpen(false);
-    setPending(true);
+    setPendingPurge(true);
     setActionFeedback(null);
     setActionError(null);
     try {
@@ -92,7 +110,7 @@ export function FacebookSyncPanel({
       setActionFeedback(`Đã xóa ${outcome.deleted} lead mẫu (không có facebook_lead_id).`);
       router.refresh();
     } finally {
-      setPending(false);
+      setPendingPurge(false);
     }
   }
 
@@ -109,11 +127,21 @@ export function FacebookSyncPanel({
         Đồng bộ thủ công lead từ Graph API (FACEBOOK_ACCESS_TOKEN, FACEBOOK_PAGE_ID).
       </p>
 
+      {!dbConfigured ? (
+        <p className="text-xs text-amber-800">Cần DATABASE_URL để lưu lead và lịch sử đồng bộ.</p>
+      ) : null}
+
+      {lastSyncError ? (
+        <p className="text-xs text-rose-700" role="alert">
+          Không tải được lịch sử đồng bộ: {lastSyncError}
+        </p>
+      ) : null}
+
       {lastLeadSync ? (
         <div className="space-y-1 text-[13px]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-muted-foreground">Lần đồng bộ gần nhất</span>
-            <span className="font-medium">{formatSyncTime(lastLeadSync.at)}</span>
+            <SyncTimeLabel iso={lastLeadSync.at} />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-muted-foreground">Kết quả</span>
@@ -123,9 +151,9 @@ export function FacebookSyncPanel({
             <p className="text-xs text-muted-foreground">{lastLeadSync.message}</p>
           ) : null}
         </div>
-      ) : (
+      ) : lastSyncError ? null : dbConfigured ? (
         <p className="text-xs text-muted-foreground">Chưa có lịch sử đồng bộ lead.</p>
-      )}
+      ) : null}
 
       {actionError ? (
         <p className="text-xs text-rose-700" role="alert">
@@ -144,19 +172,19 @@ export function FacebookSyncPanel({
             type="button"
             size="sm"
             variant="default"
-            disabled={pending || !configured}
+            disabled={anyPending || !configured || actionsBlocked}
             onClick={() => void runSync()}
           >
-            {pending ? "Đang xử lý…" : "Đồng bộ Facebook Lead"}
+            {pendingSync ? "Đang đồng bộ…" : "Đồng bộ Facebook Lead"}
           </Button>
           <Button
             type="button"
             size="sm"
             variant="outline"
-            disabled={pending}
+            disabled={anyPending || actionsBlocked}
             onClick={() => setPurgeOpen(true)}
           >
-            Xóa lead mẫu
+            {pendingPurge ? "Đang xóa…" : "Xóa lead mẫu"}
           </Button>
         </div>
       ) : (
@@ -164,7 +192,7 @@ export function FacebookSyncPanel({
       )}
 
       <Dialog open={purgeOpen} onOpenChange={setPurgeOpen}>
-        <DialogContent showClose={!pending}>
+        <DialogContent showClose={!pendingPurge}>
           <DialogHeader>
             <DialogTitle>Xóa lead mẫu?</DialogTitle>
             <DialogDescription>
@@ -173,11 +201,11 @@ export function FacebookSyncPanel({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" disabled={pending} onClick={() => setPurgeOpen(false)}>
+            <Button type="button" variant="outline" disabled={pendingPurge} onClick={() => setPurgeOpen(false)}>
               Hủy
             </Button>
-            <Button type="button" variant="destructive" disabled={pending} onClick={() => void runPurge()}>
-              Xóa lead mẫu
+            <Button type="button" variant="destructive" disabled={pendingPurge} onClick={() => void runPurge()}>
+              {pendingPurge ? "Đang xóa…" : "Xóa lead mẫu"}
             </Button>
           </DialogFooter>
         </DialogContent>
