@@ -111,89 +111,97 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
   }
 
   try {
-    const forms = await graphGetAllData<FacebookForm>(`/${config.pageId}/leadgen_forms`, {
-      fields: "id,name",
-    });
-
-    for (const form of forms) {
-      let formLeads: FacebookLead[];
+    for (const pageId of config.pageIds) {
+      let forms: FacebookForm[];
       try {
-        formLeads = await fetchFormLeads(form.id);
+        forms = await graphGetAllData<FacebookForm>(`/${pageId}/leadgen_forms`, {
+          fields: "id,name",
+        });
       } catch (error) {
-        recordError(error);
+        recordError(new Error(`Page ${pageId}: ${errorMessage(error)}`));
         continue;
       }
 
-      for (const facebookLead of formLeads) {
-        const mapped = mapFacebookLeadFields(facebookLead.field_data ?? [], {
-          campaignName: facebookLead.campaign_name,
-          adName: facebookLead.ad_name,
-        });
-        if (!mapped.ok) {
-          counts.skipped += 1;
+      for (const form of forms) {
+        let formLeads: FacebookLead[];
+        try {
+          formLeads = await fetchFormLeads(form.id);
+        } catch (error) {
+          recordError(error);
           continue;
         }
 
-        try {
-          const [existing] = await db
-            .select({ id: leads.id })
-            .from(leads)
-            .where(eq(leads.facebookLeadId, facebookLead.id))
-            .limit(1);
-
-          const facebookMetadata = {
-            ...(mapped.name !== null ? { name: mapped.name } : {}),
-            ...(mapped.campaign !== null ? { campaign: mapped.campaign } : {}),
-            ...(mapped.adContent !== null ? { adContent: mapped.adContent } : {}),
-            facebookFormId: form.id,
-            facebookPageId: config.pageId,
-            facebookAdId: optionalText(facebookLead.ad_id),
-            facebookAdsetId: optionalText(facebookLead.adset_id),
-            facebookCampaignId: optionalText(facebookLead.campaign_id),
-          };
-
-          if (existing) {
-            await db
-              .update(leads)
-              .set({ ...facebookMetadata, updatedAt: new Date() })
-              .where(eq(leads.id, existing.id));
-            counts.updated += 1;
+        for (const facebookLead of formLeads) {
+          const mapped = mapFacebookLeadFields(facebookLead.field_data ?? [], {
+            campaignName: facebookLead.campaign_name,
+            adName: facebookLead.ad_name,
+          });
+          if (!mapped.ok) {
+            counts.skipped += 1;
             continue;
           }
 
-          const createdAt = parseCreatedAt(facebookLead.created_time);
-          await db.transaction(async (tx) => {
-            const [inserted] = await tx
-              .insert(leads)
-              .values({
-                ...facebookMetadata,
-                ...(createdAt ? { createdAt } : {}),
-                phone: mapped.phone,
-                source: "FACEBOOK",
-                channelDetail: "FORM",
-                facebookLeadId: facebookLead.id,
-                showroomId: null,
-                salesRoomId: null,
-                brand: null,
-                assigneeId: null,
-                costPerLead: null,
-              })
-              .returning({ id: leads.id });
+          try {
+            const [existing] = await db
+              .select({ id: leads.id })
+              .from(leads)
+              .where(eq(leads.facebookLeadId, facebookLead.id))
+              .limit(1);
 
-            if (!inserted) {
-              throw new Error(`Could not insert Facebook lead ${facebookLead.id}`);
+            const facebookMetadata = {
+              ...(mapped.name !== null ? { name: mapped.name } : {}),
+              ...(mapped.campaign !== null ? { campaign: mapped.campaign } : {}),
+              ...(mapped.adContent !== null ? { adContent: mapped.adContent } : {}),
+              facebookFormId: form.id,
+              facebookPageId: pageId,
+              facebookAdId: optionalText(facebookLead.ad_id),
+              facebookAdsetId: optionalText(facebookLead.adset_id),
+              facebookCampaignId: optionalText(facebookLead.campaign_id),
+            };
+
+            if (existing) {
+              await db
+                .update(leads)
+                .set({ ...facebookMetadata, updatedAt: new Date() })
+                .where(eq(leads.id, existing.id));
+              counts.updated += 1;
+              continue;
             }
 
-            await tx.insert(activityLogs).values({
-              leadId: inserted.id,
-              kind: "CREATE",
-              message: "Lead created from Facebook Lead Ads.",
-              actorName: "Facebook sync",
+            const createdAt = parseCreatedAt(facebookLead.created_time);
+            await db.transaction(async (tx) => {
+              const [inserted] = await tx
+                .insert(leads)
+                .values({
+                  ...facebookMetadata,
+                  ...(createdAt ? { createdAt } : {}),
+                  phone: mapped.phone,
+                  source: "FACEBOOK",
+                  channelDetail: "FORM",
+                  facebookLeadId: facebookLead.id,
+                  showroomId: null,
+                  salesRoomId: null,
+                  brand: null,
+                  assigneeId: null,
+                  costPerLead: null,
+                })
+                .returning({ id: leads.id });
+
+              if (!inserted) {
+                throw new Error(`Could not insert Facebook lead ${facebookLead.id}`);
+              }
+
+              await tx.insert(activityLogs).values({
+                leadId: inserted.id,
+                kind: "CREATE",
+                message: "Lead created from Facebook Lead Ads.",
+                actorName: "Facebook sync",
+              });
             });
-          });
-          counts.imported += 1;
-        } catch (error) {
-          recordError(error);
+            counts.imported += 1;
+          } catch (error) {
+            recordError(error);
+          }
         }
       }
     }

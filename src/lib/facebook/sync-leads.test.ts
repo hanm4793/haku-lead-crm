@@ -77,6 +77,7 @@ describe("syncFacebookLeads", () => {
     mocks.getFacebookConfig.mockReturnValue({
       token: "test-token",
       pageId: "page-1",
+      pageIds: ["page-1"],
       adAccountId: null,
       graphVersion: "v21.0",
     });

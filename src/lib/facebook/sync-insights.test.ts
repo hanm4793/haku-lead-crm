@@ -52,6 +52,7 @@ describe("syncFacebookInsights", () => {
     mocks.getFacebookConfig.mockReturnValue({
       token: "test-token",
       pageId: "page-1",
+      pageIds: ["page-1"],
       adAccountId: "act_123",
       graphVersion: "v21.0",
     });
@@ -238,6 +239,7 @@ describe("syncFacebookInsights", () => {
     mocks.getFacebookConfig.mockReturnValue({
       token: "test-token",
       pageId: "page-1",
+      pageIds: ["page-1"],
       adAccountId: null,
       graphVersion: "v21.0",
     });

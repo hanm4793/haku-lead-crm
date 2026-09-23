@@ -184,7 +184,7 @@ export function FacebookSyncPanel({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Đồng bộ thủ công lead từ Graph API (FACEBOOK_ACCESS_TOKEN, FACEBOOK_PAGE_ID).
+        Đồng bộ thủ công lead từ Graph API (FACEBOOK_ACCESS_TOKEN, FACEBOOK_PAGE_ID / FACEBOOK_PAGE_IDS).
       </p>
 
       {!dbConfigured ? (
