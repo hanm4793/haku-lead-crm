@@ -5,6 +5,7 @@ import {
   CHANNEL_LABEL,
   FAIL_REASON_LABEL,
   SOURCE_LABEL,
+  UNASSIGNED_ASSIGNMENT_LABEL,
   UNASSIGNED_MODEL_LABEL,
 } from "@/lib/constants";
 import { getDb } from "@/lib/db/client";
@@ -81,11 +82,11 @@ function dimensionExpr(dim: PivotDimension): SQL {
     case "category":
       return CATEGORY_CASE;
     case "brand":
-      return sql`${leads.brand}::text`;
+      return sql`coalesce(${leads.brand}::text, ${UNASSIGNED_ASSIGNMENT_LABEL})`;
     case "showroom":
-      return sql`coalesce(${showrooms.name}, '')`;
+      return sql`coalesce(${showrooms.name}, ${UNASSIGNED_ASSIGNMENT_LABEL})`;
     case "salesRoom":
-      return sql`coalesce(${salesRooms.name}, '')`;
+      return sql`coalesce(${salesRooms.name}, ${UNASSIGNED_ASSIGNMENT_LABEL})`;
     case "assignee":
       return sql`coalesce(${appUsers.fullName}, ${"Chưa giao"})`;
     case "channelDetail":
@@ -601,8 +602,8 @@ export async function queryCallList(
     createdAt: row.createdAt.toISOString(),
     callbackAt: row.callbackAt?.toISOString() ?? null,
     lastContactAt: row.lastContactAt?.toISOString() ?? null,
-    showroom: row.showroom ?? "",
-    salesRoom: row.salesRoom ?? "",
+    showroom: row.showroom ?? UNASSIGNED_ASSIGNMENT_LABEL,
+    salesRoom: row.salesRoom ?? UNASSIGNED_ASSIGNMENT_LABEL,
   }));
 }
 
