@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { activityLogs, leads, metaSyncRuns } from "@/lib/db/schema";
+import { FacebookGraphError } from "./graph-client";
 
 const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
@@ -18,14 +19,19 @@ vi.mock("./graph-client", async (importOriginal) => {
 import { syncFacebookLeads } from "./sync-leads";
 
 function createDb(existingLeadIds: string[] = []) {
-  const inserted: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+  const inserted: Array<{
+    table: unknown;
+    values: Record<string, unknown>;
+    inTransaction: boolean;
+  }> = [];
   const updated: Array<{ table: unknown; values: Record<string, unknown> }> = [];
   const existing = [...existingLeadIds];
+  let transactionDepth = 0;
 
   const db = {
     insert: vi.fn((table: unknown) => ({
       values: vi.fn((values: Record<string, unknown>) => {
-        inserted.push({ table, values });
+        inserted.push({ table, values, inTransaction: transactionDepth > 0 });
         return {
           returning: vi.fn(async () =>
             table === metaSyncRuns ? [{ id: "run-1" }] : [{ id: "lead-new" }],
@@ -49,7 +55,18 @@ function createDb(existingLeadIds: string[] = []) {
         return { where: vi.fn(async () => undefined) };
       }),
     })),
+    transaction: vi.fn(),
   };
+  db.transaction.mockImplementation(
+    async (callback: (tx: Omit<typeof db, "transaction">) => Promise<unknown>) => {
+      transactionDepth += 1;
+      try {
+        return await callback(db);
+      } finally {
+        transactionDepth -= 1;
+      }
+    },
+  );
 
   return { db, inserted, updated };
 }
@@ -113,6 +130,7 @@ describe("syncFacebookLeads", () => {
         assigneeId: null,
         costPerLead: null,
       }),
+      inTransaction: true,
     });
     expect(inserted).toContainEqual({
       table: activityLogs,
@@ -121,7 +139,9 @@ describe("syncFacebookLeads", () => {
         kind: "CREATE",
         actorName: "Facebook sync",
       }),
+      inTransaction: true,
     });
+    expect(db.transaction).toHaveBeenCalledOnce();
     expect(updated).toContainEqual({
       table: metaSyncRuns,
       values: expect.objectContaining({
@@ -133,7 +153,7 @@ describe("syncFacebookLeads", () => {
     });
   });
 
-  it("updates an existing lead without replacing ownership fields", async () => {
+  it("preserves existing CRM fields when Facebook returns null metadata", async () => {
     const { db, inserted, updated } = createDb(["existing-1"]);
     mocks.getDb.mockReturnValue(db);
     mocks.graphGetAllData
@@ -143,7 +163,6 @@ describe("syncFacebookLeads", () => {
           id: "fb-existing",
           field_data: [{ name: "phone_number", values: ["0901000000"] }],
           ad_name: "Latest ad",
-          campaign_name: "Latest campaign",
         },
       ]);
 
@@ -153,16 +172,73 @@ describe("syncFacebookLeads", () => {
     expect(updated).toContainEqual({
       table: leads,
       values: expect.objectContaining({
-        name: null,
-        campaign: "Latest campaign",
         adContent: "Latest ad",
       }),
     });
     const leadUpdate = updated.find((entry) => entry.table === leads)?.values;
+    expect(leadUpdate).not.toHaveProperty("name");
+    expect(leadUpdate).not.toHaveProperty("campaign");
     expect(leadUpdate).not.toHaveProperty("showroomId");
     expect(leadUpdate).not.toHaveProperty("salesRoomId");
     expect(leadUpdate).not.toHaveProperty("brand");
     expect(leadUpdate).not.toHaveProperty("assigneeId");
     expect(inserted.filter((entry) => entry.table === activityLogs)).toHaveLength(0);
+  });
+
+  it("retries with basic fields only for invalid-field Graph errors", async () => {
+    const { db } = createDb();
+    mocks.getDb.mockReturnValue(db);
+    mocks.graphGetAllData
+      .mockResolvedValueOnce([{ id: "form-1" }])
+      .mockRejectedValueOnce(
+        new FacebookGraphError(
+          "(#100) Tried accessing nonexisting field (ad_name) on node type (LeadGenData)",
+          400,
+          100,
+        ),
+      )
+      .mockResolvedValueOnce([]);
+
+    const result = await syncFacebookLeads();
+
+    expect(result.errors).toBe(0);
+    expect(mocks.graphGetAllData).toHaveBeenCalledTimes(3);
+    expect(mocks.graphGetAllData).toHaveBeenLastCalledWith("/form-1/leads", {
+      fields: "id,created_time,field_data",
+    });
+  });
+
+  it("surfaces pagination errors and marks a partially successful run ok", async () => {
+    const { db, updated } = createDb(["existing-1"]);
+    mocks.getDb.mockReturnValue(db);
+    mocks.graphGetAllData
+      .mockResolvedValueOnce([{ id: "form-capped" }, { id: "form-ok" }])
+      .mockRejectedValueOnce(
+        new FacebookGraphError(
+          "Facebook Graph pagination limit (50 pages) reached; results are truncated.",
+          500,
+        ),
+      )
+      .mockResolvedValueOnce([
+        {
+          id: "fb-existing",
+          field_data: [{ name: "phone_number", values: ["0901000000"] }],
+        },
+      ]);
+
+    const result = await syncFacebookLeads();
+
+    expect(result).toMatchObject({ imported: 0, updated: 1, errors: 1 });
+    expect(result.message).toContain("pagination limit (50 pages)");
+    expect(mocks.graphGetAllData).toHaveBeenCalledTimes(3);
+    expect(updated).toContainEqual({
+      table: metaSyncRuns,
+      values: expect.objectContaining({
+        status: "ok",
+        updated: 1,
+        errors: 1,
+        message: expect.stringContaining("pagination limit (50 pages)"),
+      }),
+    });
   });
 });

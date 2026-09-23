@@ -48,8 +48,25 @@ function parseCreatedAt(value: string | undefined): Date | undefined {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
-function resultMessage(counts: Omit<SyncLeadsResult, "message" | "runId">): string {
-  return `Imported ${counts.imported}, updated ${counts.updated}, skipped ${counts.skipped}, errors ${counts.errors}.`;
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown sync error";
+}
+
+function resultMessage(
+  counts: Omit<SyncLeadsResult, "message" | "runId">,
+  errorDetails: string[],
+): string {
+  const summary = `Imported ${counts.imported}, updated ${counts.updated}, skipped ${counts.skipped}, errors ${counts.errors}.`;
+  if (errorDetails.length === 0) return summary;
+  return `${summary} Error details: ${errorDetails.join("; ")}`;
+}
+
+function isInvalidFieldError(error: unknown): error is FacebookGraphError {
+  if (!(error instanceof FacebookGraphError)) return false;
+  return (
+    /\b(?:invalid|unknown|nonexisting|non-existent)\b.*\bfields?\b/i.test(error.message) ||
+    /\bfields?\b.*\b(?:invalid|unknown|nonexisting|non-existent)\b/i.test(error.message)
+  );
 }
 
 async function fetchFormLeads(formId: string): Promise<FacebookLead[]> {
@@ -58,7 +75,7 @@ async function fetchFormLeads(formId: string): Promise<FacebookLead[]> {
       fields: DETAILED_LEAD_FIELDS,
     });
   } catch (error) {
-    if (!(error instanceof FacebookGraphError)) throw error;
+    if (!isInvalidFieldError(error)) throw error;
     return graphGetAllData<FacebookLead>(`/${formId}/leads`, {
       fields: BASIC_LEAD_FIELDS,
     });
@@ -86,6 +103,12 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
   }
 
   const counts = { imported: 0, updated: 0, skipped: 0, errors: 0 };
+  const errorDetails: string[] = [];
+
+  function recordError(error: unknown) {
+    counts.errors += 1;
+    if (errorDetails.length < 5) errorDetails.push(errorMessage(error));
+  }
 
   try {
     const forms = await graphGetAllData<FacebookForm>(`/${config.pageId}/leadgen_forms`, {
@@ -96,8 +119,8 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
       let formLeads: FacebookLead[];
       try {
         formLeads = await fetchFormLeads(form.id);
-      } catch {
-        counts.errors += 1;
+      } catch (error) {
+        recordError(error);
         continue;
       }
 
@@ -119,9 +142,9 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
             .limit(1);
 
           const facebookMetadata = {
-            name: mapped.name,
-            campaign: mapped.campaign,
-            adContent: mapped.adContent,
+            ...(mapped.name !== null ? { name: mapped.name } : {}),
+            ...(mapped.campaign !== null ? { campaign: mapped.campaign } : {}),
+            ...(mapped.adContent !== null ? { adContent: mapped.adContent } : {}),
             facebookFormId: form.id,
             facebookPageId: config.pageId,
             facebookAdId: optionalText(facebookLead.ad_id),
@@ -139,45 +162,47 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
           }
 
           const createdAt = parseCreatedAt(facebookLead.created_time);
-          const [inserted] = await db
-            .insert(leads)
-            .values({
-              ...facebookMetadata,
-              ...(createdAt ? { createdAt } : {}),
-              phone: mapped.phone,
-              source: "FACEBOOK",
-              channelDetail: "FORM",
-              facebookLeadId: facebookLead.id,
-              showroomId: null,
-              salesRoomId: null,
-              brand: null,
-              assigneeId: null,
-              costPerLead: null,
-            })
-            .returning({ id: leads.id });
+          await db.transaction(async (tx) => {
+            const [inserted] = await tx
+              .insert(leads)
+              .values({
+                ...facebookMetadata,
+                ...(createdAt ? { createdAt } : {}),
+                phone: mapped.phone,
+                source: "FACEBOOK",
+                channelDetail: "FORM",
+                facebookLeadId: facebookLead.id,
+                showroomId: null,
+                salesRoomId: null,
+                brand: null,
+                assigneeId: null,
+                costPerLead: null,
+              })
+              .returning({ id: leads.id });
 
-          if (!inserted) {
-            throw new Error(`Could not insert Facebook lead ${facebookLead.id}`);
-          }
+            if (!inserted) {
+              throw new Error(`Could not insert Facebook lead ${facebookLead.id}`);
+            }
 
-          await db.insert(activityLogs).values({
-            leadId: inserted.id,
-            kind: "CREATE",
-            message: "Lead created from Facebook Lead Ads.",
-            actorName: "Facebook sync",
+            await tx.insert(activityLogs).values({
+              leadId: inserted.id,
+              kind: "CREATE",
+              message: "Lead created from Facebook Lead Ads.",
+              actorName: "Facebook sync",
+            });
           });
           counts.imported += 1;
-        } catch {
-          counts.errors += 1;
+        } catch (error) {
+          recordError(error);
         }
       }
     }
 
-    const message = resultMessage(counts);
+    const message = resultMessage(counts, errorDetails);
     await db
       .update(metaSyncRuns)
       .set({
-        status: counts.errors > 0 ? "error" : "ok",
+        status: counts.errors === 0 || counts.imported + counts.updated > 0 ? "ok" : "error",
         finishedAt: new Date(),
         ...counts,
         message,
