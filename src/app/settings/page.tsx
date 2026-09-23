@@ -1,13 +1,17 @@
 import Link from "next/link";
+import { desc, eq } from "drizzle-orm";
 
+import { FacebookSyncPanel } from "@/components/settings/facebook-sync-panel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { estimateCostUsd, getModelId, getProvider, isAiConfigured, PROVIDERS } from "@/lib/ai/model";
 import { getViewer, listUnlinkedUsers } from "@/lib/auth/viewer";
 import { ASSIGNEES, SALES_ROOMS, SHOWROOMS, SOURCE_OPTIONS } from "@/lib/constants";
-import { isDatabaseConfigured } from "@/lib/db/client";
+import { getDb, isDatabaseConfigured } from "@/lib/db/client";
 import { getReferenceData } from "@/lib/db/leads-repo";
+import { metaSyncRuns } from "@/lib/db/schema";
+import { getFacebookConfig } from "@/lib/facebook/env";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 
 export const metadata = { title: "Cài đặt — CRM THACO Auto" };
@@ -26,6 +30,31 @@ const AI_ROADMAP = [
 const TOKENS_PER_CALL = { input: 2000, output: 400 };
 const USD_TO_VND = 26000;
 
+async function loadLastLeadSync() {
+  if (!isDatabaseConfigured()) return null;
+  try {
+    const db = getDb();
+    const [row] = await db
+      .select({
+        startedAt: metaSyncRuns.startedAt,
+        status: metaSyncRuns.status,
+        message: metaSyncRuns.message,
+      })
+      .from(metaSyncRuns)
+      .where(eq(metaSyncRuns.kind, "leads"))
+      .orderBy(desc(metaSyncRuns.startedAt))
+      .limit(1);
+    if (!row) return null;
+    return {
+      at: row.startedAt.toISOString(),
+      status: row.status,
+      message: row.message,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default async function Page() {
   const provider = getProvider();
   const modelId = getModelId(provider);
@@ -39,6 +68,9 @@ export default async function Page() {
     ? await getReferenceData().catch(() => null)
     : null;
   const unlinked = dbConfigured ? await listUnlinkedUsers().catch(() => []) : [];
+  const facebookConfigured = getFacebookConfig() !== null;
+  const lastLeadSync = dbConfigured ? await loadLastLeadSync() : null;
+  const isAdmin = viewer?.role === "ADMIN";
 
   return (
     <div className="space-y-4 p-4">
@@ -156,9 +188,13 @@ export default async function Page() {
             <CardTitle>Tích hợp</CardTitle>
             <CardDescription>Kết nối hệ thống ngoài</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2 text-[13px]">
+          <CardContent className="space-y-3 text-[13px]">
             <Row label="B10 (DDMS)" value="Đồng bộ thủ công — chưa nối API" />
-            <Row label="Facebook Lead Ads" value="Chưa kết nối" />
+            <FacebookSyncPanel
+              configured={facebookConfigured}
+              lastLeadSync={lastLeadSync}
+              isAdmin={isAdmin}
+            />
             <Row label="Google Ads" value="Chưa kết nối" />
             <Row label="Zalo OA" value="Chưa kết nối" />
           </CardContent>
