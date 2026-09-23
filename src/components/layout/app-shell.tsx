@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, ChevronLeft, Settings, Shield, Sparkles, Users } from "lucide-react";
+import { BarChart3, ChevronLeft, Megaphone, Settings, Shield, Sparkles, Users } from "lucide-react";
 
 import { AiChatPanel } from "@/components/ai/ai-chat-panel";
 import { UserMenu } from "@/components/layout/user-menu";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   { href: "/leads", label: "Lead", icon: Users },
   { href: "/reports", label: "Báo cáo", icon: BarChart3 },
+  { href: "/marketing", label: "Marketing", icon: Megaphone, adminOnly: true },
   { href: "/users", label: "Tài khoản", icon: Shield, adminOnly: true },
   { href: "/settings", label: "Cài đặt App", icon: Settings },
 ] as const;

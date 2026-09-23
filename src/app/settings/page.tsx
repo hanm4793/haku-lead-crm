@@ -81,7 +81,9 @@ export default async function Page() {
     ? await getReferenceData().catch(() => null)
     : null;
   const unlinked = dbConfigured ? await listUnlinkedUsers().catch(() => []) : [];
-  const facebookConfigured = getFacebookConfig() !== null;
+  const facebookConfig = getFacebookConfig();
+  const facebookConfigured = facebookConfig !== null;
+  const insightsConfigured = Boolean(facebookConfig?.adAccountId);
   const { lastLeadSync, lastSyncError } = dbConfigured
     ? await loadLastLeadSync()
     : { lastLeadSync: null, lastSyncError: null };
@@ -207,6 +209,7 @@ export default async function Page() {
             <Row label="B10 (DDMS)" value="Đồng bộ thủ công — chưa nối API" />
             <FacebookSyncPanel
               configured={facebookConfigured}
+              insightsConfigured={insightsConfigured}
               dbConfigured={dbConfigured}
               lastLeadSync={lastLeadSync}
               lastSyncError={lastSyncError}

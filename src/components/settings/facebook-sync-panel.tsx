@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import {
   purgeSampleLeadsAction,
+  syncFacebookInsightsAction,
   syncFacebookLeadsAction,
 } from "@/app/settings/facebook-actions";
 import { Badge } from "@/components/ui/badge";
@@ -34,13 +35,11 @@ function formatSyncTime(iso: string): string {
 }
 
 function SyncTimeLabel({ iso }: { iso: string }) {
-  const [label, setLabel] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    setLabel(formatSyncTime(iso));
-  }, [iso]);
-
-  return <span className="font-medium">{label ?? "…"}</span>;
+  return (
+    <span className="font-medium" suppressHydrationWarning>
+      {formatSyncTime(iso)}
+    </span>
+  );
 }
 
 function statusBadge(status: string) {
@@ -55,12 +54,14 @@ function statusBadge(status: string) {
 
 export function FacebookSyncPanel({
   configured,
+  insightsConfigured,
   dbConfigured,
   lastLeadSync,
   lastSyncError,
   isAdmin,
 }: {
   configured: boolean;
+  insightsConfigured: boolean;
   dbConfigured: boolean;
   lastLeadSync: LastLeadSyncInfo;
   lastSyncError: string | null;
@@ -68,13 +69,14 @@ export function FacebookSyncPanel({
 }) {
   const router = useRouter();
   const [pendingSync, setPendingSync] = React.useState(false);
+  const [pendingInsights, setPendingInsights] = React.useState(false);
   const [pendingPurge, setPendingPurge] = React.useState(false);
   const [purgeOpen, setPurgeOpen] = React.useState(false);
   const [actionFeedback, setActionFeedback] = React.useState<string | null>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
 
   const actionsBlocked = !dbConfigured;
-  const anyPending = pendingSync || pendingPurge;
+  const anyPending = pendingSync || pendingInsights || pendingPurge;
 
   async function runSync() {
     setPendingSync(true);
@@ -111,6 +113,26 @@ export function FacebookSyncPanel({
       router.refresh();
     } finally {
       setPendingPurge(false);
+    }
+  }
+
+  async function runInsightsSync() {
+    setPendingInsights(true);
+    setActionFeedback(null);
+    setActionError(null);
+    try {
+      const outcome = await syncFacebookInsightsAction();
+      if (!outcome.ok) {
+        setActionError(outcome.error);
+        return;
+      }
+      const { imported, updated, skipped, errors, message } = outcome.result;
+      setActionFeedback(
+        `${message} (mới: ${imported}, cập nhật: ${updated}, bỏ qua: ${skipped}, lỗi: ${errors})`,
+      );
+      router.refresh();
+    } finally {
+      setPendingInsights(false);
     }
   }
 
@@ -176,6 +198,15 @@ export function FacebookSyncPanel({
             onClick={() => void runSync()}
           >
             {pendingSync ? "Đang đồng bộ…" : "Đồng bộ Facebook Lead"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={anyPending || !insightsConfigured || actionsBlocked}
+            onClick={() => void runInsightsSync()}
+          >
+            {pendingInsights ? "Đang đồng bộ…" : "Đồng bộ Insights"}
           </Button>
           <Button
             type="button"

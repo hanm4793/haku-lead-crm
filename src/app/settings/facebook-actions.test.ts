@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   getViewer: vi.fn(),
   purgeSampleLeads: vi.fn(),
   revalidatePath: vi.fn(),
+  syncFacebookInsights: vi.fn(),
   syncFacebookLeads: vi.fn(),
 }));
 
@@ -12,11 +13,18 @@ vi.mock("@/lib/auth/viewer", () => ({ getViewer: mocks.getViewer }));
 vi.mock("@/lib/facebook/purge-sample-leads", () => ({
   purgeSampleLeads: mocks.purgeSampleLeads,
 }));
+vi.mock("@/lib/facebook/sync-insights", () => ({
+  syncFacebookInsights: mocks.syncFacebookInsights,
+}));
 vi.mock("@/lib/facebook/sync-leads", () => ({
   syncFacebookLeads: mocks.syncFacebookLeads,
 }));
 
-import { purgeSampleLeadsAction, syncFacebookLeadsAction } from "./facebook-actions";
+import {
+  purgeSampleLeadsAction,
+  syncFacebookInsightsAction,
+  syncFacebookLeadsAction,
+} from "./facebook-actions";
 
 describe("Facebook settings actions", () => {
   beforeEach(() => {
@@ -56,6 +64,35 @@ describe("Facebook settings actions", () => {
 
     await expect(purgeSampleLeadsAction()).resolves.toEqual({ ok: true, deleted: 4 });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/leads");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings");
+  });
+
+  it("rejects Insights sync for non-admin viewers", async () => {
+    mocks.getViewer.mockResolvedValue({ role: "SALES" });
+
+    await expect(syncFacebookInsightsAction()).resolves.toEqual({
+      ok: false,
+      error: "Chỉ ADMIN mới đồng bộ dữ liệu Facebook.",
+    });
+    expect(mocks.syncFacebookInsights).not.toHaveBeenCalled();
+  });
+
+  it("runs Insights sync for admins and revalidates Marketing", async () => {
+    mocks.getViewer.mockResolvedValue({ role: "ADMIN" });
+    const result = {
+      imported: 1,
+      updated: 2,
+      skipped: 0,
+      errors: 0,
+      message: "Done.",
+      runId: "run-2",
+      since: "2026-08-25",
+      until: "2026-09-23",
+    };
+    mocks.syncFacebookInsights.mockResolvedValue(result);
+
+    await expect(syncFacebookInsightsAction()).resolves.toEqual({ ok: true, result });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/marketing");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings");
   });
 });
