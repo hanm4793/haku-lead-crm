@@ -51,6 +51,8 @@ pnpm db:seed:demo
 # hoặc: SEED_DEMO_LEADS=1 pnpm db:seed
 ```
 
+**Cảnh báo:** `pnpm db:seed` an toàn sau khi đã đồng bộ Facebook — chỉ bổ sung danh mục thiếu, **không xóa lead**. **`pnpm db:seed:demo` xóa toàn bộ lead và lịch sử** rồi nạp lại 704 lead mẫu; **không chạy** trên DB đã có lead Meta thật.
+
 ### 4. Dev server
 
 ```bash
@@ -63,8 +65,8 @@ Mặc định mở tại http://localhost:3000.
 | --- | --- |
 | `pnpm db:generate` | Sinh SQL migration từ schema |
 | `pnpm db:migrate` | Chạy migration |
-| `pnpm db:seed` | Nạp danh mục tham chiếu (không lead) |
-| `pnpm db:seed:demo` | Nạp danh mục + 704 lead demo |
+| `pnpm db:seed` | Bổ sung danh mục; giữ nguyên lead hiện có |
+| `pnpm db:seed:demo` | **Xóa hết lead** + nạp danh mục và 704 lead demo (dev only) |
 | `pnpm db:studio` | Mở Drizzle Studio |
 | `pnpm lint` / `pnpm typecheck` / `pnpm build` | Kiểm tra |
 

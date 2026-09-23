@@ -173,7 +173,10 @@ function LeadDetailDialogBody({
           <div className="space-y-4">
             <div className="rounded-lg bg-[#f7f9fc] p-4">
               <dl className="space-y-2.5 text-sm">
-                <Row label="Showroom" value={lead.showroom} />
+                <Row
+                  label="Showroom"
+                  value={lead.showroom?.trim() ? lead.showroom : UNASSIGNED_ASSIGNMENT_LABEL}
+                />
                 <Row label="Thương hiệu" value={lead.brand ?? UNASSIGNED_ASSIGNMENT_LABEL} />
                 <RowControl label="Nguồn">
                   <Select value={draft.source} onValueChange={(v) => patch({ source: v as LeadSource })}>
@@ -203,7 +206,10 @@ function LeadDetailDialogBody({
                     </SelectContent>
                   </Select>
                 </RowControl>
-                <Row label="Phòng bán hàng" value={lead.salesRoom} />
+                <Row
+                  label="Phòng bán hàng"
+                  value={lead.salesRoom?.trim() ? lead.salesRoom : UNASSIGNED_ASSIGNMENT_LABEL}
+                />
                 <RowControl label="Phụ trách">
                   <Select
                     value={draft.assignee ?? "__NONE__"}

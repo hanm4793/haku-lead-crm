@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");
 
 import { drizzle } from "drizzle-orm/postgres-js";
+import { inArray } from "drizzle-orm";
 import postgres from "postgres";
 
 import { ASSIGNEES, CAR_MODELS_BY_BRAND, SALES_ROOMS, SHOWROOMS } from "../src/lib/constants";
@@ -30,25 +31,87 @@ function managerNameOf(salesRoom: string) {
   return salesRoom.split("_").pop()?.trim() ?? null;
 }
 
-async function main() {
-  const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error("Thiếu DIRECT_URL (hoặc DATABASE_URL) trong .env.local.");
+type CatalogMaps = {
+  showroomIdByName: Map<string, string>;
+  userIdByName: Map<string, string>;
+  salesRoomIdByName: Map<string, string>;
+  carModelIdByKey: Map<string, string>;
+};
+
+/** Bổ sung danh mục thiếu — không xóa lead hay hàng tham chiếu đang được lead trỏ tới. */
+async function ensureCatalogs(db: ReturnType<typeof drizzle>): Promise<CatalogMaps> {
+  await db
+    .insert(schema.showrooms)
+    .values(SHOWROOMS.map((name, i) => ({ name, sortOrder: i })))
+    .onConflictDoNothing({ target: schema.showrooms.name });
+
+  const existingUsers = await db
+    .select({ id: schema.appUsers.id, fullName: schema.appUsers.fullName })
+    .from(schema.appUsers)
+    .where(inArray(schema.appUsers.fullName, [...ASSIGNEES]));
+  const userIdByName = new Map(existingUsers.map((r) => [r.fullName, r.id]));
+
+  const missingAssignees = ASSIGNEES.filter((name) => !userIdByName.has(name));
+  if (missingAssignees.length) {
+    const inserted = await db
+      .insert(schema.appUsers)
+      .values(
+        missingAssignees.map((fullName) => ({
+          fullName,
+          role: fullName === ASSIGNEES[0] ? ("ADMIN" as const) : ("SALES" as const),
+        })),
+      )
+      .returning({ id: schema.appUsers.id, fullName: schema.appUsers.fullName });
+    for (const row of inserted) userIdByName.set(row.fullName, row.id);
   }
 
-  const sql = postgres(url, { prepare: false, max: 1 });
-  const db = drizzle(sql, { schema });
+  await db
+    .insert(schema.salesRooms)
+    .values(
+      SALES_ROOMS.map((name) => {
+        const manager = managerNameOf(name);
+        return { name, managerId: manager ? (userIdByName.get(manager) ?? null) : null };
+      }),
+    )
+    .onConflictDoNothing({ target: schema.salesRooms.name });
 
-  console.log("Xóa dữ liệu cũ…");
-  // activity_logs xóa theo cascade của leads, nhưng xóa tường minh cho rõ ràng.
-  await db.delete(schema.activityLogs);
-  await db.delete(schema.leads);
+  const carModelValues = Object.entries(CAR_MODELS_BY_BRAND).flatMap(([brand, models]) =>
+    models.map((name) => ({ brand: brand as Brand, name })),
+  );
+  await db.insert(schema.carModels).values(carModelValues).onConflictDoNothing({
+    target: [schema.carModels.brand, schema.carModels.name],
+  });
+
+  const showroomRows = await db
+    .select({ id: schema.showrooms.id, name: schema.showrooms.name })
+    .from(schema.showrooms)
+    .where(inArray(schema.showrooms.name, [...SHOWROOMS]));
+  const salesRoomRows = await db
+    .select({ id: schema.salesRooms.id, name: schema.salesRooms.name })
+    .from(schema.salesRooms)
+    .where(inArray(schema.salesRooms.name, [...SALES_ROOMS]));
+  const carModelRows = await db
+    .select({
+      id: schema.carModels.id,
+      brand: schema.carModels.brand,
+      name: schema.carModels.name,
+    })
+    .from(schema.carModels);
+
+  return {
+    showroomIdByName: new Map(showroomRows.map((r) => [r.name, r.id])),
+    userIdByName,
+    salesRoomIdByName: new Map(salesRoomRows.map((r) => [r.name, r.id])),
+    carModelIdByKey: new Map(carModelRows.map((r) => [`${r.brand}|${r.name}`, r.id])),
+  };
+}
+
+/** Xóa sạch và nạp lại danh mục (chế độ demo — sẽ xóa lead trước). */
+async function replaceCatalogs(db: ReturnType<typeof drizzle>): Promise<CatalogMaps> {
   await db.delete(schema.salesRooms);
   await db.delete(schema.appUsers);
   await db.delete(schema.carModels);
   await db.delete(schema.showrooms);
-
-  console.log("Nạp dữ liệu tham chiếu…");
 
   const showroomRows = await db
     .insert(schema.showrooms)
@@ -56,7 +119,6 @@ async function main() {
     .returning({ id: schema.showrooms.id, name: schema.showrooms.name });
   const showroomIdByName = new Map(showroomRows.map((r) => [r.name, r.id]));
 
-  // Người đầu danh sách làm ADMIN để có sẵn một tài khoản nhìn được toàn bộ dữ liệu.
   const userRows = await db
     .insert(schema.appUsers)
     .values(
@@ -88,21 +150,44 @@ async function main() {
     .returning({ id: schema.carModels.id, brand: schema.carModels.brand, name: schema.carModels.name });
   const carModelIdByKey = new Map(carModelRows.map((r) => [`${r.brand}|${r.name}`, r.id]));
 
-  console.log(
-    `  ${showroomRows.length} showroom · ${userRows.length} nhân sự · ${salesRoomRows.length} phòng bán hàng · ${carModelRows.length} dòng xe`,
-  );
+  return { showroomIdByName, userIdByName, salesRoomIdByName, carModelIdByKey };
+}
+
+async function main() {
+  const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error("Thiếu DIRECT_URL (hoặc DATABASE_URL) trong .env.local.");
+  }
+
+  const sql = postgres(url, { prepare: false, max: 1 });
+  const db = drizzle(sql, { schema });
 
   if (!seedDemoLeads) {
+    console.log("Bổ sung danh mục (giữ nguyên lead và lịch sử hoạt động)…");
+    const maps = await ensureCatalogs(db);
+    console.log(
+      `  ${maps.showroomIdByName.size} showroom · ${maps.userIdByName.size} nhân sự · ${maps.salesRoomIdByName.size} phòng bán hàng · ${maps.carModelIdByKey.size} dòng xe (trong DB)`,
+    );
     await sql.end();
-    console.log("Chỉ nạp danh mục (không có lead demo). Chạy pnpm db:seed:demo nếu cần 704 lead mẫu.");
+    console.log("Xong. Không nạp lead demo — dùng pnpm db:seed:demo chỉ trên DB dev trống.");
     return;
   }
+
+  console.log("Xóa dữ liệu cũ (lead + danh mục)…");
+  await db.delete(schema.activityLogs);
+  await db.delete(schema.leads);
+
+  console.log("Nạp lại danh mục tham chiếu…");
+  const { showroomIdByName, userIdByName, salesRoomIdByName, carModelIdByKey } =
+    await replaceCatalogs(db);
+
+  console.log(
+    `  ${showroomIdByName.size} showroom · ${userIdByName.size} nhân sự · ${salesRoomIdByName.size} phòng bán hàng · ${carModelIdByKey.size} dòng xe`,
+  );
 
   console.log("Sinh dữ liệu demo…");
   const { leads, logsByLead } = generateDemoData(new Date());
 
-  // Sinh uuid tại đây thay vì dựa vào RETURNING: Postgres không đảm bảo thứ tự
-  // hàng trả về khớp thứ tự VALUES, mà activity log cần nối đúng lead.
   const mockIdToDbId = new Map(leads.map((lead) => [lead.id, randomUUID()]));
 
   const leadValues = leads.map((lead) => {
