@@ -47,12 +47,13 @@ function buildGraphUrl(
 ): URL {
   const normalizedPath = path.replace(/^\//, "");
   const url = new URL(`https://graph.facebook.com/${config.graphVersion}/${normalizedPath}`);
-  url.searchParams.set("access_token", config.token);
   if (searchParams) {
     for (const [key, value] of Object.entries(searchParams)) {
+      if (key === "access_token") continue;
       url.searchParams.set(key, value);
     }
   }
+  url.searchParams.set("access_token", config.token);
   return url;
 }
 
@@ -114,6 +115,13 @@ export async function graphGetAllData<T>(
 
     pagesFetched += 1;
     if (!pagingHasMore(body.paging)) break;
+
+    if (pagesFetched >= MAX_PAGING_PAGES) {
+      throw new FacebookGraphError(
+        `Facebook Graph pagination limit (${MAX_PAGING_PAGES} pages) reached; results are truncated.`,
+        500,
+      );
+    }
 
     const after = body.paging?.cursors?.after?.trim();
     if (after) {
