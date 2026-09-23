@@ -2,7 +2,8 @@ import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL, type SQLWrapper }
 
 import { getDb } from "@/lib/db/client";
 import { activityLogs, appUsers, carModels, leads, salesRooms, showrooms } from "@/lib/db/schema";
-import type { ActivityLog, Lead, LeadFilters, LeadKpis } from "@/lib/types";
+import type { ActivityLog, Brand, Lead, LeadFilters, LeadKpis } from "@/lib/types";
+import { UNASSIGNED_ASSIGNMENT_LABEL } from "@/lib/constants";
 import { ratio } from "@/lib/utils";
 
 /**
@@ -30,7 +31,7 @@ export interface LeadCriteria {
   categories?: Lead["category"][];
   failReasons?: NonNullable<Lead["failReason"]>[];
   sources?: Lead["source"][];
-  brands?: Lead["brand"][];
+  brands?: Brand[];
   showrooms?: string[];
   salesRooms?: string[];
   assignees?: string[];
@@ -214,8 +215,8 @@ function toLead(row: LeadRow): Lead {
     createdAt: row.createdAt.toISOString(),
     callbackAt: row.callbackAt?.toISOString() ?? null,
     lastContactAt: row.lastContactAt?.toISOString() ?? null,
-    showroom: row.showroom ?? "",
-    salesRoom: row.salesRoom ?? "",
+    showroom: row.showroom ?? UNASSIGNED_ASSIGNMENT_LABEL,
+    salesRoom: row.salesRoom ?? UNASSIGNED_ASSIGNMENT_LABEL,
   };
 }
 
@@ -528,12 +529,14 @@ async function resolveAssigneeId(fullName: string) {
  */
 async function resolveCarModelId(name: string, brand: Lead["brand"]) {
   const db = getDb();
-  const exact = await db
-    .select({ id: carModels.id })
-    .from(carModels)
-    .where(and(eq(carModels.name, name), eq(carModels.brand, brand)))
-    .limit(1);
-  if (exact[0]) return exact[0].id;
+  if (brand) {
+    const exact = await db
+      .select({ id: carModels.id })
+      .from(carModels)
+      .where(and(eq(carModels.name, name), eq(carModels.brand, brand)))
+      .limit(1);
+    if (exact[0]) return exact[0].id;
+  }
 
   const fallback = await db.select({ id: carModels.id }).from(carModels).where(eq(carModels.name, name)).limit(1);
   return fallback[0]?.id ?? null;

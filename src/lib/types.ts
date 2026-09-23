@@ -65,7 +65,7 @@ export interface Lead {
   b10CareNote: string | null;
   source: LeadSource;
   channelDetail: ChannelDetail;
-  brand: Brand;
+  brand: Brand | null;
   showroom: string;
   salesRoom: string;
   assignee: string | null;

@@ -24,6 +24,7 @@ import {
   ASSIGNEES,
   B10_STATUS_LABEL,
   CAR_MODELS_BY_BRAND,
+  UNASSIGNED_ASSIGNMENT_LABEL,
   CATEGORY_LONG_LABEL,
   CHANNEL_DETAIL_OPTIONS,
   FAIL_REASON_OPTIONS,
@@ -132,7 +133,7 @@ function LeadDetailDialogBody({
     setJustSaved(true);
   };
 
-  const models = CAR_MODELS_BY_BRAND[lead.brand] ?? [];
+  const models = (lead.brand ? CAR_MODELS_BY_BRAND[lead.brand] : undefined) ?? [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -173,7 +174,7 @@ function LeadDetailDialogBody({
             <div className="rounded-lg bg-[#f7f9fc] p-4">
               <dl className="space-y-2.5 text-sm">
                 <Row label="Showroom" value={lead.showroom} />
-                <Row label="Thương hiệu" value={lead.brand} />
+                <Row label="Thương hiệu" value={lead.brand ?? UNASSIGNED_ASSIGNMENT_LABEL} />
                 <RowControl label="Nguồn">
                   <Select value={draft.source} onValueChange={(v) => patch({ source: v as LeadSource })}>
                     <SelectTrigger size="sm" className="w-36">

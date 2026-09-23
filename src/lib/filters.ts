@@ -72,7 +72,7 @@ export function applyLeadFilters(leads: Lead[], filters: LeadFilters, now: Date 
     }
 
     if (filters.sources.length && !filters.sources.includes(lead.source)) return false;
-    if (filters.brands.length && !filters.brands.includes(lead.brand)) return false;
+    if (filters.brands.length && (!lead.brand || !filters.brands.includes(lead.brand))) return false;
     if (filters.showrooms.length && !filters.showrooms.includes(lead.showroom)) return false;
     if (filters.salesRooms.length && !filters.salesRooms.includes(lead.salesRoom)) return false;
     if (filters.assignees.length && !filters.assignees.includes(lead.assignee ?? "")) return false;

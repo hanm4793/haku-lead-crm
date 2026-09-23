@@ -143,6 +143,9 @@ export const ALL_CAR_MODELS = Object.values(CAR_MODELS_BY_BRAND).flat();
 
 export const UNASSIGNED_MODEL_LABEL = "Chưa gán dòng xe";
 
+/** Showroom / phòng BH / hãng chưa gán (lead Meta hoặc chưa phân bổ). */
+export const UNASSIGNED_ASSIGNMENT_LABEL = "Chưa phân bổ";
+
 export const SOURCE_LABEL: Record<LeadSource, string> = Object.fromEntries(
   SOURCE_OPTIONS.map((o) => [o.value, o.label]),
 ) as Record<LeadSource, string>;

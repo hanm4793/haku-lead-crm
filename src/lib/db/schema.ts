@@ -1,5 +1,16 @@
 import { relations } from "drizzle-orm";
-import { boolean, index, integer, pgEnum, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  doublePrecision,
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 import type {
   ActivityKind,
@@ -97,6 +108,10 @@ export const activityKindEnum = pgEnum(
 
 export const userRoleEnum = pgEnum("user_role", ["ADMIN", "SHOWROOM_MANAGER", "SALES"]);
 
+export const metaInsightLevelEnum = pgEnum("meta_insight_level", ["campaign", "adset", "ad"]);
+export const metaSyncKindEnum = pgEnum("meta_sync_kind", ["leads", "insights"]);
+export const metaSyncStatusEnum = pgEnum("meta_sync_status", ["ok", "error"]);
+
 export const showrooms = pgTable("showrooms", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),
@@ -156,14 +171,10 @@ export const leads = pgTable(
 
     source: leadSourceEnum("source").notNull(),
     channelDetail: channelDetailEnum("channel_detail").notNull(),
-    brand: brandEnum("brand").notNull(),
+    brand: brandEnum("brand"),
 
-    showroomId: uuid("showroom_id")
-      .notNull()
-      .references(() => showrooms.id, { onDelete: "restrict" }),
-    salesRoomId: uuid("sales_room_id")
-      .notNull()
-      .references(() => salesRooms.id, { onDelete: "restrict" }),
+    showroomId: uuid("showroom_id").references(() => showrooms.id, { onDelete: "restrict" }),
+    salesRoomId: uuid("sales_room_id").references(() => salesRooms.id, { onDelete: "restrict" }),
     assigneeId: uuid("assignee_id").references(() => appUsers.id, { onDelete: "set null" }),
     carModelId: uuid("car_model_id").references(() => carModels.id, { onDelete: "set null" }),
 
@@ -175,6 +186,13 @@ export const leads = pgTable(
     campaign: text("campaign"),
     adContent: text("ad_content"),
     costPerLead: integer("cost_per_lead"),
+
+    facebookLeadId: text("facebook_lead_id").unique(),
+    facebookFormId: text("facebook_form_id"),
+    facebookPageId: text("facebook_page_id"),
+    facebookAdId: text("facebook_ad_id"),
+    facebookAdsetId: text("facebook_adset_id"),
+    facebookCampaignId: text("facebook_campaign_id"),
   },
   (table) => [
     index("leads_created_at_idx").on(table.createdAt.desc()),
@@ -187,6 +205,42 @@ export const leads = pgTable(
     index("leads_callback_at_idx").on(table.callbackAt),
   ],
 );
+
+export const metaAdInsights = pgTable(
+  "meta_ad_insights",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    level: metaInsightLevelEnum("level").notNull(),
+    objectId: text("object_id").notNull(),
+    objectName: text("object_name"),
+    dateStart: timestamp("date_start", { withTimezone: true }).notNull(),
+    dateStop: timestamp("date_stop", { withTimezone: true }),
+    spend: doublePrecision("spend"),
+    impressions: integer("impressions"),
+    clicks: integer("clicks"),
+    reach: integer("reach"),
+    leads: integer("leads"),
+    cpc: doublePrecision("cpc"),
+    cpm: doublePrecision("cpm"),
+    ctr: doublePrecision("ctr"),
+    costPerLead: doublePrecision("cost_per_lead"),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("meta_ad_insights_level_object_date").on(t.level, t.objectId, t.dateStart)],
+);
+
+export const metaSyncRuns = pgTable("meta_sync_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  kind: metaSyncKindEnum("kind").notNull(),
+  status: metaSyncStatusEnum("status").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  imported: integer("imported").notNull().default(0),
+  updated: integer("updated").notNull().default(0),
+  skipped: integer("skipped").notNull().default(0),
+  errors: integer("errors").notNull().default(0),
+  message: text("message"),
+});
 
 export const activityLogs = pgTable(
   "activity_logs",

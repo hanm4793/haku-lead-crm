@@ -3,6 +3,7 @@ import {
   CHANNEL_LABEL,
   FAIL_REASON_LABEL,
   SOURCE_LABEL,
+  UNASSIGNED_ASSIGNMENT_LABEL,
 } from "@/lib/constants";
 import type { Lead } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
@@ -28,7 +29,13 @@ export const LEAD_COLUMNS: LeadColumn[] = [
   { id: "b10Status", header: "Trạng thái B10", width: 150, value: (l) => B10_STATUS_LABEL[l.b10Status] },
   { id: "b10CareNote", header: "Nội dung chăm sóc B10", width: 230, value: (l) => l.b10CareNote },
   { id: "source", header: "Nguồn", width: 115, sortable: true, value: (l) => SOURCE_LABEL[l.source] },
-  { id: "brand", header: "Thương hiệu", width: 125, sortable: true, value: (l) => l.brand },
+  {
+    id: "brand",
+    header: "Thương hiệu",
+    width: 125,
+    sortable: true,
+    value: (l) => l.brand ?? UNASSIGNED_ASSIGNMENT_LABEL,
+  },
   { id: "carModel", header: "Dòng xe", width: 140, sortable: true, value: (l) => l.carModel },
   { id: "showroom", header: "Showroom", width: 150, sortable: true, value: (l) => l.showroom },
   { id: "salesRoom", header: "Phòng bán hàng", width: 250, value: (l) => l.salesRoom },

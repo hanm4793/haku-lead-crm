@@ -2,6 +2,7 @@ import {
   CATEGORY_CHART_LABEL,
   FAIL_REASON_LABEL,
   SOURCE_LABEL,
+  UNASSIGNED_ASSIGNMENT_LABEL,
   UNASSIGNED_MODEL_LABEL,
 } from "./constants";
 import { isOverdue } from "./filters";
@@ -236,7 +237,7 @@ export function dimensionValue(lead: Lead, dim: PivotDimension): string {
     case "category":
       return CATEGORY_CHART_LABEL[lead.category];
     case "brand":
-      return lead.brand;
+      return lead.brand ?? UNASSIGNED_ASSIGNMENT_LABEL;
     case "showroom":
       return lead.showroom;
     case "salesRoom":
