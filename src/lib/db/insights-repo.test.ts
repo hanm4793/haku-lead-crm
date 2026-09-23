@@ -6,7 +6,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./client", () => ({ getDb: mocks.getDb }));
 
-import { aggregateCampaignInsights, listCampaignInsights } from "./insights-repo";
+import {
+  aggregateCampaignInsights,
+  hasSyncedInsights,
+  listCampaignInsights,
+} from "./insights-repo";
 
 describe("insights repository", () => {
   beforeEach(() => {
@@ -79,5 +83,53 @@ describe("insights repository", () => {
       clicks: 5,
       leads: 1,
     });
+  });
+
+  it("does not treat an empty or failed sync run as synced data", async () => {
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({ limit: vi.fn(async () => []) })),
+        })),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            orderBy: vi.fn(() => ({
+              limit: vi.fn(async () => [
+                { status: "error", imported: 0, updated: 0 },
+              ]),
+            })),
+          })),
+        })),
+      });
+    mocks.getDb.mockReturnValue({ select });
+
+    await expect(hasSyncedInsights()).resolves.toBe(false);
+  });
+
+  it("accepts a successful sync run only when it wrote insight rows", async () => {
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({ limit: vi.fn(async () => []) })),
+        })),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            orderBy: vi.fn(() => ({
+              limit: vi.fn(async () => [
+                { status: "ok", imported: 0, updated: 2 },
+              ]),
+            })),
+          })),
+        })),
+      });
+    mocks.getDb.mockReturnValue({ select });
+
+    await expect(hasSyncedInsights()).resolves.toBe(true);
   });
 });

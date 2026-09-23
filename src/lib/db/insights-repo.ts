@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 
 import { getDb } from "./client";
-import { metaAdInsights } from "./schema";
+import { metaAdInsights, metaSyncRuns } from "./schema";
 
 export type InsightRow = {
   objectId: string;
@@ -87,4 +87,30 @@ export function aggregateCampaignInsights(rows: InsightRow[]): InsightTotals {
     clicks: sumKnown(rows, "clicks"),
     leads: sumKnown(rows, "leads"),
   };
+}
+
+export async function hasSyncedInsights(): Promise<boolean> {
+  const db = getDb();
+  const [insightRows, syncRuns] = await Promise.all([
+    db
+      .select({ id: metaAdInsights.id })
+      .from(metaAdInsights)
+      .where(eq(metaAdInsights.level, "campaign"))
+      .limit(1),
+    db
+      .select({
+        status: metaSyncRuns.status,
+        imported: metaSyncRuns.imported,
+        updated: metaSyncRuns.updated,
+      })
+      .from(metaSyncRuns)
+      .where(eq(metaSyncRuns.kind, "insights"))
+      .orderBy(desc(metaSyncRuns.startedAt))
+      .limit(1),
+  ]);
+  const lastRun = syncRuns[0];
+  return (
+    insightRows.length > 0 ||
+    Boolean(lastRun?.status === "ok" && lastRun.imported + lastRun.updated > 0)
+  );
 }

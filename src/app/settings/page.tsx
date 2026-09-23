@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 
 import {
   FacebookSyncPanel,
-  type LastLeadSyncInfo,
+  type LastSyncInfo,
 } from "@/components/settings/facebook-sync-panel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,9 +33,9 @@ const AI_ROADMAP = [
 const TOKENS_PER_CALL = { input: 2000, output: 400 };
 const USD_TO_VND = 26000;
 
-async function loadLastLeadSync(): Promise<{
-  lastLeadSync: LastLeadSyncInfo;
-  lastSyncError: string | null;
+async function loadLastFacebookSync(kind: "leads" | "insights"): Promise<{
+  lastSync: LastSyncInfo;
+  syncError: string | null;
 }> {
   try {
     const db = getDb();
@@ -46,25 +46,25 @@ async function loadLastLeadSync(): Promise<{
         message: metaSyncRuns.message,
       })
       .from(metaSyncRuns)
-      .where(eq(metaSyncRuns.kind, "leads"))
+      .where(eq(metaSyncRuns.kind, kind))
       .orderBy(desc(metaSyncRuns.startedAt))
       .limit(1);
     if (!row) {
-      return { lastLeadSync: null, lastSyncError: null };
+      return { lastSync: null, syncError: null };
     }
     return {
-      lastLeadSync: {
+      lastSync: {
         at: row.startedAt.toISOString(),
         status: row.status,
         message: row.message,
       },
-      lastSyncError: null,
+      syncError: null,
     };
   } catch (error) {
-    console.error("[settings] loadLastLeadSync failed", error);
+    console.error(`[settings] loadLastFacebookSync(${kind}) failed`, error);
     const message =
       error instanceof Error ? error.message : "Không đọc được lịch sử đồng bộ từ database.";
-    return { lastLeadSync: null, lastSyncError: message };
+    return { lastSync: null, syncError: message };
   }
 }
 
@@ -84,9 +84,12 @@ export default async function Page() {
   const facebookConfig = getFacebookConfig();
   const facebookConfigured = facebookConfig !== null;
   const insightsConfigured = Boolean(facebookConfig?.adAccountId);
-  const { lastLeadSync, lastSyncError } = dbConfigured
-    ? await loadLastLeadSync()
-    : { lastLeadSync: null, lastSyncError: null };
+  const [leadSyncState, insightsSyncState] = dbConfigured
+    ? await Promise.all([loadLastFacebookSync("leads"), loadLastFacebookSync("insights")])
+    : [
+        { lastSync: null, syncError: null },
+        { lastSync: null, syncError: null },
+      ];
   const isAdmin = viewer?.role === "ADMIN";
 
   return (
@@ -211,8 +214,10 @@ export default async function Page() {
               configured={facebookConfigured}
               insightsConfigured={insightsConfigured}
               dbConfigured={dbConfigured}
-              lastLeadSync={lastLeadSync}
-              lastSyncError={lastSyncError}
+              lastLeadSync={leadSyncState.lastSync}
+              leadSyncError={leadSyncState.syncError}
+              lastInsightsSync={insightsSyncState.lastSync}
+              insightsSyncError={insightsSyncState.syncError}
               isAdmin={isAdmin}
             />
             <Row label="Google Ads" value="Chưa kết nối" />

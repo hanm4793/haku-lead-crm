@@ -19,7 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-export type LastLeadSyncInfo = {
+export type LastSyncInfo = {
   at: string;
   status: string;
   message: string | null;
@@ -52,19 +52,57 @@ function statusBadge(status: string) {
   return <Badge variant="muted">{status}</Badge>;
 }
 
+function SyncSummary({
+  label,
+  sync,
+  error,
+}: {
+  label: string;
+  sync: LastSyncInfo;
+  error: string | null;
+}) {
+  if (error) {
+    return (
+      <p className="text-xs text-rose-700" role="alert">
+        Không tải được lịch sử {label.toLowerCase()}: {error}
+      </p>
+    );
+  }
+  if (!sync) {
+    return <p className="text-xs text-muted-foreground">Chưa có lịch sử {label.toLowerCase()}.</p>;
+  }
+  return (
+    <div className="space-y-1 border-t border-border/60 pt-2 text-[13px]">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-muted-foreground">{label} gần nhất</span>
+        <SyncTimeLabel iso={sync.at} />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-muted-foreground">Kết quả</span>
+        {statusBadge(sync.status)}
+      </div>
+      {sync.message ? <p className="text-xs text-muted-foreground">{sync.message}</p> : null}
+    </div>
+  );
+}
+
 export function FacebookSyncPanel({
   configured,
   insightsConfigured,
   dbConfigured,
   lastLeadSync,
-  lastSyncError,
+  leadSyncError,
+  lastInsightsSync,
+  insightsSyncError,
   isAdmin,
 }: {
   configured: boolean;
   insightsConfigured: boolean;
   dbConfigured: boolean;
-  lastLeadSync: LastLeadSyncInfo;
-  lastSyncError: string | null;
+  lastLeadSync: LastSyncInfo;
+  leadSyncError: string | null;
+  lastInsightsSync: LastSyncInfo;
+  insightsSyncError: string | null;
   isAdmin: boolean;
 }) {
   const router = useRouter();
@@ -153,28 +191,15 @@ export function FacebookSyncPanel({
         <p className="text-xs text-amber-800">Cần DATABASE_URL để lưu lead và lịch sử đồng bộ.</p>
       ) : null}
 
-      {lastSyncError ? (
-        <p className="text-xs text-rose-700" role="alert">
-          Không tải được lịch sử đồng bộ: {lastSyncError}
-        </p>
-      ) : null}
-
-      {lastLeadSync ? (
-        <div className="space-y-1 text-[13px]">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-muted-foreground">Lần đồng bộ gần nhất</span>
-            <SyncTimeLabel iso={lastLeadSync.at} />
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-muted-foreground">Kết quả</span>
-            {statusBadge(lastLeadSync.status)}
-          </div>
-          {lastLeadSync.message ? (
-            <p className="text-xs text-muted-foreground">{lastLeadSync.message}</p>
-          ) : null}
-        </div>
-      ) : lastSyncError ? null : dbConfigured ? (
-        <p className="text-xs text-muted-foreground">Chưa có lịch sử đồng bộ lead.</p>
+      {dbConfigured ? (
+        <>
+          <SyncSummary label="Đồng bộ lead" sync={lastLeadSync} error={leadSyncError} />
+          <SyncSummary
+            label="Đồng bộ Insights"
+            sync={lastInsightsSync}
+            error={insightsSyncError}
+          />
+        </>
       ) : null}
 
       {actionError ? (

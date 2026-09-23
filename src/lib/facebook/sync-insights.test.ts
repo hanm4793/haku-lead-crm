@@ -26,20 +26,13 @@ function createDb(existingObjectIds: string[] = []) {
         if (table === metaSyncRuns) {
           return { returning: vi.fn(async () => [{ id: "run-1" }]) };
         }
+        const existingObjectId = existing.shift();
         return {
-          onConflictDoUpdate: vi.fn(async () => undefined),
+          onConflictDoUpdate: vi.fn(() => ({
+            returning: vi.fn(async () => [{ inserted: !existingObjectId }]),
+          })),
         };
       }),
-    })),
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          limit: vi.fn(async () => {
-            const objectId = existing.shift();
-            return objectId ? [{ id: objectId }] : [];
-          }),
-        })),
-      })),
     })),
     update: vi.fn((table: unknown) => ({
       set: vi.fn((values: Record<string, unknown>) => {
@@ -157,6 +150,60 @@ describe("syncFacebookInsights", () => {
     await expect(
       syncFacebookInsights({ since: "2026-09-01", until: "2026-09-01" }),
     ).resolves.toMatchObject({ imported: 0, updated: 1 });
+  });
+
+  it("upserts each insight without selecting it first", async () => {
+    const onConflictDoUpdate = vi.fn(() => ({
+      returning: vi.fn(async () => [{ inserted: true }]),
+    }));
+    const db = {
+      insert: vi.fn((table: unknown) => ({
+        values: vi.fn(() =>
+          table === metaSyncRuns
+            ? { returning: vi.fn(async () => [{ id: "run-1" }]) }
+            : { onConflictDoUpdate },
+        ),
+      })),
+      select: vi.fn(() => {
+        throw new Error("N+1 select must not run");
+      }),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({ where: vi.fn(async () => undefined) })),
+      })),
+    };
+    mocks.getDb.mockReturnValue(db);
+    mocks.graphGetAllData.mockResolvedValue([
+      { campaign_id: "campaign-1", date_start: "2026-09-01" },
+    ]);
+
+    await expect(
+      syncFacebookInsights({ since: "2026-09-01", until: "2026-09-01" }),
+    ).resolves.toMatchObject({ imported: 1, updated: 0, errors: 0 });
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it("sums distinct lead action types and rounds the finite total", async () => {
+    const { db, inserted } = createDb();
+    mocks.getDb.mockReturnValue(db);
+    mocks.graphGetAllData.mockResolvedValue([
+      {
+        campaign_id: "campaign-1",
+        date_start: "2026-09-01",
+        actions: [
+          { action_type: "lead", value: "1.4" },
+          { action_type: "onsite_conversion.messaging_lead", value: "2.4" },
+          { action_type: "lead", value: "1.4" },
+          { action_type: "purchase", value: "99" },
+        ],
+      },
+    ]);
+
+    await syncFacebookInsights({ since: "2026-09-01", until: "2026-09-01" });
+
+    expect(inserted).toContainEqual({
+      table: metaAdInsights,
+      values: expect.objectContaining({ leads: 4 }),
+    });
   });
 
   it("requires an ad account before creating a sync run", async () => {

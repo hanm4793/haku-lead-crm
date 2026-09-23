@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { metaAdInsights, metaSyncRuns } from "@/lib/db/schema";
@@ -97,7 +97,10 @@ function isLeadAction(actionType: string): boolean {
   );
 }
 
-function leadMetric(values: ActionValue[] | undefined, parse: (value?: string) => number | null) {
+function firstLeadMetric(
+  values: ActionValue[] | undefined,
+  parse: (value?: string) => number | null,
+) {
   if (!values) return null;
   for (const preferred of PREFERRED_LEAD_ACTIONS) {
     const match = values.find((item) => item.action_type === preferred);
@@ -107,6 +110,25 @@ function leadMetric(values: ActionValue[] | undefined, parse: (value?: string) =
     (item) => typeof item.action_type === "string" && isLeadAction(item.action_type),
   );
   return match ? parse(match.value) : null;
+}
+
+function sumLeadActions(values: ActionValue[] | undefined): number | null {
+  if (!values) return null;
+  const seenActionTypes = new Set<string>();
+  let total = 0;
+  let found = false;
+
+  for (const item of values) {
+    const actionType = item.action_type;
+    if (!actionType || seenActionTypes.has(actionType) || !isLeadAction(actionType)) continue;
+    seenActionTypes.add(actionType);
+    const value = finiteNumber(item.value);
+    if (value === null) continue;
+    total += value;
+    found = true;
+  }
+
+  return found ? Math.round(total) : null;
 }
 
 function errorMessage(error: unknown): string {
@@ -166,28 +188,16 @@ export async function syncFacebookInsights(options?: {
         impressions: integer(row.impressions),
         clicks: integer(row.clicks),
         reach: integer(row.reach),
-        leads: leadMetric(row.actions, integer),
+        leads: sumLeadActions(row.actions),
         cpc: finiteNumber(row.cpc),
         cpm: finiteNumber(row.cpm),
         ctr: finiteNumber(row.ctr),
-        costPerLead: leadMetric(row.cost_per_action_type, finiteNumber),
+        costPerLead: firstLeadMetric(row.cost_per_action_type, finiteNumber),
         syncedAt: new Date(),
       };
 
       try {
-        const [existing] = await db
-          .select({ id: metaAdInsights.id })
-          .from(metaAdInsights)
-          .where(
-            and(
-              eq(metaAdInsights.level, values.level),
-              eq(metaAdInsights.objectId, values.objectId),
-              eq(metaAdInsights.dateStart, values.dateStart),
-            ),
-          )
-          .limit(1);
-
-        await db
+        const [upserted] = await db
           .insert(metaAdInsights)
           .values(values)
           .onConflictDoUpdate({
@@ -206,10 +216,12 @@ export async function syncFacebookInsights(options?: {
               costPerLead: values.costPerLead,
               syncedAt: values.syncedAt,
             },
-          });
+          })
+          .returning({ inserted: sql<boolean>`(xmax = 0)` });
 
-        if (existing) counts.updated += 1;
-        else counts.imported += 1;
+        if (!upserted) throw new Error(`Could not upsert Insight for ${objectId}`);
+        if (upserted.inserted) counts.imported += 1;
+        else counts.updated += 1;
       } catch (error) {
         counts.errors += 1;
         if (errors.length < 5) errors.push(errorMessage(error));
