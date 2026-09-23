@@ -4,6 +4,7 @@ import {
   FAIL_REASON_LABEL,
   SOURCE_LABEL,
   UNASSIGNED_ASSIGNMENT_LABEL,
+  UNASSIGNED_MODEL_LABEL,
 } from "@/lib/constants";
 import type { Lead } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
@@ -36,9 +37,9 @@ export const LEAD_COLUMNS: LeadColumn[] = [
     sortable: true,
     value: (l) => l.brand ?? UNASSIGNED_ASSIGNMENT_LABEL,
   },
-  { id: "carModel", header: "Dòng xe", width: 140, sortable: true, value: (l) => l.carModel },
-  { id: "showroom", header: "Showroom", width: 150, sortable: true, value: (l) => l.showroom },
-  { id: "salesRoom", header: "Phòng bán hàng", width: 250, value: (l) => l.salesRoom },
+  { id: "carModel", header: "Dòng xe", width: 140, sortable: true, value: (l) => l.carModel ?? UNASSIGNED_MODEL_LABEL },
+  { id: "showroom", header: "Showroom", width: 150, sortable: true, value: (l) => l.showroom || UNASSIGNED_ASSIGNMENT_LABEL },
+  { id: "salesRoom", header: "Phòng bán hàng", width: 250, value: (l) => l.salesRoom || UNASSIGNED_ASSIGNMENT_LABEL },
   { id: "assignee", header: "Phụ trách", width: 160, sortable: true, value: (l) => l.assignee },
   { id: "careNote", header: "Nội dung chăm sóc", width: 260, value: (l) => l.careNote },
   { id: "callbackAt", header: "Hẹn gọi lại", width: 130, sortable: true, value: (l) => l.callbackAt },

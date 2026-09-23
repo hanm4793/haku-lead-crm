@@ -11,6 +11,9 @@ import * as schema from "../src/lib/db/schema";
 import { generateDemoData } from "../src/lib/mock-data";
 import type { Brand } from "../src/lib/types";
 
+const seedDemoLeads =
+  process.env.SEED_DEMO_LEADS === "1" || process.argv.includes("--demo");
+
 const CHUNK = 500;
 
 function chunked<T>(rows: T[], size = CHUNK): T[][] {
@@ -88,6 +91,12 @@ async function main() {
   console.log(
     `  ${showroomRows.length} showroom · ${userRows.length} nhân sự · ${salesRoomRows.length} phòng bán hàng · ${carModelRows.length} dòng xe`,
   );
+
+  if (!seedDemoLeads) {
+    await sql.end();
+    console.log("Chỉ nạp danh mục (không có lead demo). Chạy pnpm db:seed:demo nếu cần 704 lead mẫu.");
+    return;
+  }
 
   console.log("Sinh dữ liệu demo…");
   const { leads, logsByLead } = generateDemoData(new Date());

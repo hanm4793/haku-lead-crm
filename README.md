@@ -42,7 +42,14 @@ pnpm db:migrate
 pnpm db:seed
 ```
 
-Seed nạp danh mục tham chiếu + **704 lead** + nhật ký hoạt động (generator deterministic từ `src/lib/mock-data.ts`).
+Mặc định seed chỉ nạp **danh mục tham chiếu** (showroom, nhân sự, phòng bán hàng, dòng xe) — không có lead mẫu, phù hợp trước khi đồng bộ Facebook.
+
+Để nạp thêm **704 lead demo** + nhật ký hoạt động (generator deterministic từ `src/lib/mock-data.ts`):
+
+```bash
+pnpm db:seed:demo
+# hoặc: SEED_DEMO_LEADS=1 pnpm db:seed
+```
 
 ### 4. Dev server
 
@@ -56,13 +63,45 @@ Mặc định mở tại http://localhost:3000.
 | --- | --- |
 | `pnpm db:generate` | Sinh SQL migration từ schema |
 | `pnpm db:migrate` | Chạy migration |
-| `pnpm db:seed` | Nạp dữ liệu demo |
+| `pnpm db:seed` | Nạp danh mục tham chiếu (không lead) |
+| `pnpm db:seed:demo` | Nạp danh mục + 704 lead demo |
 | `pnpm db:studio` | Mở Drizzle Studio |
 | `pnpm lint` / `pnpm typecheck` / `pnpm build` | Kiểm tra |
 
 **Auth:** điền `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` để bật đăng nhập. Thêm email của bạn vào `ADMIN_EMAILS` để lần đăng ký/đăng nhập đầu được quyền ADMIN. Nên tắt **Confirm email** trong Supabase Dashboard → Authentication → Providers → Email.
 
 **Chế độ demo:** nếu chưa điền Supabase Auth, middleware không chặn và `getViewer()` trả về quyền ADMIN.
+
+## Facebook Lead Ads & Marketing (Meta Graph)
+
+Đồng bộ **theo yêu cầu** (nút trên **Cài đặt**), không webhook. Token và ID chỉ đặt trong `.env.local` trên server — **không commit** file này và không dán token vào chat hay git.
+
+### Biến môi trường
+
+Sao chép từ `.env.example` và điền giá trị thật:
+
+| Biến | Mục đích |
+| --- | --- |
+| `FACEBOOK_ACCESS_TOKEN` | User access token có quyền Page + Ads (server-only) |
+| `FACEBOOK_PAGE_ID` | Page nhận lead form |
+| `FACEBOOK_AD_ACCOUNT_ID` | Bắt buộc cho Phase B (insights); dạng `act_…` |
+| `FACEBOOK_GRAPH_VERSION` | Tùy chọn, mặc định `v21.0` |
+
+**Quyền Meta cần có** (App Review / token dài hạn):
+
+- `pages_manage_ads`
+- `pages_read_engagement`
+- `leads_retrieval`
+- `ads_read`
+
+Nếu token lộ (chat, screenshot, commit nhầm): **rotate ngay** trong [Meta Business Settings](https://business.facebook.com/settings/system-users) / App Dashboard → tạo token mới, cập nhật `.env.local`, deploy lại.
+
+### Quy trình đồng bộ (ADMIN)
+
+1. **Chuẩn bị DB:** `pnpm db:seed` (danh mục, không lead giả).
+2. **Phase A — Lead:** Cài đặt → **Xóa lead mẫu** (chỉ lead không có `facebook_lead_id`) → **Đồng bộ lead Facebook**. Lead thiếu SĐT bị bỏ qua; showroom / hãng / phòng BH để trống hiển thị **Chưa phân bổ** trong UI — CRM không tự điền.
+3. **Phase B — Insights:** Sau khi lead ổn, bật `FACEBOOK_AD_ACCOUNT_ID` → **Đồng bộ insights** → xem **Marketing** (`/marketing`).
+4. Pipeline lead vẫn ở **Leads** (`/leads`) và **Báo cáo** (`/reports`); metrics quảng cáo tách ở `/marketing`.
 
 ## Cấu trúc thư mục
 
@@ -72,7 +111,8 @@ src/
     leads/                màn danh sách + Server Actions
     reports/              màn báo cáo (hydrate từ SQL)
     login/                đăng nhập Supabase
-    settings/             danh mục & trạng thái tích hợp
+    settings/             danh mục, đồng bộ Facebook (ADMIN)
+    marketing/            insights Meta (Phase B)
     users/                quản lý tài khoản & phân quyền (ADMIN)
     api/
       ai/chat/            AI Chat — sinh export spec
@@ -87,7 +127,7 @@ src/
     ai/                   export spec, prompt, refine, model gateway
     reports/              buildReportSummary
   drizzle/                SQL migrations
-  scripts/seed.ts         nạp dữ liệu demo
+  scripts/seed.ts         nạp danh mục (tùy chọn lead demo)
 ```
 
 ## Phân quyền (RBAC)
