@@ -12,9 +12,13 @@ import { estimateCostUsd, getModelId, getProvider, isAiConfigured, PROVIDERS } f
 import { getViewer, listUnlinkedUsers } from "@/lib/auth/viewer";
 import { ASSIGNEES, SALES_ROOMS, SHOWROOMS, SOURCE_OPTIONS } from "@/lib/constants";
 import { getDb, isDatabaseConfigured } from "@/lib/db/client";
+import {
+  ensureFacebookPagesFromEnv,
+  listFacebookPages,
+} from "@/lib/db/facebook-pages-repo";
 import { getReferenceData } from "@/lib/db/leads-repo";
 import { metaSyncRuns } from "@/lib/db/schema";
-import { getFacebookConfig } from "@/lib/facebook/env";
+import { getFacebookConfig, isFacebookTokenConfigured } from "@/lib/facebook/env";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 
 export const metadata = { title: "Cài đặt — CRM THACO Auto" };
@@ -82,8 +86,14 @@ export default async function Page() {
     : null;
   const unlinked = dbConfigured ? await listUnlinkedUsers().catch(() => []) : [];
   const facebookConfig = getFacebookConfig();
-  const facebookConfigured = facebookConfig !== null;
+  const tokenConfigured = isFacebookTokenConfigured();
   const insightsConfigured = Boolean(facebookConfig?.adAccountId);
+  const facebookPages = dbConfigured
+    ? await (async () => {
+        await ensureFacebookPagesFromEnv().catch(() => 0);
+        return listFacebookPages();
+      })()
+    : [];
   const [leadSyncState, insightsSyncState] = dbConfigured
     ? await Promise.all([loadLastFacebookSync("leads"), loadLastFacebookSync("insights")])
     : [
@@ -211,9 +221,10 @@ export default async function Page() {
           <CardContent className="space-y-3 text-[13px]">
             <Row label="B10 (DDMS)" value="Đồng bộ thủ công — chưa nối API" />
             <FacebookSyncPanel
-              configured={facebookConfigured}
+              tokenConfigured={tokenConfigured}
               insightsConfigured={insightsConfigured}
               dbConfigured={dbConfigured}
+              pages={facebookPages}
               lastLeadSync={leadSyncState.lastSync}
               leadSyncError={leadSyncState.syncError}
               lastInsightsSync={insightsSyncState.lastSync}

@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db/client";
 import { activityLogs, leads, metaSyncRuns } from "@/lib/db/schema";
 
 import { getFacebookConfig } from "./env";
+import { resolveActiveFacebookPageIds } from "@/lib/db/facebook-pages-repo";
 import { FacebookGraphError, graphGetAllData } from "./graph-client";
 import { mapFacebookLeadFields, type FacebookFieldDatum } from "./map-lead";
 
@@ -85,7 +86,14 @@ async function fetchFormLeads(formId: string): Promise<FacebookLead[]> {
 export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
   const config = getFacebookConfig();
   if (!config) {
-    throw new Error("Facebook Graph is not configured");
+    throw new Error("Facebook Graph is not configured (thiếu FACEBOOK_ACCESS_TOKEN).");
+  }
+
+  const pageIds = await resolveActiveFacebookPageIds();
+  if (pageIds.length === 0) {
+    throw new Error(
+      "Chưa có Fanpage nào để đồng bộ. Thêm Page ID trong Cài đặt hoặc FACEBOOK_PAGE_IDS.",
+    );
   }
 
   const db = getDb();
@@ -111,7 +119,7 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
   }
 
   try {
-    for (const pageId of config.pageIds) {
+    for (const pageId of pageIds) {
       let forms: FacebookForm[];
       try {
         forms = await graphGetAllData<FacebookForm>(`/${pageId}/leadgen_forms`, {

@@ -7,10 +7,14 @@ const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   getFacebookConfig: vi.fn(),
   graphGetAllData: vi.fn(),
+  resolveActiveFacebookPageIds: vi.fn(),
 }));
 
 vi.mock("@/lib/db/client", () => ({ getDb: mocks.getDb }));
 vi.mock("./env", () => ({ getFacebookConfig: mocks.getFacebookConfig }));
+vi.mock("@/lib/db/facebook-pages-repo", () => ({
+  resolveActiveFacebookPageIds: mocks.resolveActiveFacebookPageIds,
+}));
 vi.mock("./graph-client", async (importOriginal) => {
   const original = await importOriginal<typeof import("./graph-client")>();
   return { ...original, graphGetAllData: mocks.graphGetAllData };
@@ -81,6 +85,7 @@ describe("syncFacebookLeads", () => {
       adAccountId: null,
       graphVersion: "v21.0",
     });
+    mocks.resolveActiveFacebookPageIds.mockResolvedValue(["page-1"]);
   });
 
   it("imports valid leads, skips missing phones, and records the run", async () => {

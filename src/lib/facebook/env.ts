@@ -1,8 +1,7 @@
 export type FacebookConfig = {
   token: string;
-  /** All Page IDs to sync Lead Ads from (at least one). */
+  /** Page IDs from env (bootstrap). Runtime sync prefers DB `facebook_pages`. */
   pageIds: string[];
-  /** First page id — convenience for callers that only need one. */
   pageId: string;
   adAccountId: string | null;
   graphVersion: string;
@@ -31,13 +30,21 @@ export function normalizeAdAccountId(value: string | null | undefined): string |
   return id.startsWith("act_") ? id : `act_${id}`;
 }
 
+export function isFacebookTokenConfigured(): boolean {
+  return Boolean(nonEmpty(process.env.FACEBOOK_ACCESS_TOKEN));
+}
+
+/**
+ * Token bắt buộc. Page có thể nằm trong DB (`facebook_pages`) thay vì env —
+ * khi đó `pageIds` từ env có thể rỗng.
+ */
 export function getFacebookConfig(): FacebookConfig | null {
   const token = nonEmpty(process.env.FACEBOOK_ACCESS_TOKEN);
-  const pageIds = parseFacebookPageIds();
-  if (!token || pageIds.length === 0) return null;
+  if (!token) return null;
 
+  const pageIds = parseFacebookPageIds();
   const adAccountId = normalizeAdAccountId(process.env.FACEBOOK_AD_ACCOUNT_ID);
   const graphVersion = nonEmpty(process.env.FACEBOOK_GRAPH_VERSION) ?? "v21.0";
 
-  return { token, pageIds, pageId: pageIds[0]!, adAccountId, graphVersion };
+  return { token, pageIds, pageId: pageIds[0] ?? "", adAccountId, graphVersion };
 }

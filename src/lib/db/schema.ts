@@ -242,6 +242,19 @@ export const metaSyncRuns = pgTable("meta_sync_runs", {
   message: text("message"),
 });
 
+/**
+ * Fanpage Meta dùng cho Lead Ads — CRM đa dự án/đa page.
+ * Sync lead lấy mọi page `active`; env FACEBOOK_PAGE_IDS chỉ bootstrap lần đầu.
+ */
+export const facebookPages = pgTable("facebook_pages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  facebookPageId: text("facebook_page_id").notNull().unique(),
+  name: text("name"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const activityLogs = pgTable(
   "activity_logs",
   {

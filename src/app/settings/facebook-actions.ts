@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 
 import { getViewer } from "@/lib/auth/viewer";
+import {
+  addFacebookPage,
+  removeFacebookPage,
+  setFacebookPageActive,
+  type FacebookPageRow,
+} from "@/lib/db/facebook-pages-repo";
 import { purgeSampleLeads } from "@/lib/facebook/purge-sample-leads";
 import {
   syncFacebookInsights,
@@ -20,6 +26,10 @@ export type SyncFacebookInsightsActionResult =
 
 export type PurgeSampleLeadsActionResult =
   | { ok: true; deleted: number }
+  | { ok: false; error: string };
+
+export type FacebookPageActionResult =
+  | { ok: true; page?: FacebookPageRow }
   | { ok: false; error: string };
 
 async function requireAdmin(): Promise<string | null> {
@@ -79,6 +89,57 @@ export async function purgeSampleLeadsAction(): Promise<PurgeSampleLeadsActionRe
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Xóa lead mẫu thất bại.",
+    };
+  }
+}
+
+export async function addFacebookPageAction(input: {
+  facebookPageId: string;
+  name?: string;
+}): Promise<FacebookPageActionResult> {
+  const gateError = await requireAdmin();
+  if (gateError) return { ok: false, error: gateError };
+  try {
+    const page = await addFacebookPage(input.facebookPageId, input.name ?? null);
+    revalidatePath("/settings");
+    return { ok: true, page };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Thêm Fanpage thất bại.",
+    };
+  }
+}
+
+export async function setFacebookPageActiveAction(input: {
+  id: string;
+  active: boolean;
+}): Promise<FacebookPageActionResult> {
+  const gateError = await requireAdmin();
+  if (gateError) return { ok: false, error: gateError };
+  try {
+    const page = await setFacebookPageActive(input.id, input.active);
+    revalidatePath("/settings");
+    return { ok: true, page };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Cập nhật Fanpage thất bại.",
+    };
+  }
+}
+
+export async function removeFacebookPageAction(id: string): Promise<FacebookPageActionResult> {
+  const gateError = await requireAdmin();
+  if (gateError) return { ok: false, error: gateError };
+  try {
+    await removeFacebookPage(id);
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Xóa Fanpage thất bại.",
     };
   }
 }
