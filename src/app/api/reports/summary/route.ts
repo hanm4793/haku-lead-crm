@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { canViewReports } from "@/lib/auth/roles";
 import { getViewer } from "@/lib/auth/viewer";
 import { leadFiltersSchema } from "@/lib/leads/query";
 import { PIVOT_DIMENSIONS, type PivotDimension } from "@/lib/metrics";
@@ -19,6 +20,9 @@ const requestSchema = z.object({
 export async function POST(request: Request) {
   const viewer = await getViewer();
   if (!viewer) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+  if (!canViewReports(viewer.role)) {
+    return NextResponse.json({ error: "Bạn không có quyền xem báo cáo." }, { status: 403 });
+  }
 
   const parsed = requestSchema.safeParse(await request.json());
   if (!parsed.success) {

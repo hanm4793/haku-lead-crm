@@ -64,6 +64,42 @@ export async function ensureFacebookPagesFromEnv(pageIds = parseFacebookPageIds(
   return inserted;
 }
 
+/** Ghi nhận fanpage xuất hiện trên ads. Không đổi trạng thái active của page đã có. */
+export async function ensureDiscoveredFacebookPages(pageIds: string[]): Promise<void> {
+  const unique = [...new Set(pageIds.map((id) => id.trim()).filter((id) => /^\d{5,}$/.test(id)))];
+  if (!isDatabaseConfigured() || unique.length === 0) return;
+
+  const db = getDb();
+  for (const facebookPageId of unique) {
+    const [existing] = await db
+      .select({ id: facebookPages.id, name: facebookPages.name })
+      .from(facebookPages)
+      .where(eq(facebookPages.facebookPageId, facebookPageId))
+      .limit(1);
+    if (existing?.name) continue;
+
+    let name: string | null = null;
+    try {
+      const page = await graphGet<{ name?: string }>(`/${facebookPageId}`, { fields: "name" });
+      name = page.name?.trim() || null;
+    } catch {
+      name = null;
+    }
+
+    if (existing) {
+      if (name) {
+        await db
+          .update(facebookPages)
+          .set({ name, updatedAt: new Date() })
+          .where(eq(facebookPages.id, existing.id));
+      }
+      continue;
+    }
+
+    await db.insert(facebookPages).values({ facebookPageId, name, active: true });
+  }
+}
+
 export async function addFacebookPage(facebookPageIdRaw: string, nameHint?: string | null) {
   const facebookPageId = facebookPageIdRaw.trim();
   if (!/^\d{5,}$/.test(facebookPageId)) {

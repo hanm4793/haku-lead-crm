@@ -1,4 +1,5 @@
-import Link from "next/link";
+﻿import Link from "next/link";
+import { redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 
 import {
@@ -9,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { estimateCostUsd, getModelId, getProvider, isAiConfigured, PROVIDERS } from "@/lib/ai/model";
+import { canManageSettings } from "@/lib/auth/roles";
 import { getViewer, listUnlinkedUsers } from "@/lib/auth/viewer";
 import { ASSIGNEES, SALES_ROOMS, SHOWROOMS, SOURCE_OPTIONS } from "@/lib/constants";
 import { getDb, isDatabaseConfigured } from "@/lib/db/client";
@@ -21,7 +23,7 @@ import { metaSyncRuns } from "@/lib/db/schema";
 import { getFacebookConfig, isFacebookTokenConfigured } from "@/lib/facebook/env";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 
-export const metadata = { title: "Cài đặt — CRM THACO Auto" };
+export const metadata = { title: "Cài đặt — SEMTOP Marketing CRM" };
 export const dynamic = "force-dynamic";
 
 const AI_ROADMAP = [
@@ -80,6 +82,7 @@ export default async function Page() {
   const dbConfigured = isDatabaseConfigured();
   const authConfigured = isSupabaseConfigured();
   const viewer = await getViewer();
+  if (viewer && !canManageSettings(viewer.role)) redirect("/leads");
 
   const reference = dbConfigured
     ? await getReferenceData().catch(() => null)
@@ -100,7 +103,7 @@ export default async function Page() {
         { lastSync: null, syncError: null },
         { lastSync: null, syncError: null },
       ];
-  const isAdmin = viewer?.role === "ADMIN";
+  const isAdmin = Boolean(viewer && canManageSettings(viewer.role));
 
   return (
     <div className="space-y-4 p-4">
@@ -135,7 +138,7 @@ export default async function Page() {
                 {unlinked.length} nhân sự chưa gắn tài khoản đăng nhập (gán email ở mục Tài khoản).
               </p>
             )}
-            {viewer?.role === "ADMIN" && (
+            {viewer?.role === "SUPER_ADMIN" && (
               <div className="pt-2">
                 <Button asChild variant="outline" size="sm">
                   <Link href="/users">Quản lý tài khoản &amp; phân quyền</Link>
@@ -219,7 +222,6 @@ export default async function Page() {
             <CardDescription>Kết nối hệ thống ngoài</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-[13px]">
-            <Row label="B10 (DDMS)" value="Đồng bộ thủ công — chưa nối API" />
             <FacebookSyncPanel
               tokenConfigured={tokenConfigured}
               insightsConfigured={insightsConfigured}

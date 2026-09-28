@@ -16,11 +16,25 @@ import { cn } from "@/lib/utils";
 export function ContactStatusCell({
   value,
   onChange,
+  editable = true,
 }: {
   value: ContactStatus;
   onChange: (next: ContactStatus) => void;
+  editable?: boolean;
 }) {
   const contacted = value === "DA_LIEN_HE";
+  const chip = (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
+        contacted ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700",
+      )}
+    >
+      {contacted ? <Check className="size-3" /> : <PhoneOff className="size-3" />}
+      {contacted ? "Đã liên hệ" : "Chưa liên hệ"}
+    </span>
+  );
+  if (!editable) return chip;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -65,11 +79,20 @@ const CATEGORY_CHIP_CLASS: Record<LeadCategory, string> = {
 export function CategoryCell({
   value,
   onChange,
+  editable = true,
 }: {
   value: LeadCategory;
   onChange: (next: LeadCategory) => void;
+  editable?: boolean;
 }) {
   const option = CATEGORY_OPTIONS.find((o) => o.value === value);
+  if (!editable) {
+    return (
+      <span className={cn("inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium", CATEGORY_CHIP_CLASS[value])}>
+        {option?.label ?? "—"}
+      </span>
+    );
+  }
 
   return (
     <DropdownMenu>

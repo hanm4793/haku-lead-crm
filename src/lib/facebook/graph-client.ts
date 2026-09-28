@@ -40,10 +40,16 @@ function requireConfig(): FacebookConfig {
   return config;
 }
 
+export type GraphRequestOptions = {
+  /** Override env user token — required for Page-scoped endpoints like leadgen_forms. */
+  accessToken?: string;
+};
+
 function buildGraphUrl(
   config: FacebookConfig,
   path: string,
   searchParams?: Record<string, string>,
+  accessToken = config.token,
 ): URL {
   const normalizedPath = path.replace(/^\//, "");
   const url = new URL(`https://graph.facebook.com/${config.graphVersion}/${normalizedPath}`);
@@ -53,7 +59,7 @@ function buildGraphUrl(
       url.searchParams.set(key, value);
     }
   }
-  url.searchParams.set("access_token", config.token);
+  url.searchParams.set("access_token", accessToken);
   return url;
 }
 
@@ -76,9 +82,10 @@ async function readGraphJson<T>(res: Response): Promise<T> {
 export async function graphGet<T>(
   path: string,
   searchParams?: Record<string, string>,
+  options?: GraphRequestOptions,
 ): Promise<T> {
   const config = requireConfig();
-  const url = buildGraphUrl(config, path, searchParams);
+  const url = buildGraphUrl(config, path, searchParams, options?.accessToken ?? config.token);
   const res = await fetch(url);
   return readGraphJson<T>(res);
 }
@@ -93,8 +100,10 @@ function pagingHasMore(paging: PagedGraphResponse<unknown>["paging"]): boolean {
 export async function graphGetAllData<T>(
   path: string,
   searchParams?: Record<string, string>,
+  options?: GraphRequestOptions,
 ): Promise<T[]> {
   const config = requireConfig();
+  const accessToken = options?.accessToken ?? config.token;
   const collected: T[] = [];
   let cursorParams: Record<string, string> | undefined = searchParams
     ? { ...searchParams }
@@ -105,7 +114,7 @@ export async function graphGetAllData<T>(
   while (pagesFetched < MAX_PAGING_PAGES) {
     const res: Response = nextPageUrl
       ? await fetch(nextPageUrl)
-      : await fetch(buildGraphUrl(config, path, cursorParams));
+      : await fetch(buildGraphUrl(config, path, cursorParams, accessToken));
 
     nextPageUrl = null;
     const body: PagedGraphResponse<T> = await readGraphJson<PagedGraphResponse<T>>(res);

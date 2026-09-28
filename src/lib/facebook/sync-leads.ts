@@ -1,12 +1,13 @@
 import { eq } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
-import { activityLogs, leads, metaSyncRuns } from "@/lib/db/schema";
+import { activityLogs, facebookPages, leads, metaSyncRuns } from "@/lib/db/schema";
 
 import { getFacebookConfig } from "./env";
 import { resolveActiveFacebookPageIds } from "@/lib/db/facebook-pages-repo";
 import { FacebookGraphError, graphGetAllData } from "./graph-client";
 import { mapFacebookLeadFields, type FacebookFieldDatum } from "./map-lead";
+import { resolvePageAccessTokens } from "./page-tokens";
 
 export interface SyncLeadsResult {
   imported: number;
@@ -70,17 +71,30 @@ function isInvalidFieldError(error: unknown): error is FacebookGraphError {
   );
 }
 
-async function fetchFormLeads(formId: string): Promise<FacebookLead[]> {
+async function fetchFormLeads(formId: string, pageAccessToken: string): Promise<FacebookLead[]> {
   try {
-    return await graphGetAllData<FacebookLead>(`/${formId}/leads`, {
-      fields: DETAILED_LEAD_FIELDS,
-    });
+    return await graphGetAllData<FacebookLead>(
+      `/${formId}/leads`,
+      { fields: DETAILED_LEAD_FIELDS },
+      { accessToken: pageAccessToken },
+    );
   } catch (error) {
     if (!isInvalidFieldError(error)) throw error;
-    return graphGetAllData<FacebookLead>(`/${formId}/leads`, {
-      fields: BASIC_LEAD_FIELDS,
-    });
+    return graphGetAllData<FacebookLead>(
+      `/${formId}/leads`,
+      { fields: BASIC_LEAD_FIELDS },
+      { accessToken: pageAccessToken },
+    );
   }
+}
+
+async function refreshFacebookPageName(pageId: string, name: string | null) {
+  if (!name) return;
+  const db = getDb();
+  await db
+    .update(facebookPages)
+    .set({ name, updatedAt: new Date() })
+    .where(eq(facebookPages.facebookPageId, pageId));
 }
 
 export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
@@ -119,12 +133,28 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
   }
 
   try {
+    const pageTokens = await resolvePageAccessTokens(pageIds);
+
     for (const pageId of pageIds) {
+      const pageAuth = pageTokens.get(pageId);
+      if (!pageAuth) {
+        recordError(
+          new Error(
+            `Page ${pageId}: thiếu Page Access Token (user token chưa có quyền Page này).`,
+          ),
+        );
+        continue;
+      }
+
+      await refreshFacebookPageName(pageId, pageAuth.name).catch(() => undefined);
+
       let forms: FacebookForm[];
       try {
-        forms = await graphGetAllData<FacebookForm>(`/${pageId}/leadgen_forms`, {
-          fields: "id,name",
-        });
+        forms = await graphGetAllData<FacebookForm>(
+          `/${pageId}/leadgen_forms`,
+          { fields: "id,name" },
+          { accessToken: pageAuth.token },
+        );
       } catch (error) {
         recordError(new Error(`Page ${pageId}: ${errorMessage(error)}`));
         continue;
@@ -133,7 +163,7 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
       for (const form of forms) {
         let formLeads: FacebookLead[];
         try {
-          formLeads = await fetchFormLeads(form.id);
+          formLeads = await fetchFormLeads(form.id, pageAuth.token);
         } catch (error) {
           recordError(error);
           continue;
@@ -144,10 +174,6 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
             campaignName: facebookLead.campaign_name,
             adName: facebookLead.ad_name,
           });
-          if (!mapped.ok) {
-            counts.skipped += 1;
-            continue;
-          }
 
           try {
             const [existing] = await db

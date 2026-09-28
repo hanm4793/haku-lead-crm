@@ -1,7 +1,6 @@
 import { ASSIGNEES, CAR_MODELS_BY_BRAND, SALES_ROOMS, SHOWROOMS } from "./constants";
 import type {
   ActivityLog,
-  B10Status,
   Brand,
   ChannelDetail,
   FailReason,
@@ -167,13 +166,6 @@ function buildLead(index: number, rng: () => number, now: Date): Lead {
   const hasCarModel = interested ? rng() < 0.86 : rng() < 0.55;
   const carModel = hasCarModel ? pick(rng, CAR_MODELS_BY_BRAND[brand]) : null;
 
-  const pushedToB10 = interested ? rng() < 0.72 : rng() < 0.28;
-  const b10Status: B10Status = pushedToB10
-    ? rng() < 0.94
-      ? "DA_CO_TREN_B10"
-      : "TRUNG_B10"
-    : "CHUA_CO_TREN_B10";
-
   const contactCount = contacted ? 1 + Math.floor(rng() * 4) : 0;
 
   const lastContactAt = contacted
@@ -194,6 +186,7 @@ function buildLead(index: number, rng: () => number, now: Date): Lead {
   const showroom = pick(rng, SHOWROOMS);
   const salesRoom = pick(rng, SALES_ROOMS);
   const assignee = rng() < 0.94 ? pick(rng, ASSIGNEES) : null;
+  const assigneeId = null;
 
   return {
     id: `LEAD-${String(index + 1).padStart(5, "0")}`,
@@ -203,14 +196,12 @@ function buildLead(index: number, rng: () => number, now: Date): Lead {
     contactStatus: contacted ? "DA_LIEN_HE" : "CHUA_LIEN_HE",
     category,
     failReason,
-    pushedToB10,
-    b10Status,
-    b10CareNote: pushedToB10 && rng() < 0.4 ? pick(rng, CARE_NOTES) : null,
     source,
     channelDetail,
     brand,
     showroom,
     salesRoom,
+    assigneeId,
     assignee,
     carModel,
     careNote: contacted && rng() < 0.5 ? pick(rng, CARE_NOTES) : null,
@@ -220,6 +211,7 @@ function buildLead(index: number, rng: () => number, now: Date): Lead {
     campaign: source === "FACEBOOK" || source === "TIKTOK" || source === "GOOGLE" ? pick(rng, CAMPAIGNS) : null,
     adContent: source === "FACEBOOK" || source === "TIKTOK" ? pick(rng, AD_CONTENTS) : null,
     costPerLead: source === "HOTLINE" ? null : Math.round((80 + rng() * 320) * 1000),
+    facebookPageId: null,
   };
 }
 
@@ -267,11 +259,6 @@ function buildActivityLogs(lead: Lead, rng: () => number): ActivityLog[] {
   if (lead.category !== "CHUA_PHAN_LOAI") {
     cursor += 4 * 60_000;
     push("CATEGORY_CHANGE", `Cập nhật phân loại: ${lead.category}.`, actor);
-  }
-
-  if (lead.pushedToB10) {
-    cursor += 30 * 60_000;
-    push("B10_SYNC", "Đồng bộ B10 (DDMS): đã đối soát.", "Hệ thống");
   }
 
   return logs.sort((a, b) => b.at.localeCompare(a.at));

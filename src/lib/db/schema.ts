@@ -6,15 +6,16 @@ import {
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 import type {
   ActivityKind,
-  B10Status,
   Brand,
   ChannelDetail,
   ContactStatus,
@@ -65,11 +66,6 @@ export const failReasonEnum = pgEnum(
   }),
 );
 
-export const b10StatusEnum = pgEnum(
-  "b10_status",
-  enumValues<B10Status>({ CHUA_CO_TREN_B10: true, DA_CO_TREN_B10: true, TRUNG_B10: true }),
-);
-
 export const leadSourceEnum = pgEnum(
   "lead_source",
   enumValues<LeadSource>({
@@ -100,13 +96,12 @@ export const activityKindEnum = pgEnum(
     CATEGORY_CHANGE: true,
     ASSIGN_CHANGE: true,
     MISSED_CALL: true,
-    B10_SYNC: true,
     NOTE: true,
     CREATE: true,
   }),
 );
 
-export const userRoleEnum = pgEnum("user_role", ["ADMIN", "SHOWROOM_MANAGER", "SALES"]);
+export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "PARTNER_ADMIN", "STAFF"]);
 
 export const metaInsightLevelEnum = pgEnum("meta_insight_level", ["campaign", "adset", "ad"]);
 export const metaSyncKindEnum = pgEnum("meta_sync_kind", ["leads", "insights"]);
@@ -128,10 +123,26 @@ export const appUsers = pgTable("app_users", {
   authUserId: uuid("auth_user_id").unique(),
   email: text("email").unique(),
   fullName: text("full_name").notNull(),
-  role: userRoleEnum("role").notNull().default("SALES"),
+  role: userRoleEnum("role").notNull().default("STAFF"),
   showroomId: uuid("showroom_id").references(() => showrooms.id, { onDelete: "set null" }),
+  /** Staff thuộc partner-admin này và nhìn đúng các fanpage của partner. */
+  partnerId: uuid("partner_id").references((): AnyPgColumn => appUsers.id, { onDelete: "set null" }),
+  /** Super admin bật cho từng partner-admin. Super admin luôn dùng được AI. */
+  aiEnabled: boolean("ai_enabled").notNull().default(false),
   active: boolean("active").notNull().default(true),
 });
+
+/** Fanpage mà partner-admin được xem lead và marketing. */
+export const userFacebookPages = pgTable(
+  "user_facebook_pages",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    facebookPageId: text("facebook_page_id").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.facebookPageId] })],
+);
 
 export const salesRooms = pgTable("sales_rooms", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -164,10 +175,6 @@ export const leads = pgTable(
     contactStatus: contactStatusEnum("contact_status").notNull().default("CHUA_LIEN_HE"),
     category: leadCategoryEnum("category").notNull().default("CHUA_PHAN_LOAI"),
     failReason: failReasonEnum("fail_reason"),
-
-    pushedToB10: boolean("pushed_to_b10").notNull().default(false),
-    b10Status: b10StatusEnum("b10_status").notNull().default("CHUA_CO_TREN_B10"),
-    b10CareNote: text("b10_care_note"),
 
     source: leadSourceEnum("source").notNull(),
     channelDetail: channelDetailEnum("channel_detail").notNull(),
@@ -213,6 +220,11 @@ export const metaAdInsights = pgTable(
     level: metaInsightLevelEnum("level").notNull(),
     objectId: text("object_id").notNull(),
     objectName: text("object_name"),
+    campaignId: text("campaign_id"),
+    campaignName: text("campaign_name"),
+    adsetId: text("adset_id"),
+    adsetName: text("adset_name"),
+    pageId: text("page_id"),
     dateStart: timestamp("date_start", { withTimezone: true }).notNull(),
     dateStop: timestamp("date_stop", { withTimezone: true }),
     spend: doublePrecision("spend"),
@@ -226,7 +238,11 @@ export const metaAdInsights = pgTable(
     costPerLead: doublePrecision("cost_per_lead"),
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [unique("meta_ad_insights_level_object_date").on(t.level, t.objectId, t.dateStart)],
+  (t) => [
+    unique("meta_ad_insights_level_object_date").on(t.level, t.objectId, t.dateStart),
+    index("meta_ad_insights_page_idx").on(t.pageId),
+    index("meta_ad_insights_campaign_idx").on(t.campaignId),
+  ],
 );
 
 export const metaSyncRuns = pgTable("meta_sync_runs", {

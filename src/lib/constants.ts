@@ -1,5 +1,4 @@
 import type {
-  B10Status,
   Brand,
   ChannelDetail,
   ContactStatus,
@@ -90,12 +89,6 @@ export const BRAND_OPTIONS: Option<Brand>[] = [
   { value: "PEUGEOT", label: "Peugeot" },
   { value: "BMW", label: "BMW" },
 ];
-
-export const B10_STATUS_LABEL: Record<B10Status, string> = {
-  CHUA_CO_TREN_B10: "Chưa có trên B10",
-  DA_CO_TREN_B10: "Đã có trên B10",
-  TRUNG_B10: "Trùng trên B10",
-};
 
 export const SHOWROOMS = [
   "Trần Khát Chân",

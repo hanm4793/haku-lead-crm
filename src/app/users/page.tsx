@@ -1,17 +1,19 @@
-import { redirect } from "next/navigation";
+﻿import { redirect } from "next/navigation";
 
 import { UsersAdmin } from "@/components/users/users-admin";
+import { canManageUsers } from "@/lib/auth/roles";
 import { getViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
-import { listManagedUsers, listShowroomOptions } from "@/lib/db/users-repo";
+import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
+import { listManagedUsers } from "@/lib/db/users-repo";
 
-export const metadata = { title: "Tài khoản — CRM THACO Auto" };
+export const metadata = { title: "Tài khoản — SEMTOP Marketing CRM" };
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const viewer = await getViewer();
   if (!viewer) redirect("/login?next=%2Fusers");
-  if (viewer.role !== "ADMIN") redirect("/leads");
+  if (!canManageUsers(viewer.role)) redirect("/leads");
 
   if (!isDatabaseConfigured()) {
     return (
@@ -24,9 +26,24 @@ export default async function Page() {
     );
   }
 
-  const [users, showrooms] = await Promise.all([listManagedUsers(), listShowroomOptions()]);
+  const [users, facebookPages] = await Promise.all([listManagedUsers(viewer), listFacebookPages()]);
+  const pages = facebookPages
+    .filter((page) => page.active)
+    .map((page) => ({
+      value: page.facebookPageId,
+      label: page.name?.trim() || page.facebookPageId,
+    }));
+  const partners = users
+    .filter((user) => user.role === "PARTNER_ADMIN")
+    .map((user) => ({ id: user.id, name: user.fullName }));
 
   return (
-    <UsersAdmin initialUsers={users} showrooms={showrooms} currentUserId={viewer.appUserId ?? null} />
+    <UsersAdmin
+      initialUsers={users}
+      pages={pages}
+      partners={partners}
+      actorRole={viewer.role}
+      currentUserId={viewer.appUserId ?? null}
+    />
   );
 }

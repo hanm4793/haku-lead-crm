@@ -29,12 +29,6 @@ const METRIC_COLUMNS: MetricColumn[] = [
   { id: "failed", header: "Loại", kind: "count", tone: "danger" },
   { id: "failRate", header: "Tỷ lệ loại", kind: "percent", tone: "danger" },
   { id: "overdue", header: "Quá hạn", kind: "count" },
-  { id: "pushedB10", header: "Lên B10", kind: "count" },
-  { id: "b10Rate", header: "% B10", kind: "percent", tone: "muted" },
-  { id: "khqtB10", header: "KHQT-B10", kind: "count" },
-  { id: "gdtdB10", header: "GDTD-B10", kind: "count" },
-  { id: "khdB10", header: "KHĐ-B10", kind: "count" },
-  { id: "failedB10", header: "Loại-B10", kind: "count", tone: "danger" },
 ];
 
 const DEFAULT_METRICS = METRIC_COLUMNS.map((c) => c.id as string);

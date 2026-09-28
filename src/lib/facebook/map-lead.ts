@@ -1,14 +1,11 @@
 export type FacebookFieldDatum = { name: string; values: string[] };
 
-export type MappedFacebookLead =
-  | {
-      ok: true;
-      phone: string;
-      name: string | null;
-      campaign: string | null;
-      adContent: string | null;
-    }
-  | { ok: false; reason: "missing_phone" };
+export type MappedFacebookLead = {
+  phone: string;
+  name: string | null;
+  campaign: string | null;
+  adContent: string | null;
+};
 
 const PHONE_KEYS = new Set(["phone_number", "phone", "mobile_phone"]);
 
@@ -56,22 +53,15 @@ function nonEmptyMeta(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/** Map Meta field_data → CRM fields. Thiếu SĐT vẫn import (phone = ""). */
 export function mapFacebookLeadFields(
   fieldData: FacebookFieldDatum[],
   meta?: { campaignName?: string | null; adName?: string | null },
 ): MappedFacebookLead {
   const rawPhone = firstValue(fieldData, PHONE_KEYS);
-  if (rawPhone == null) {
-    return { ok: false, reason: "missing_phone" };
-  }
-
-  const phone = normalizePhone(rawPhone);
-  if (phone == null) {
-    return { ok: false, reason: "missing_phone" };
-  }
+  const phone = rawPhone ? normalizePhone(rawPhone) ?? "" : "";
 
   return {
-    ok: true,
     phone,
     name: resolveName(fieldData),
     campaign: nonEmptyMeta(meta?.campaignName),

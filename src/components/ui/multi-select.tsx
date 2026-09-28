@@ -19,6 +19,7 @@ export function MultiSelect({
   placeholder = "Tất cả",
   searchable = true,
   className,
+  contentClassName,
 }: {
   options: MultiSelectOption[];
   selected: string[];
@@ -26,6 +27,7 @@ export function MultiSelect({
   placeholder?: string;
   searchable?: boolean;
   className?: string;
+  contentClassName?: string;
 }) {
   const [query, setQuery] = React.useState("");
 
@@ -59,7 +61,7 @@ export function MultiSelect({
         <span className="truncate">{label}</span>
         <ChevronDown className="size-4 shrink-0 opacity-60" />
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-2">
+      <PopoverContent className={cn("w-64 p-2", contentClassName)}>
         {searchable && (
           <div className="relative mb-2">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />

@@ -31,18 +31,28 @@ describe("Facebook settings actions", () => {
     vi.clearAllMocks();
   });
 
-  it("rejects non-admin viewers without starting a sync", async () => {
-    mocks.getViewer.mockResolvedValue({ role: "SALES" });
+  it("rejects partner admins without starting a sync", async () => {
+    mocks.getViewer.mockResolvedValue({ role: "PARTNER_ADMIN" });
 
     await expect(syncFacebookLeadsAction()).resolves.toEqual({
       ok: false,
-      error: "Chỉ ADMIN mới đồng bộ dữ liệu Facebook.",
+      error: "Chỉ super admin mới đồng bộ dữ liệu Facebook.",
+    });
+    expect(mocks.syncFacebookLeads).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-admin viewers without starting a sync", async () => {
+    mocks.getViewer.mockResolvedValue({ role: "STAFF" });
+
+    await expect(syncFacebookLeadsAction()).resolves.toEqual({
+      ok: false,
+      error: "Chỉ super admin mới đồng bộ dữ liệu Facebook.",
     });
     expect(mocks.syncFacebookLeads).not.toHaveBeenCalled();
   });
 
   it("runs sync for admins and revalidates affected pages", async () => {
-    mocks.getViewer.mockResolvedValue({ role: "ADMIN" });
+    mocks.getViewer.mockResolvedValue({ role: "SUPER_ADMIN" });
     const result = {
       imported: 2,
       updated: 1,
@@ -59,7 +69,7 @@ describe("Facebook settings actions", () => {
   });
 
   it("purges sample leads for admins", async () => {
-    mocks.getViewer.mockResolvedValue({ role: "ADMIN" });
+    mocks.getViewer.mockResolvedValue({ role: "SUPER_ADMIN" });
     mocks.purgeSampleLeads.mockResolvedValue({ deleted: 4 });
 
     await expect(purgeSampleLeadsAction()).resolves.toEqual({ ok: true, deleted: 4 });
@@ -68,17 +78,17 @@ describe("Facebook settings actions", () => {
   });
 
   it("rejects Insights sync for non-admin viewers", async () => {
-    mocks.getViewer.mockResolvedValue({ role: "SALES" });
+    mocks.getViewer.mockResolvedValue({ role: "STAFF" });
 
     await expect(syncFacebookInsightsAction()).resolves.toEqual({
       ok: false,
-      error: "Chỉ ADMIN mới đồng bộ dữ liệu Facebook.",
+      error: "Chỉ super admin mới đồng bộ dữ liệu Facebook.",
     });
     expect(mocks.syncFacebookInsights).not.toHaveBeenCalled();
   });
 
   it("runs Insights sync for admins and revalidates Marketing", async () => {
-    mocks.getViewer.mockResolvedValue({ role: "ADMIN" });
+    mocks.getViewer.mockResolvedValue({ role: "SUPER_ADMIN" });
     const result = {
       imported: 1,
       updated: 2,

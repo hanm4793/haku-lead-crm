@@ -14,6 +14,7 @@ import {
   criteriaFromLeadFilters,
   dueTodaySql,
   overdueSql,
+  type LeadCriteria,
   type ViewerScope,
 } from "@/lib/db/leads-repo";
 import { appUsers, carModels, leads, salesRooms, showrooms } from "@/lib/db/schema";
@@ -37,8 +38,13 @@ import { ratio } from "@/lib/utils";
  * date_trunc, GROUP BY) thay vì kéo toàn bộ lead về bộ nhớ.
  */
 
-function whereClause(filters: LeadFilters, viewer: ViewerScope, now: Date) {
-  const parts = criteriaConditions(criteriaFromLeadFilters(filters), viewer, now);
+function whereClause(
+  filters: LeadFilters,
+  viewer: ViewerScope,
+  now: Date,
+  extra?: Partial<LeadCriteria>,
+) {
+  const parts = criteriaConditions({ ...criteriaFromLeadFilters(filters), ...extra }, viewer, now);
   return parts.length ? and(...parts) : undefined;
 }
 
@@ -104,11 +110,6 @@ const PIVOT_METRICS = {
   khd: sql<number>`count(*) filter (where ${leads.category} = 'KHD')::int`,
   failed: sql<number>`count(*) filter (where ${leads.category} = 'FAIL')::int`,
   overdue: (now: Date) => sql<number>`count(*) filter (where ${overdueSql(now)})::int`,
-  pushedB10: sql<number>`count(*) filter (where ${leads.pushedToB10})::int`,
-  khqtB10: sql<number>`count(*) filter (where ${leads.pushedToB10} and ${leads.category} in ('KHQT', 'GDTD', 'KHD'))::int`,
-  gdtdB10: sql<number>`count(*) filter (where ${leads.pushedToB10} and ${leads.category} in ('GDTD', 'KHD'))::int`,
-  khdB10: sql<number>`count(*) filter (where ${leads.pushedToB10} and ${leads.category} = 'KHD')::int`,
-  failedB10: sql<number>`count(*) filter (where ${leads.pushedToB10} and ${leads.category} = 'FAIL')::int`,
 };
 
 function finalizePivotRow(
@@ -121,11 +122,6 @@ function finalizePivotRow(
     khd: number;
     failed: number;
     overdue: number;
-    pushedB10: number;
-    khqtB10: number;
-    gdtdB10: number;
-    khdB10: number;
-    failedB10: number;
   },
   grandTotal: number,
 ): PivotRow {
@@ -142,16 +138,15 @@ function finalizePivotRow(
     failed: raw.failed,
     failRate: ratio(raw.failed, raw.leads),
     overdue: raw.overdue,
-    pushedB10: raw.pushedB10,
-    b10Rate: ratio(raw.pushedB10, raw.leads),
-    khqtB10: raw.khqtB10,
-    gdtdB10: raw.gdtdB10,
-    khdB10: raw.khdB10,
-    failedB10: raw.failedB10,
   };
 }
 
-async function selectKpiRow(filters: LeadFilters, viewer: ViewerScope, now: Date) {
+async function selectKpiRow(
+  filters: LeadFilters,
+  viewer: ViewerScope,
+  now: Date,
+  extra?: Partial<LeadCriteria>,
+) {
   const [row] = await getDb()
     .select({
       total: sql<number>`count(*)::int`,
@@ -167,7 +162,7 @@ async function selectKpiRow(filters: LeadFilters, viewer: ViewerScope, now: Date
     .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(carModels, eq(leads.carModelId, carModels.id))
-    .where(whereClause(filters, viewer, now));
+    .where(whereClause(filters, viewer, now, extra));
 
   return row;
 }
@@ -176,8 +171,9 @@ export async function queryReportKpis(
   filters: LeadFilters,
   viewer: ViewerScope,
   now: Date,
+  extra?: Partial<LeadCriteria>,
 ): Promise<LeadKpis> {
-  const row = await selectKpiRow(filters, viewer, now);
+  const row = await selectKpiRow(filters, viewer, now, extra);
   return {
     total: row.total,
     contacted: row.contacted,
@@ -412,6 +408,7 @@ async function queryPivotGrouped(
   now: Date,
   groupBy: PivotDimension,
   splitBy: PivotDimension | null,
+  extra?: Partial<LeadCriteria>,
 ): Promise<PivotResult> {
   const groupExpr = dimensionExpr(groupBy);
 
@@ -426,18 +423,13 @@ async function queryPivotGrouped(
         khd: PIVOT_METRICS.khd,
         failed: PIVOT_METRICS.failed,
         overdue: PIVOT_METRICS.overdue(now),
-        pushedB10: PIVOT_METRICS.pushedB10,
-        khqtB10: PIVOT_METRICS.khqtB10,
-        gdtdB10: PIVOT_METRICS.gdtdB10,
-        khdB10: PIVOT_METRICS.khdB10,
-        failedB10: PIVOT_METRICS.failedB10,
       })
       .from(leads)
       .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
       .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
       .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
       .leftJoin(carModels, eq(leads.carModelId, carModels.id))
-      .where(whereClause(filters, viewer, now))
+      .where(whereClause(filters, viewer, now, extra))
       .groupBy(sql`1`)
       .orderBy(desc(sql`count(*)`));
 
@@ -453,11 +445,6 @@ async function queryPivotGrouped(
         khd: list.reduce((s, r) => s + r.khd, 0),
         failed: list.reduce((s, r) => s + r.failed, 0),
         overdue: list.reduce((s, r) => s + r.overdue, 0),
-        pushedB10: list.reduce((s, r) => s + r.pushedB10, 0),
-        khqtB10: list.reduce((s, r) => s + r.khqtB10, 0),
-        gdtdB10: list.reduce((s, r) => s + r.gdtdB10, 0),
-        khdB10: list.reduce((s, r) => s + r.khdB10, 0),
-        failedB10: list.reduce((s, r) => s + r.failedB10, 0),
       },
       grandTotal,
     );
@@ -477,18 +464,13 @@ async function queryPivotGrouped(
       khd: PIVOT_METRICS.khd,
       failed: PIVOT_METRICS.failed,
       overdue: PIVOT_METRICS.overdue(now),
-      pushedB10: PIVOT_METRICS.pushedB10,
-      khqtB10: PIVOT_METRICS.khqtB10,
-      gdtdB10: PIVOT_METRICS.gdtdB10,
-      khdB10: PIVOT_METRICS.khdB10,
-      failedB10: PIVOT_METRICS.failedB10,
     })
     .from(leads)
     .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
     .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(carModels, eq(leads.carModelId, carModels.id))
-    .where(whereClause(filters, viewer, now))
+    .where(whereClause(filters, viewer, now, extra))
     .groupBy(sql`1`, sql`2`);
 
   const grouped = new Map<string, typeof rows>();
@@ -508,11 +490,6 @@ async function queryPivotGrouped(
     khd: cells.reduce((s, r) => s + r.khd, 0),
     failed: cells.reduce((s, r) => s + r.failed, 0),
     overdue: cells.reduce((s, r) => s + r.overdue, 0),
-    pushedB10: cells.reduce((s, r) => s + r.pushedB10, 0),
-    khqtB10: cells.reduce((s, r) => s + r.khqtB10, 0),
-    gdtdB10: cells.reduce((s, r) => s + r.gdtdB10, 0),
-    khdB10: cells.reduce((s, r) => s + r.khdB10, 0),
-    failedB10: cells.reduce((s, r) => s + r.failedB10, 0),
   });
 
   const grandTotal = rows.reduce((sum, row) => sum + row.leads, 0);
@@ -544,8 +521,9 @@ export async function queryPivot(
   now: Date,
   groupBy: PivotDimension,
   splitBy: PivotDimension | null,
+  extra?: Partial<LeadCriteria>,
 ): Promise<PivotResult> {
-  return queryPivotGrouped(filters, viewer, now, groupBy, splitBy);
+  return queryPivotGrouped(filters, viewer, now, groupBy, splitBy, extra);
 }
 
 /** Danh sách cần gọi hôm nay / quá hạn — vài lead thật để mở popup chi tiết. */
@@ -570,14 +548,12 @@ export async function queryCallList(
       contactStatus: leads.contactStatus,
       category: leads.category,
       failReason: leads.failReason,
-      pushedToB10: leads.pushedToB10,
-      b10Status: leads.b10Status,
-      b10CareNote: leads.b10CareNote,
       source: leads.source,
       channelDetail: leads.channelDetail,
       brand: leads.brand,
       showroom: showrooms.name,
       salesRoom: salesRooms.name,
+      assigneeId: leads.assigneeId,
       assignee: appUsers.fullName,
       carModel: carModels.name,
       careNote: leads.careNote,
@@ -587,6 +563,7 @@ export async function queryCallList(
       campaign: leads.campaign,
       adContent: leads.adContent,
       costPerLead: leads.costPerLead,
+      facebookPageId: leads.facebookPageId,
     })
     .from(leads)
     .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))

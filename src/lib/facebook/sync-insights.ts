@@ -1,10 +1,12 @@
 import { eq, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
+import { ensureDiscoveredFacebookPages } from "@/lib/db/facebook-pages-repo";
 import { metaAdInsights, metaSyncRuns } from "@/lib/db/schema";
 
+import { pageIdFromCreative, type AdCreative } from "./ad-page";
 import { getFacebookConfig } from "./env";
-import { graphGetAllData } from "./graph-client";
+import { FacebookGraphError, graphGetAllData } from "./graph-client";
 
 export interface SyncInsightsResult {
   imported: number;
@@ -22,9 +24,13 @@ type ActionValue = {
   value?: string;
 };
 
-type FacebookCampaignInsight = {
+type FacebookInsight = {
   campaign_id?: string;
   campaign_name?: string;
+  adset_id?: string;
+  adset_name?: string;
+  ad_id?: string;
+  ad_name?: string;
   date_start?: string;
   date_stop?: string;
   spend?: string;
@@ -38,8 +44,15 @@ type FacebookCampaignInsight = {
   cost_per_action_type?: ActionValue[];
 };
 
-const INSIGHT_FIELDS =
-  "campaign_id,campaign_name,spend,impressions,clicks,reach,actions,cpc,cpm,ctr,cost_per_action_type";
+type FacebookAdCatalogItem = {
+  id?: string;
+  creative?: AdCreative | null;
+};
+
+const METRIC_FIELDS = "spend,impressions,clicks,reach,actions,cpc,cpm,ctr,cost_per_action_type";
+const CAMPAIGN_FIELDS = `campaign_id,campaign_name,${METRIC_FIELDS}`;
+const AD_FIELDS = `ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,${METRIC_FIELDS}`;
+const INSIGHT_LIMIT = "500";
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const PREFERRED_LEAD_ACTIONS = [
   "lead",
@@ -129,6 +142,66 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown Insights sync error";
 }
 
+function metricValues(row: FacebookInsight) {
+  const leadAction = canonicalLeadAction(row.actions);
+  return {
+    dateStop: row.date_stop ? parseUtcDate(row.date_stop) : null,
+    spend: finiteNumber(row.spend),
+    impressions: integer(row.impressions),
+    clicks: integer(row.clicks),
+    reach: integer(row.reach),
+    leads: leadAction ? Math.round(leadAction.value) : null,
+    cpc: finiteNumber(row.cpc),
+    cpm: finiteNumber(row.cpm),
+    ctr: finiteNumber(row.ctr),
+    costPerLead: leadAction ? matchingLeadCost(row.cost_per_action_type, leadAction.actionType) : null,
+    syncedAt: new Date(),
+  };
+}
+
+async function loadPageByAdId(adAccountId: string): Promise<Map<string, string>> {
+  const ads = await withGraphRetry(() =>
+    graphGetAllData<FacebookAdCatalogItem>(`/${adAccountId}/ads`, {
+      fields: "id,creative{actor_id,effective_object_story_id,object_story_spec}",
+      limit: "200",
+    }),
+  );
+  const pages = new Map<string, string>();
+  for (const ad of ads) {
+    const adId = optionalText(ad.id);
+    const pageId = pageIdFromCreative(ad.creative);
+    if (adId && pageId) pages.set(adId, pageId);
+  }
+  return pages;
+}
+
+function dateWindows(since: string, until: string, days: number) {
+  const windows: { since: string; until: string }[] = [];
+  let cursor: Date | null = parseUtcDate(since);
+  const end = parseUtcDate(until);
+  if (!cursor || !end) return [{ since, until }];
+  while (cursor <= end) {
+    const windowEnd: Date = new Date(cursor);
+    windowEnd.setUTCDate(windowEnd.getUTCDate() + days - 1);
+    const untilDate: Date = windowEnd > end ? end : windowEnd;
+    windows.push({ since: toUtcDateString(cursor), until: toUtcDateString(untilDate) });
+    const next: Date = new Date(untilDate);
+    next.setUTCDate(next.getUTCDate() + 1);
+    cursor = next;
+  }
+  return windows;
+}
+
+async function withGraphRetry<T>(request: () => Promise<T>): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    if (!(error instanceof FacebookGraphError) || (error.code !== 1 && error.status < 500)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return request();
+  }
+}
+
 export async function syncFacebookInsights(options?: {
   since?: string;
   until?: string;
@@ -154,45 +227,90 @@ export async function syncFacebookInsights(options?: {
   const errors: string[] = [];
 
   try {
-    const rows = await graphGetAllData<FacebookCampaignInsight>(
-      `/${config.adAccountId}/insights`,
-      {
-        level: "campaign",
-        time_increment: "1",
-        time_range: JSON.stringify({ since, until }),
-        fields: INSIGHT_FIELDS,
-      },
-    );
+    const campaignRows: FacebookInsight[] = [];
+    for (const window of dateWindows(since, until, 7)) {
+      const chunk = await withGraphRetry(() =>
+        graphGetAllData<FacebookInsight>(`/${config.adAccountId}/insights`, {
+          level: "campaign",
+          time_increment: "1",
+          time_range: JSON.stringify(window),
+          limit: INSIGHT_LIMIT,
+          fields: CAMPAIGN_FIELDS,
+        }),
+      );
+      campaignRows.push(...chunk);
+    }
+    const adRows: FacebookInsight[] = [];
+    for (const window of dateWindows(since, until, 7)) {
+      const chunk = await withGraphRetry(() =>
+        graphGetAllData<FacebookInsight>(`/${config.adAccountId}/insights`, {
+          level: "ad",
+          time_increment: "1",
+          time_range: JSON.stringify(window),
+          limit: INSIGHT_LIMIT,
+          fields: AD_FIELDS,
+        }),
+      );
+      adRows.push(...chunk);
+    }
 
-    for (const row of rows) {
+    let pageByAd = new Map<string, string>();
+    try {
+      pageByAd = await loadPageByAdId(config.adAccountId);
+    } catch (error) {
+      counts.errors += 1;
+      errors.push(errorMessage(error));
+    }
+    try {
+      await ensureDiscoveredFacebookPages([...pageByAd.values()]);
+    } catch {
+      // Tên fanpage chỉ để hiển thị. Thiếu tên không làm hỏng số liệu ads.
+    }
+
+    const writes: Array<typeof metaAdInsights.$inferInsert> = [];
+    for (const row of campaignRows) {
       const objectId = optionalText(row.campaign_id);
       const dateStart = row.date_start ? parseUtcDate(row.date_start) : null;
       if (!objectId || !dateStart) {
         counts.skipped += 1;
         continue;
       }
-
-      const leadAction = canonicalLeadAction(row.actions);
-      const values = {
-        level: "campaign" as const,
+      const objectName = optionalText(row.campaign_name);
+      writes.push({
+        level: "campaign",
         objectId,
-        objectName: optionalText(row.campaign_name),
+        objectName,
+        campaignId: objectId,
+        campaignName: objectName,
+        adsetId: null,
+        adsetName: null,
+        pageId: null,
         dateStart,
-        dateStop: row.date_stop ? parseUtcDate(row.date_stop) : null,
-        spend: finiteNumber(row.spend),
-        impressions: integer(row.impressions),
-        clicks: integer(row.clicks),
-        reach: integer(row.reach),
-        leads: leadAction ? Math.round(leadAction.value) : null,
-        cpc: finiteNumber(row.cpc),
-        cpm: finiteNumber(row.cpm),
-        ctr: finiteNumber(row.ctr),
-        costPerLead: leadAction
-          ? matchingLeadCost(row.cost_per_action_type, leadAction.actionType)
-          : null,
-        syncedAt: new Date(),
-      };
+        ...metricValues(row),
+      });
+    }
+    for (const row of adRows) {
+      const objectId = optionalText(row.ad_id);
+      const dateStart = row.date_start ? parseUtcDate(row.date_start) : null;
+      if (!objectId || !dateStart) {
+        counts.skipped += 1;
+        continue;
+      }
+      writes.push({
+        level: "ad",
+        objectId,
+        objectName: optionalText(row.ad_name),
+        campaignId: optionalText(row.campaign_id),
+        campaignName: optionalText(row.campaign_name),
+        adsetId: optionalText(row.adset_id),
+        adsetName: optionalText(row.adset_name),
+        pageId: pageByAd.get(objectId) ?? null,
+        dateStart,
+        ...metricValues(row),
+      });
+    }
 
+    for (const values of writes) {
       try {
         const [upserted] = await db
           .insert(metaAdInsights)
@@ -201,6 +319,11 @@ export async function syncFacebookInsights(options?: {
             target: [metaAdInsights.level, metaAdInsights.objectId, metaAdInsights.dateStart],
             set: {
               objectName: values.objectName,
+              campaignId: values.campaignId,
+              campaignName: values.campaignName,
+              adsetId: values.adsetId,
+              adsetName: values.adsetName,
+              pageId: values.pageId,
               dateStop: values.dateStop,
               spend: values.spend,
               impressions: values.impressions,
@@ -216,7 +339,7 @@ export async function syncFacebookInsights(options?: {
           })
           .returning({ inserted: sql<boolean>`(xmax = 0)` });
 
-        if (!upserted) throw new Error(`Could not upsert Insight for ${objectId}`);
+        if (!upserted) throw new Error(`Could not upsert Insight for ${values.objectId}`);
         if (upserted.inserted) counts.imported += 1;
         else counts.updated += 1;
       } catch (error) {

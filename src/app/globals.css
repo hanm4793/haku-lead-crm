@@ -4,55 +4,63 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.5rem;
+  --radius: 0.625rem;
 
-  --background: #f4f6fa;
-  --foreground: #0f1c33;
+  /* Surfaces — cool neutral, not cream */
+  --background: #f3f5f9;
+  --foreground: #0c1222;
   --card: #ffffff;
-  --card-foreground: #0f1c33;
+  --card-foreground: #0c1222;
   --popover: #ffffff;
-  --popover-foreground: #0f1c33;
-  --primary: #12479e;
+  --popover-foreground: #0c1222;
+
+  /* Semtop primary blue */
+  --primary: #1a4db8;
   --primary-foreground: #ffffff;
-  --secondary: #eef2f9;
-  --secondary-foreground: #12479e;
-  --muted: #f1f4f9;
-  --muted-foreground: #6b7a94;
-  --accent: #e8effb;
-  --accent-foreground: #12479e;
-  --destructive: #d92d20;
+  --secondary: #e8eef9;
+  --secondary-foreground: #143a8c;
+  --muted: #eef1f6;
+  --muted-foreground: #5b6b84;
+  --accent: #e4ecfb;
+  --accent-foreground: #143a8c;
+
+  /* Semtop red — destructive / critical only */
+  --destructive: #e11d2e;
   --destructive-foreground: #ffffff;
-  --border: #e3e8f0;
-  --input: #dfe5ef;
-  --ring: #2f6fd0;
 
-  /* THACO brand */
-  --brand: #12479e;
-  --brand-dark: #0d3577;
-  --sidebar: #1b4da6;
+  --border: #dfe5ef;
+  --input: #d5dde9;
+  --ring: #3d6fd4;
+
+  --brand: #1a4db8;
+  --brand-dark: #123a8f;
+  --sidebar: #102a6b;
   --sidebar-foreground: #ffffff;
-  --sidebar-accent: #2a63c4;
+  --sidebar-accent: #1a4db8;
   --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #2f66bd;
-  --sidebar-ring: #7fb0ff;
+  --sidebar-border: #1e3f8a;
+  --sidebar-ring: #7ea6ff;
 
-  /* Semantic status colors (khớp bảng phân loại khách) */
-  --status-khqt: #1f6feb;
-  --status-gdtd: #d97706;
-  --status-khd: #059669;
+  --status-khqt: #1a4db8;
+  --status-gdtd: #c9780a;
+  --status-khd: #0d9f6e;
   --status-chua-lh: #64748b;
-  --status-fail: #e11d48;
+  --status-fail: #e11d2e;
 
-  /* Chart palette */
-  --chart-1: #12479e;
-  --chart-2: #0f9d8f;
-  --chart-3: #f59e0b;
-  --chart-4: #e11d48;
-  --chart-5: #7c3aed;
+  --chart-1: #1a4db8;
+  --chart-2: #0d9f6e;
+  --chart-3: #c9780a;
+  --chart-4: #e11d2e;
+  --chart-5: #6366f1;
   --chart-6: #0ea5e9;
+
+  --space-page: 1.25rem;
+  --space-section: 1rem;
 }
 
 @theme inline {
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -106,19 +114,20 @@
   body {
     background-color: var(--background);
     color: var(--foreground);
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.011em;
   }
-  /* Bảng lead rất rộng nên scrollbar ngang phải luôn nhìn thấy được */
   .thin-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: #c2cbdb transparent;
+    scrollbar-color: #b8c3d6 transparent;
   }
   .thin-scrollbar::-webkit-scrollbar {
     height: 10px;
     width: 10px;
   }
   .thin-scrollbar::-webkit-scrollbar-thumb {
-    background: #c2cbdb;
+    background: #b8c3d6;
     border-radius: 999px;
   }
   .thin-scrollbar::-webkit-scrollbar-track {

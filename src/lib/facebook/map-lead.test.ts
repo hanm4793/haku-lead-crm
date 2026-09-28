@@ -8,7 +8,6 @@ describe("mapFacebookLeadFields", () => {
       { name: "phone_number", values: ["0901234567"] },
     ]);
     expect(r).toEqual({
-      ok: true,
       phone: "0901234567",
       name: "Nguyen A",
       campaign: null,
@@ -16,14 +15,18 @@ describe("mapFacebookLeadFields", () => {
     });
   });
 
-  it("skips when phone missing", () => {
+  it("imports with empty phone when missing", () => {
     const r = mapFacebookLeadFields([{ name: "full_name", values: ["X"] }]);
-    expect(r).toEqual({ ok: false, reason: "missing_phone" });
+    expect(r).toEqual({
+      phone: "",
+      name: "X",
+      campaign: null,
+      adContent: null,
+    });
   });
 
   it("accepts alternate phone keys", () => {
     const r = mapFacebookLeadFields([{ name: "phone", values: ["+84901234567"] }]);
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.phone).toContain("84901234567");
+    expect(r.phone).toContain("84901234567");
   });
 });

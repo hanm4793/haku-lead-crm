@@ -9,7 +9,7 @@ import { Pagination } from "@/components/common/pagination";
 import { ALL_COLUMN_TOGGLES, LeadTable, type SortState } from "@/components/leads/lead-table";
 import { DEFAULT_VISIBLE_COLUMNS } from "@/components/leads/columns";
 import { LeadDetailDialog } from "@/components/leads/lead-detail-dialog";
-import { LeadFilterPopover } from "@/components/leads/filter-popover";
+import { LeadFilterPopover, type FanpageFilterOption } from "@/components/leads/filter-popover";
 import { LeadKpiHeader } from "@/components/leads/kpi-header";
 import { useNow } from "@/components/providers/now-provider";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLeadLogs } from "@/hooks/use-lead-logs";
 import { useLeadPage } from "@/hooks/use-lead-page";
 import { updateLeadAction } from "@/app/leads/actions";
+import { canEditLead, type UserRole } from "@/lib/auth/roles";
 import type { LeadPage } from "@/lib/db/leads-repo";
 import { downloadExport } from "@/lib/export/download";
 import { filtersToExportSpec } from "@/lib/export/from-filters";
@@ -41,9 +42,15 @@ const TABS: { id: LeadFilters["tab"]; label: string }[] = [
 export function LeadsPage({
   initialData,
   initialRequest,
+  fanpageOptions = [],
+  assignees = [],
+  editor,
 }: {
   initialData: LeadPage;
   initialRequest: LeadSearchInput;
+  fanpageOptions?: FanpageFilterOption[];
+  assignees?: string[];
+  editor?: { role: UserRole; appUserId?: string | null };
 }) {
   const now = useNow();
   const filters = useLeadStore((s) => s.filters);
@@ -83,6 +90,7 @@ export function LeadsPage({
   const { data, loading, error, patchRows, refetch } = useLeadPage(initialData, initialRequest, request);
 
   const selected = selectedId ? (data.rows.find((row) => row.id === selectedId) ?? null) : null;
+  const leadEditable = (lead: Lead) => (editor ? canEditLead(editor, lead) : true);
   const { logs: selectedLogs, reload: reloadLogs } = useLeadLogs(selectedId);
 
   const handleDateChange = (preset: PresetId, range: DateRange) => {
@@ -120,7 +128,7 @@ export function LeadsPage({
   };
 
   const handleStatusChange = (lead: Lead, next: ContactStatus) => {
-    if (lead.contactStatus === next) return;
+    if (!leadEditable(lead) || lead.contactStatus === next) return;
     void save(lead, { contactStatus: next }, [
       {
         kind: "STATUS_CHANGE",
@@ -130,7 +138,7 @@ export function LeadsPage({
   };
 
   const handleCategoryChange = (lead: Lead, next: LeadCategory) => {
-    if (lead.category === next) return;
+    if (!leadEditable(lead) || lead.category === next) return;
     void save(lead, { category: next, failReason: next === "FAIL" ? lead.failReason : null }, [
       { kind: "CATEGORY_CHANGE", message: `Cập nhật phân loại trực tiếp trên bảng: ${next}.` },
     ]);
@@ -191,6 +199,8 @@ export function LeadsPage({
 
           <LeadFilterPopover
             filters={filters}
+            fanpageOptions={fanpageOptions}
+            assigneeOptions={assignees}
             onChange={setFilters}
             onReset={() => {
               resetFilters();
@@ -222,6 +232,7 @@ export function LeadsPage({
           onRowClick={(lead) => setSelectedId(lead.id)}
           onStatusChange={handleStatusChange}
           onCategoryChange={handleCategoryChange}
+          canEdit={leadEditable}
         />
 
         <Pagination
@@ -238,7 +249,9 @@ export function LeadsPage({
         logs={selectedLogs}
         open={Boolean(selected)}
         onOpenChange={(open) => !open && setSelectedId(null)}
-        onSave={(patch, entries) => selected && void save(selected, patch, entries)}
+        assignees={assignees}
+        readOnly={selected ? !leadEditable(selected) : false}
+        onSave={(patch, entries) => selected && leadEditable(selected) && void save(selected, patch, entries)}
       />
     </div>
   );

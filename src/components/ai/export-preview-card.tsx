@@ -32,7 +32,6 @@ function describeFilters(spec: ExportSpec): string[] {
   if (f.showrooms?.length) chips.push(`SR ${f.showrooms.join(" / ")}`);
   if (f.salesRooms?.length) chips.push(f.salesRooms.join(" / "));
   if (f.assignees?.length) chips.push(f.assignees.join(" / "));
-  if (f.b10 && f.b10 !== "ALL") chips.push(f.b10 === "PUSHED" ? "Đã lên B10" : "Chưa lên B10");
   if (f.overdueOnly) chips.push("Quá hạn gọi lại");
   if (f.search) chips.push(`Tìm "${f.search}"`);
 

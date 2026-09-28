@@ -41,12 +41,12 @@ async function main() {
   }
 
   for (const user of byEmail) {
-    if (user.role === "ADMIN") {
-      console.log("already ADMIN:", user.fullName);
+    if (user.role === "SUPER_ADMIN") {
+      console.log("already SUPER_ADMIN:", user.fullName);
       continue;
     }
-    await db.update(appUsers).set({ role: "ADMIN" }).where(eq(appUsers.id, user.id));
-    console.log("promoted:", user.fullName, "-> ADMIN");
+    await db.update(appUsers).set({ role: "SUPER_ADMIN" }).where(eq(appUsers.id, user.id));
+    console.log("promoted:", user.fullName, "-> SUPER_ADMIN");
   }
 }
 

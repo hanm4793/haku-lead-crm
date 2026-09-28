@@ -58,7 +58,7 @@ async function ensureCatalogs(db: ReturnType<typeof drizzle>): Promise<CatalogMa
       .values(
         missingAssignees.map((fullName) => ({
           fullName,
-          role: fullName === ASSIGNEES[0] ? ("ADMIN" as const) : ("SALES" as const),
+          role: fullName === ASSIGNEES[0] ? ("SUPER_ADMIN" as const) : ("STAFF" as const),
         })),
       )
       .returning({ id: schema.appUsers.id, fullName: schema.appUsers.fullName });
@@ -124,7 +124,7 @@ async function replaceCatalogs(db: ReturnType<typeof drizzle>): Promise<CatalogM
     .values(
       ASSIGNEES.map((fullName, i) => ({
         fullName,
-        role: i === 0 ? ("ADMIN" as const) : ("SALES" as const),
+        role: i === 0 ? ("SUPER_ADMIN" as const) : ("STAFF" as const),
       })),
     )
     .returning({ id: schema.appUsers.id, fullName: schema.appUsers.fullName });
@@ -206,9 +206,6 @@ async function main() {
       contactStatus: lead.contactStatus,
       category: lead.category,
       failReason: lead.failReason,
-      pushedToB10: lead.pushedToB10,
-      b10Status: lead.b10Status,
-      b10CareNote: lead.b10CareNote,
       source: lead.source,
       channelDetail: lead.channelDetail,
       brand: lead.brand,

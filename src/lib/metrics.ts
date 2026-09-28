@@ -264,12 +264,6 @@ export interface PivotRow {
   failed: number;
   failRate: number;
   overdue: number;
-  pushedB10: number;
-  b10Rate: number;
-  khqtB10: number;
-  gdtdB10: number;
-  khdB10: number;
-  failedB10: number;
 }
 
 function emptyPivotRow(key: string): PivotRow {
@@ -286,12 +280,6 @@ function emptyPivotRow(key: string): PivotRow {
     failed: 0,
     failRate: 0,
     overdue: 0,
-    pushedB10: 0,
-    b10Rate: 0,
-    khqtB10: 0,
-    gdtdB10: 0,
-    khdB10: 0,
-    failedB10: 0,
   };
 }
 
@@ -303,13 +291,6 @@ function accumulate(row: PivotRow, lead: Lead, now: Date) {
   if (lead.category === "KHD") row.khd += 1;
   if (lead.category === "FAIL") row.failed += 1;
   if (isOverdue(lead, now)) row.overdue += 1;
-  if (lead.pushedToB10) {
-    row.pushedB10 += 1;
-    if (INTERESTED.includes(lead.category)) row.khqtB10 += 1;
-    if (IN_DEAL.includes(lead.category)) row.gdtdB10 += 1;
-    if (lead.category === "KHD") row.khdB10 += 1;
-    if (lead.category === "FAIL") row.failedB10 += 1;
-  }
 }
 
 function finalize(row: PivotRow, grandTotal: number) {
@@ -317,7 +298,6 @@ function finalize(row: PivotRow, grandTotal: number) {
   row.contactRate = ratio(row.contacted, row.leads);
   row.signRate = ratio(row.khd, row.leads);
   row.failRate = ratio(row.failed, row.leads);
-  row.b10Rate = ratio(row.pushedB10, row.leads);
   return row;
 }
 

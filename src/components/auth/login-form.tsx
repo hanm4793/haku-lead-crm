@@ -13,7 +13,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 export function LoginForm({ configured }: { configured: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [mode, setMode] = React.useState<"signin" | "signup">("signin");
+  const [mode, setMode] = React.useState<"signin" | "signup" | "forgot">("signin");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [fullName, setFullName] = React.useState("");
@@ -35,6 +35,18 @@ export function LoginForm({ configured }: { configured: boolean }) {
 
     try {
       const supabase = createSupabaseBrowserClient();
+
+      if (mode === "forgot") {
+        const redirectTo = `${window.location.origin}/login/reset`;
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+        if (resetError) {
+          setError(resetError.message);
+          return;
+        }
+        setInfo("Nếu email này có tài khoản, bạn sẽ nhận được link đặt lại mật khẩu.");
+        setMode("signin");
+        return;
+      }
 
       if (mode === "signup") {
         const { data, error: signUpError } = await supabase.auth.signUp({
@@ -74,11 +86,15 @@ export function LoginForm({ configured }: { configured: boolean }) {
   };
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader>
-        <CardTitle>CRM Lead</CardTitle>
+    <Card className="w-full border-border/80 shadow-sm">
+      <CardHeader className="space-y-1.5">
+        <CardTitle className="text-xl tracking-tight">Đăng nhập</CardTitle>
         <CardDescription>
-          {mode === "signin" ? "Đăng nhập để vào hệ thống quản lý lead." : "Tạo tài khoản mới (lần đầu)."}
+          {mode === "forgot"
+            ? "Nhập email để nhận link đặt lại mật khẩu."
+            : mode === "signin"
+              ? "Đăng nhập SEMTOP Marketing CRM."
+              : "Tạo tài khoản mới (lần đầu)."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -116,18 +132,20 @@ export function LoginForm({ configured }: { configured: boolean }) {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Mật khẩu</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                required
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+            {mode !== "forgot" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Mật khẩu</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  required
+                  minLength={6}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            )}
 
             {error && <p className="text-[12px] text-rose-600">{error}</p>}
             {info && <p className="text-[12px] text-emerald-700">{info}</p>}
@@ -140,14 +158,28 @@ export function LoginForm({ configured }: { configured: boolean }) {
               ) : (
                 <UserPlus className="size-4" />
               )}
-              {mode === "signin" ? "Đăng nhập" : "Tạo tài khoản"}
+              {mode === "signin" ? "Đăng nhập" : mode === "forgot" ? "Gửi link đặt lại" : "Tạo tài khoản"}
             </Button>
+
+            {mode === "signin" && (
+              <button
+                type="button"
+                className="w-full text-center text-[12px] text-muted-foreground underline-offset-2 hover:underline"
+                onClick={() => {
+                  setMode("forgot");
+                  setError(null);
+                  setInfo(null);
+                }}
+              >
+                Quên mật khẩu?
+              </button>
+            )}
 
             <button
               type="button"
               className="w-full text-center text-[12px] text-muted-foreground underline-offset-2 hover:underline"
               onClick={() => {
-                setMode((m) => (m === "signin" ? "signup" : "signin"));
+                setMode((current) => (current === "signin" ? "signup" : "signin"));
                 setError(null);
                 setInfo(null);
               }}

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { canManageSettings } from "@/lib/auth/roles";
 import { getViewer } from "@/lib/auth/viewer";
 import {
   addFacebookPage,
@@ -35,7 +36,7 @@ export type FacebookPageActionResult =
 async function requireAdmin(): Promise<string | null> {
   const viewer = await getViewer();
   if (!viewer) return "Phiên đăng nhập đã hết hạn.";
-  if (viewer.role !== "ADMIN") return "Chỉ ADMIN mới đồng bộ dữ liệu Facebook.";
+  if (!canManageSettings(viewer.role)) return "Chỉ super admin mới đồng bộ dữ liệu Facebook.";
   return null;
 }
 

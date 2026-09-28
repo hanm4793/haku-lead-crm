@@ -1,32 +1,20 @@
-import { redirect } from "next/navigation";
+﻿import { redirect } from "next/navigation";
 
 import { MarketingPage } from "@/components/marketing/marketing-page";
+import { canViewMarketing, dataScope, isPageVisible } from "@/lib/auth/roles";
 import { getViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
-import {
-  aggregateCampaignInsights,
-  hasSyncedInsights,
-  listCampaignInsights,
-} from "@/lib/db/insights-repo";
+import { hasSyncedInsights, latestInsightSync, listAdInsights, listCampaignInsights } from "@/lib/db/insights-repo";
+import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
 import { getFacebookConfig } from "@/lib/facebook/env";
 
-export const metadata = { title: "Marketing — CRM THACO Auto" };
+export const metadata = { title: "Marketing — SEMTOP Marketing CRM" };
 export const dynamic = "force-dynamic";
-
-function defaultRange() {
-  const until = new Date();
-  const since = new Date(until);
-  since.setUTCDate(since.getUTCDate() - 29);
-  return {
-    from: since.toISOString().slice(0, 10),
-    to: until.toISOString().slice(0, 10),
-  };
-}
 
 export default async function Page() {
   const viewer = await getViewer();
   if (!viewer) redirect("/login?next=%2Fmarketing");
-  if (viewer.role !== "ADMIN") redirect("/leads");
+  if (!canViewMarketing(viewer.role)) redirect("/leads");
 
   if (!isDatabaseConfigured()) {
     return (
@@ -39,20 +27,32 @@ export default async function Page() {
     );
   }
 
-  const range = defaultRange();
-  const [rows, hasSynced] = await Promise.all([
-    listCampaignInsights(range),
+  const [campaignRows, adInsightRows, pages, hasSynced, latestSync] = await Promise.all([
+    listCampaignInsights(),
+    listAdInsights(),
+    listFacebookPages(),
     hasSyncedInsights(),
+    latestInsightSync(),
   ]);
+  const seesAllPages = dataScope(viewer) === "all";
+  const adRows = adInsightRows.filter((row) => isPageVisible(viewer, row.pageId));
+  const campaignIds = seesAllPages ? null : new Set(adRows.map((row) => row.campaignId).filter(Boolean));
+  const rows = campaignIds ? campaignRows.filter((row) => campaignIds.has(row.objectId)) : campaignRows;
+  const visiblePages = pages.filter((page) => isPageVisible(viewer, page.facebookPageId)).map(
+    (page) => ({ id: page.facebookPageId, name: page.name }),
+  );
   const config = getFacebookConfig();
 
   return (
     <MarketingPage
       rows={rows}
-      totals={aggregateCampaignInsights(rows)}
+      adRows={adRows}
+      pages={visiblePages}
       hasSynced={hasSynced}
       configured={Boolean(config?.adAccountId)}
-      range={range}
+      adAccountId={config?.adAccountId ?? null}
+      syncedAt={latestSync?.finishedAt ?? null}
+      today={new Date().toISOString().slice(0, 10)}
     />
   );
 }

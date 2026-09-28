@@ -1,0 +1,5 @@
+UPDATE activity_logs SET kind = 'NOTE' WHERE kind = 'B10_SYNC';
+ALTER TABLE leads DROP COLUMN IF EXISTS pushed_to_b10;
+ALTER TABLE leads DROP COLUMN IF EXISTS b10_status;
+ALTER TABLE leads DROP COLUMN IF EXISTS b10_care_note;
+DROP TYPE IF EXISTS b10_status;

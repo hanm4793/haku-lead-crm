@@ -8,7 +8,6 @@ import {
   Pencil,
   Phone,
   PhoneMissed,
-  RefreshCcw,
   Save,
   StickyNote,
   UserCog,
@@ -22,7 +21,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import {
   ASSIGNEES,
-  B10_STATUS_LABEL,
   CAR_MODELS_BY_BRAND,
   UNASSIGNED_ASSIGNMENT_LABEL,
   CATEGORY_LONG_LABEL,
@@ -65,6 +63,8 @@ interface LeadDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (patch: Partial<Lead>, logs: { kind: ActivityKind; message: string }[]) => void;
+  readOnly?: boolean;
+  assignees?: readonly string[];
 }
 
 export function LeadDetailDialog({ lead, ...props }: LeadDetailDialogProps) {
@@ -79,6 +79,8 @@ function LeadDetailDialogBody({
   open,
   onOpenChange,
   onSave,
+  readOnly = false,
+  assignees = ASSIGNEES,
 }: LeadDetailDialogProps & { lead: Lead }) {
   const [draft, setDraft] = React.useState<DraftState>(() => toDraft(lead));
   const [justSaved, setJustSaved] = React.useState(false);
@@ -169,6 +171,7 @@ function LeadDetailDialogBody({
           </DialogDescription>
         </div>
 
+        <fieldset disabled={readOnly} className="min-w-0 border-0 p-0">
         <div className="thin-scrollbar grid max-h-[62vh] gap-5 overflow-y-auto p-6 lg:grid-cols-2">
           <div className="space-y-4">
             <div className="rounded-lg bg-[#f7f9fc] p-4">
@@ -220,7 +223,7 @@ function LeadDetailDialogBody({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__NONE__">Chưa giao</SelectItem>
-                      {ASSIGNEES.map((name) => (
+                      {assignees.map((name) => (
                         <SelectItem key={name} value={name}>
                           {name}
                         </SelectItem>
@@ -231,21 +234,6 @@ function LeadDetailDialogBody({
                 <Row label="Tạo lúc" value={formatDateTime(lead.createdAt)} />
                 <Row label="Số lần liên hệ" value={String(lead.contactCount)} />
               </dl>
-            </div>
-
-            <div className="rounded-lg border border-border p-4">
-              <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Đối soát B10 (DDMS)
-              </div>
-              <dl className="space-y-2.5 text-sm">
-                <Row label="Đã lên B10" value={lead.pushedToB10 ? "Đã đối soát" : "Chưa đối soát"} />
-                <Row label="Trạng thái B10" value={B10_STATUS_LABEL[lead.b10Status]} />
-                <Row label="Nội dung chăm sóc" value={lead.b10CareNote ?? "—"} />
-              </dl>
-              <Button variant="outline" size="sm" className="mt-3 w-full gap-2">
-                <RefreshCcw className="size-3.5" />
-                Đồng bộ lại từ B10
-              </Button>
             </div>
           </div>
 
@@ -352,13 +340,17 @@ function LeadDetailDialogBody({
             </div>
           </div>
         </div>
+        </fieldset>
 
         <div className="border-t border-border bg-card px-6 py-4">
-          {dirty && <p className="mb-2 text-center text-xs font-medium text-amber-600">• Có thay đổi chưa lưu</p>}
+          {readOnly && (
+            <p className="mb-2 text-center text-xs text-muted-foreground">Chỉ xem. Lead này chưa được giao cho bạn.</p>
+          )}
+          {dirty && !readOnly && <p className="mb-2 text-center text-xs font-medium text-amber-600">• Có thay đổi chưa lưu</p>}
           <Button
             onClick={handleSave}
-            disabled={!dirty}
-            className={cn("w-full gap-2", !dirty && "bg-primary/40")}
+            disabled={readOnly || !dirty}
+            className={cn("w-full gap-2", (readOnly || !dirty) && "bg-primary/40")}
           >
             <Save className="size-4" />
             {dirty ? "Lưu thay đổi" : justSaved ? "Đã lưu" : "Không có thay đổi"}
@@ -395,7 +387,6 @@ const LOG_ICONS: Record<ActivityKind, React.ComponentType<{ className?: string }
   STATUS_CHANGE: ArrowRightLeft,
   CATEGORY_CHANGE: ArrowRightLeft,
   ASSIGN_CHANGE: UserCog,
-  B10_SYNC: RefreshCcw,
   NOTE: StickyNote,
   CREATE: StickyNote,
 };

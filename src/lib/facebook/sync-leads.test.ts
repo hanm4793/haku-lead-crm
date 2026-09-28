@@ -8,12 +8,16 @@ const mocks = vi.hoisted(() => ({
   getFacebookConfig: vi.fn(),
   graphGetAllData: vi.fn(),
   resolveActiveFacebookPageIds: vi.fn(),
+  resolvePageAccessTokens: vi.fn(),
 }));
 
 vi.mock("@/lib/db/client", () => ({ getDb: mocks.getDb }));
 vi.mock("./env", () => ({ getFacebookConfig: mocks.getFacebookConfig }));
 vi.mock("@/lib/db/facebook-pages-repo", () => ({
   resolveActiveFacebookPageIds: mocks.resolveActiveFacebookPageIds,
+}));
+vi.mock("./page-tokens", () => ({
+  resolvePageAccessTokens: mocks.resolvePageAccessTokens,
 }));
 vi.mock("./graph-client", async (importOriginal) => {
   const original = await importOriginal<typeof import("./graph-client")>();
@@ -86,9 +90,12 @@ describe("syncFacebookLeads", () => {
       graphVersion: "v21.0",
     });
     mocks.resolveActiveFacebookPageIds.mockResolvedValue(["page-1"]);
+    mocks.resolvePageAccessTokens.mockResolvedValue(
+      new Map([["page-1", { token: "page-token-1", name: "Page One" }]]),
+    );
   });
 
-  it("imports valid leads, skips missing phones, and records the run", async () => {
+  it("imports leads including those without phone", async () => {
     const { db, inserted, updated } = createDb();
     mocks.getDb.mockReturnValue(db);
     mocks.graphGetAllData
@@ -117,9 +124,9 @@ describe("syncFacebookLeads", () => {
     const result = await syncFacebookLeads();
 
     expect(result).toMatchObject({
-      imported: 1,
+      imported: 2,
       updated: 0,
-      skipped: 1,
+      skipped: 0,
       errors: 0,
       runId: "run-1",
     });
@@ -139,6 +146,15 @@ describe("syncFacebookLeads", () => {
       inTransaction: true,
     });
     expect(inserted).toContainEqual({
+      table: leads,
+      values: expect.objectContaining({
+        facebookLeadId: "fb-2",
+        phone: "",
+        name: "No phone",
+      }),
+      inTransaction: true,
+    });
+    expect(inserted).toContainEqual({
       table: activityLogs,
       values: expect.objectContaining({
         leadId: "lead-new",
@@ -147,13 +163,13 @@ describe("syncFacebookLeads", () => {
       }),
       inTransaction: true,
     });
-    expect(db.transaction).toHaveBeenCalledOnce();
+    expect(db.transaction).toHaveBeenCalledTimes(2);
     expect(updated).toContainEqual({
       table: metaSyncRuns,
       values: expect.objectContaining({
         status: "ok",
-        imported: 1,
-        skipped: 1,
+        imported: 2,
+        skipped: 0,
         errors: 0,
       }),
     });
@@ -209,9 +225,11 @@ describe("syncFacebookLeads", () => {
 
     expect(result.errors).toBe(0);
     expect(mocks.graphGetAllData).toHaveBeenCalledTimes(3);
-    expect(mocks.graphGetAllData).toHaveBeenLastCalledWith("/form-1/leads", {
-      fields: "id,created_time,field_data",
-    });
+    expect(mocks.graphGetAllData).toHaveBeenLastCalledWith(
+      "/form-1/leads",
+      { fields: "id,created_time,field_data" },
+      { accessToken: "page-token-1" },
+    );
   });
 
   it("surfaces pagination errors and marks a partially successful run ok", async () => {

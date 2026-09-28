@@ -21,9 +21,6 @@ export type FailReason =
   | "TRUNG_SPAM"
   | "KHAC";
 
-/** Trạng thái đối soát với hệ thống B10 (DDMS). */
-export type B10Status = "CHUA_CO_TREN_B10" | "DA_CO_TREN_B10" | "TRUNG_B10";
-
 export type LeadSource = "FACEBOOK" | "GOOGLE" | "TIKTOK" | "ZALO" | "WEBSITE" | "HOTLINE";
 
 export type ChannelDetail = "TIN_NHAN" | "FORM" | "COMMENT" | "CUOC_GOI" | "CHAT_WEB";
@@ -36,7 +33,6 @@ export type ActivityKind =
   | "CATEGORY_CHANGE"
   | "ASSIGN_CHANGE"
   | "MISSED_CALL"
-  | "B10_SYNC"
   | "NOTE"
   | "CREATE";
 
@@ -59,15 +55,12 @@ export interface Lead {
   contactStatus: ContactStatus;
   category: LeadCategory;
   failReason: FailReason | null;
-  /** Đã đẩy sang B10 hay chưa (cột B10). */
-  pushedToB10: boolean;
-  b10Status: B10Status;
-  b10CareNote: string | null;
   source: LeadSource;
   channelDetail: ChannelDetail;
   brand: Brand | null;
   showroom: string;
   salesRoom: string;
+  assigneeId: string | null;
   assignee: string | null;
   carModel: string | null;
   careNote: string | null;
@@ -78,6 +71,8 @@ export interface Lead {
   campaign: string | null;
   adContent: string | null;
   costPerLead: number | null;
+  /** Meta Page ID khi lead đến từ Facebook Lead Ads. */
+  facebookPageId: string | null;
 }
 
 export interface LeadFilters {
@@ -93,7 +88,8 @@ export interface LeadFilters {
   carModels: string[];
   categories: LeadCategory[];
   failReasons: FailReason[];
-  b10: "ALL" | "PUSHED" | "NOT_PUSHED";
+  /** Meta Page IDs — lọc lead theo Fanpage nguồn. */
+  facebookPageIds: string[];
 }
 
 export interface LeadKpis {

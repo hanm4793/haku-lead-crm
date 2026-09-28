@@ -23,6 +23,7 @@ export function LeadTable({
   onRowClick,
   onStatusChange,
   onCategoryChange,
+  canEdit,
 }: {
   leads: Lead[];
   visibleColumns: string[];
@@ -31,6 +32,7 @@ export function LeadTable({
   onRowClick: (lead: Lead) => void;
   onStatusChange: (lead: Lead, next: ContactStatus) => void;
   onCategoryChange: (lead: Lead, next: LeadCategory) => void;
+  canEdit?: (lead: Lead) => boolean;
 }) {
   const now = useNow();
   const columns = React.useMemo(
@@ -112,7 +114,13 @@ export function LeadTable({
                     column.align === "center" && "text-center",
                   )}
                 >
-                  <Cell lead={lead} column={column} onStatusChange={onStatusChange} onCategoryChange={onCategoryChange} />
+                  <Cell
+                    lead={lead}
+                    column={column}
+                    editable={!canEdit || canEdit(lead)}
+                    onStatusChange={onStatusChange}
+                    onCategoryChange={onCategoryChange}
+                  />
                 </td>
               ))}
             </tr>
@@ -126,11 +134,13 @@ export function LeadTable({
 function Cell({
   lead,
   column,
+  editable,
   onStatusChange,
   onCategoryChange,
 }: {
   lead: Lead;
   column: LeadColumn;
+  editable: boolean;
   onStatusChange: (lead: Lead, next: ContactStatus) => void;
   onCategoryChange: (lead: Lead, next: LeadCategory) => void;
 }) {
@@ -138,9 +148,17 @@ function Cell({
 
   switch (column.id) {
     case "contactStatus":
-      return <ContactStatusCell value={lead.contactStatus} onChange={(next) => onStatusChange(lead, next)} />;
+      return (
+        <ContactStatusCell
+          value={lead.contactStatus}
+          editable={editable}
+          onChange={(next) => onStatusChange(lead, next)}
+        />
+      );
     case "category":
-      return <CategoryCell value={lead.category} onChange={(next) => onCategoryChange(lead, next)} />;
+      return (
+        <CategoryCell value={lead.category} editable={editable} onChange={(next) => onCategoryChange(lead, next)} />
+      );
     case "phone":
       return <PhoneCell phone={lead.phone} />;
     case "name":
@@ -148,12 +166,6 @@ function Cell({
     case "failReason":
       return lead.failReason ? (
         <span className="text-rose-600">{displayValue(lead, column.id)}</span>
-      ) : (
-        <Dash />
-      );
-    case "pushedToB10":
-      return lead.pushedToB10 ? (
-        <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">Đã lên</span>
       ) : (
         <Dash />
       );

@@ -21,7 +21,6 @@ const ACTIVITY_KINDS = [
   "CATEGORY_CHANGE",
   "ASSIGN_CHANGE",
   "MISSED_CALL",
-  "B10_SYNC",
   "NOTE",
   "CREATE",
 ] as const;

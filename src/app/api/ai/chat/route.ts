@@ -2,12 +2,15 @@ import { generateObject } from "ai";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { answerFromStats } from "@/lib/ai/answer-stats";
 import { exportSpecSchema, type ExportSpec } from "@/lib/ai/export-spec";
 import { parseExportRequestLocally } from "@/lib/ai/fallback-parser";
 import type { ExportPreview } from "@/lib/ai/export-preview";
 import { estimateCostUsd, resolveModel } from "@/lib/ai/model";
 import { buildSystemPrompt } from "@/lib/ai/prompt";
 import { refineSpec } from "@/lib/ai/refine-spec";
+import { parseStatsQuestion, mergeStats, applyMentions, blankStats, statsFromModel, statsQuerySchema, type ChatMention } from "@/lib/ai/stats-query";
+import { canUseAi } from "@/lib/auth/roles";
 import { getViewer } from "@/lib/auth/viewer";
 import type { ViewerScope } from "@/lib/db/leads-repo";
 import { queryReportKpis, querySheetCounts } from "@/lib/db/report-queries";
@@ -17,14 +20,22 @@ import type { PivotDimension } from "@/lib/metrics";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+const mentionSchema = z.object({
+  type: z.enum(["fanpage", "campaign", "ad", "lead", "assignee"]),
+  id: z.string().min(1).max(80),
+  label: z.string().min(1).max(160),
+});
+
 const requestSchema = z.object({
   messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() })).min(1),
+  mentions: z.array(mentionSchema).max(8).optional(),
 });
 
 const responseSchema = z.object({
-  action: z.enum(["EXPORT", "ANSWER", "CLARIFY"]),
+  action: z.enum(["STATS", "EXPORT", "ANSWER", "CLARIFY"]),
   reply: z.string(),
   spec: exportSpecSchema.nullable().optional(),
+  stats: statsQuerySchema.nullable().optional(),
 });
 
 async function buildPreview(spec: ExportSpec, viewer: ViewerScope, now: Date): Promise<ExportPreview> {
@@ -51,7 +62,21 @@ async function buildPreview(spec: ExportSpec, viewer: ViewerScope, now: Date): P
   };
 }
 
-async function fallbackResponse(text: string, viewer: ViewerScope, now: Date, note?: string) {
+async function fallbackResponse(text: string, viewer: ViewerScope, now: Date, mentions: ChatMention[] = [], note?: string) {
+  const parsedQuestion = parseStatsQuestion(text, now);
+  const base = parsedQuestion ?? (mentions.length ? blankStats() : null);
+  if (base && (parsedQuestion || mentions.length)) {
+    const stats = applyMentions(base, mentions);
+    const reply = await answerFromStats(stats, viewer, now, text);
+    return NextResponse.json({
+      mode: "fallback",
+      action: "STATS",
+      reply: note ? `${note}\n\n${reply}` : reply,
+      spec: null,
+      preview: null,
+    });
+  }
+
   const local = parseExportRequestLocally(text, now);
   const spec = local.spec ? refineSpec(local.spec, text) : null;
   return NextResponse.json({
@@ -66,18 +91,21 @@ async function fallbackResponse(text: string, viewer: ViewerScope, now: Date, no
 export async function POST(request: Request) {
   const viewer = await getViewer();
   if (!viewer) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+  if (!canUseAi(viewer)) {
+    return NextResponse.json({ error: "Tài khoản này chưa được bật trợ lý AI." }, { status: 403 });
+  }
 
   const parsed = requestSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: "Yêu cầu không hợp lệ" }, { status: 400 });
   }
 
-  const { messages } = parsed.data;
+  const { messages, mentions = [] } = parsed.data;
   const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const now = new Date();
 
   const resolved = resolveModel();
-  if (!resolved) return fallbackResponse(lastUserMessage, viewer, now);
+  if (!resolved) return fallbackResponse(lastUserMessage, viewer, now, mentions);
 
   // Thử lại một lần: lỗi thoáng qua và lỗi schema đều thường qua ở lần hai.
   let lastError: unknown = null;
@@ -92,8 +120,6 @@ export async function POST(request: Request) {
       });
 
       const object = result.object;
-      const validated = object.spec ? exportSpecSchema.safeParse(object.spec) : null;
-
       const inputTokens = result.usage?.inputTokens ?? 0;
       const outputTokens = result.usage?.outputTokens ?? 0;
       const usage = {
@@ -104,6 +130,27 @@ export async function POST(request: Request) {
         costUsd: estimateCostUsd(resolved.modelId, inputTokens, outputTokens),
       };
       console.log("[ai/chat]", JSON.stringify(usage));
+
+      const modelStats = statsFromModel(object.stats);
+      const localStats = parseStatsQuestion(lastUserMessage, now);
+      const asksForNumbers = object.action === "STATS" || (object.action !== "EXPORT" && (localStats !== null || mentions.length > 0));
+
+      if (asksForNumbers) {
+        const stats = applyMentions(mergeStats(modelStats, localStats) ?? blankStats(), mentions);
+        if (stats) {
+          const reply = await answerFromStats(stats, viewer, now, lastUserMessage);
+          return NextResponse.json({
+            mode: "ai",
+            action: "STATS",
+            reply,
+            spec: null,
+            preview: null,
+            usage,
+          });
+        }
+      }
+
+      const validated = object.spec ? exportSpecSchema.safeParse(object.spec) : null;
 
       if (object.action === "EXPORT" && validated?.success) {
         const spec = refineSpec(validated.data, lastUserMessage);
@@ -143,6 +190,7 @@ export async function POST(request: Request) {
     lastUserMessage,
     viewer,
     now,
+    mentions,
     `Không gọi được ${resolved.providerLabel} (${detail}). Mình tạm hiểu theo từ khóa:`,
   );
 }

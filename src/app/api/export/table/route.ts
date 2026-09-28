@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+﻿import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   }
 
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "CRM THACO Auto";
+  workbook.creator = "SEMTOP Marketing CRM";
 
   for (const sheetSpec of parsed.data.sheets) {
     const sheet = workbook.addWorksheet(sheetSpec.name.replace(/[\\/*?:[\]]/g, "-").slice(0, 31));

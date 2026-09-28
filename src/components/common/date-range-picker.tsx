@@ -1,11 +1,13 @@
 "use client";
 
 import * as React from "react";
+import { format, parseISO } from "date-fns";
+import { vi } from "date-fns/locale";
 import { CalendarDays } from "lucide-react";
+import type { DateRange as DayPickerRange } from "react-day-picker";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useNow } from "@/components/providers/now-provider";
 import {
@@ -18,6 +20,14 @@ import { cn, formatDate } from "@/lib/utils";
 
 export type { DateRange, PresetId };
 export { DATE_PRESETS, resolvePreset };
+
+function toDayPickerRange(range: DateRange): DayPickerRange | undefined {
+  if (!range.from && !range.to) return undefined;
+  return {
+    from: range.from ? parseISO(range.from) : undefined,
+    to: range.to ? parseISO(range.to) : undefined,
+  };
+}
 
 export function DateRangePicker({
   preset,
@@ -39,48 +49,58 @@ export function DateRangePicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className={cn("gap-2 font-normal", className)}>
-          <CalendarDays className="size-3.5" />
-          {label}
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn("h-8 gap-2 rounded-lg border-input bg-card px-3 font-medium shadow-xs", className)}
+        >
+          <CalendarDays className="size-3.5 text-primary" />
+          <span className="max-w-[220px] truncate">{label}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 space-y-3 p-3">
-        <div className="grid grid-cols-2 gap-1.5">
-          {DATE_PRESETS.filter((p) => p.id !== "CUSTOM").map((item) => (
-            <Button
-              key={item.id}
-              variant={preset === item.id ? "default" : "outline"}
-              size="sm"
-              className="justify-start text-[12px]"
-              onClick={() => onChange(item.id, resolvePreset(item.id, now))}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </div>
-        <div className="space-y-2 border-t border-border pt-3">
-          <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Tùy chỉnh
-          </Label>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <Label className="text-[11px] text-muted-foreground">Từ ngày</Label>
-              <Input
-                type="date"
-                value={range.from ?? ""}
-                onChange={(e) => onChange("CUSTOM", { from: e.target.value || null, to: range.to })}
-                className="h-8 text-[12px]"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[11px] text-muted-foreground">Đến ngày</Label>
-              <Input
-                type="date"
-                value={range.to ?? ""}
-                onChange={(e) => onChange("CUSTOM", { from: range.from, to: e.target.value || null })}
-                className="h-8 text-[12px]"
-              />
-            </div>
+      <PopoverContent align="start" className="w-auto overflow-hidden rounded-xl border-border p-0 shadow-lg">
+        <div className="grid gap-0 sm:grid-cols-[9.5rem_1fr]">
+          <div className="flex flex-col gap-1 border-b border-border bg-muted/40 p-2.5 sm:border-b-0 sm:border-r">
+            {DATE_PRESETS.filter((p) => p.id !== "CUSTOM").map((item) => (
+              <Button
+                key={item.id}
+                variant={preset === item.id ? "default" : "ghost"}
+                size="sm"
+                className={cn(
+                  "h-8 justify-start rounded-md px-2.5 text-[12px] font-medium",
+                  preset !== item.id && "text-muted-foreground",
+                )}
+                onClick={() => onChange(item.id, resolvePreset(item.id, now))}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+          <div className="p-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Tùy chỉnh khoảng ngày
+            </p>
+            <Calendar
+              mode="range"
+              numberOfMonths={1}
+              selected={toDayPickerRange(range)}
+              defaultMonth={range.from ? parseISO(range.from) : now}
+              onSelect={(next) => {
+                onChange("CUSTOM", {
+                  from: next?.from ? format(next.from, "yyyy-MM-dd") : null,
+                  to: next?.to ? format(next.to, "yyyy-MM-dd") : null,
+                });
+              }}
+            />
+            {(range.from || range.to) && (
+              <p className="mt-2 text-[12px] text-muted-foreground">
+                {range.from
+                  ? format(parseISO(range.from), "d MMM yyyy", { locale: vi })
+                  : "…"}{" "}
+                →{" "}
+                {range.to ? format(parseISO(range.to), "d MMM yyyy", { locale: vi }) : "…"}
+              </p>
+            )}
           </div>
         </div>
       </PopoverContent>

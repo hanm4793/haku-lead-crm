@@ -6,7 +6,7 @@ import { BarChart3, Loader2, Table2, TriangleAlert, UserMinus } from "lucide-rea
 import { updateLeadAction } from "@/app/leads/actions";
 import { DateRangePicker, resolvePreset, type DateRange, type PresetId } from "@/components/common/date-range-picker";
 import { LeadDetailDialog } from "@/components/leads/lead-detail-dialog";
-import { LeadFilterPopover } from "@/components/leads/filter-popover";
+import { LeadFilterPopover, type FanpageFilterOption } from "@/components/leads/filter-popover";
 import { useNow } from "@/components/providers/now-provider";
 import { LossTab } from "@/components/reports/loss-tab";
 import { OverviewTab } from "@/components/reports/overview-tab";
@@ -24,7 +24,15 @@ interface LogEntry {
   message: string;
 }
 
-export function ReportsPage({ initialSummary }: { initialSummary: ReportSummary }) {
+export function ReportsPage({
+  initialSummary,
+  fanpageOptions = [],
+  assignees = [],
+}: {
+  initialSummary: ReportSummary;
+  fanpageOptions?: FanpageFilterOption[];
+  assignees?: string[];
+}) {
   const now = useNow();
 
   const [preset, setPreset] = React.useState<PresetId>("THIS_MONTH");
@@ -119,6 +127,8 @@ export function ReportsPage({ initialSummary }: { initialSummary: ReportSummary 
           {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
           <LeadFilterPopover
             filters={filters}
+            fanpageOptions={fanpageOptions}
+            assigneeOptions={assignees}
             onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
             onReset={() =>
               setFilters({
@@ -193,6 +203,7 @@ export function ReportsPage({ initialSummary }: { initialSummary: ReportSummary 
         logs={selectedLogs}
         open={Boolean(liveSelected)}
         onOpenChange={(open) => !open && setSelectedLead(null)}
+        assignees={assignees}
         onSave={(patch, entries) => liveSelected && void save(liveSelected, patch, entries)}
       />
     </div>

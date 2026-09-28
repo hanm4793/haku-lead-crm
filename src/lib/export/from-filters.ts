@@ -22,7 +22,7 @@ export function filtersToExportSpec(filters: LeadFilters, columns: string[]): Ex
       showrooms: filters.showrooms.length ? filters.showrooms : undefined,
       salesRooms: filters.salesRooms.length ? filters.salesRooms : undefined,
       assignees: filters.assignees.length ? filters.assignees : undefined,
-      b10: filters.b10,
+      facebookPageIds: filters.facebookPageIds.length ? filters.facebookPageIds : undefined,
     },
     columns,
     splitSheetsBy: null,

@@ -11,20 +11,19 @@ import {
   queryReportKpis,
   querySourceQuality,
 } from "@/lib/db/report-queries";
-import {
-  previousPeriod,
-  type CategoryShare,
-  type DailyPoint,
-  type FailReasonRow,
-  type FunnelStep,
-  type ModelBar,
-  type PivotDimension,
-  type PivotResult,
-  type SourceBar,
-  type SourceQualityRow,
+import { previousCalendarRange } from "@/lib/date-range";
+import type {
+  CategoryShare,
+  DailyPoint,
+  FailReasonRow,
+  FunnelStep,
+  ModelBar,
+  PivotDimension,
+  PivotResult,
+  SourceBar,
+  SourceQualityRow,
 } from "@/lib/metrics";
 import type { Lead, LeadFilters, LeadKpis } from "@/lib/types";
-import { toDateInputValue } from "@/lib/utils";
 
 /** Các chiều luôn được tính sẵn để nút xuất Excel của bảng chi tiết dùng ngay. */
 export const EXPORT_PIVOT_DIMENSIONS: PivotDimension[] = ["carModel", "source", "category"];
@@ -74,11 +73,11 @@ export async function buildReportSummary(
 
   let previousFilters: LeadFilters | null = null;
   if (filters.dateFrom && filters.dateTo) {
-    const prev = previousPeriod(new Date(filters.dateFrom), new Date(filters.dateTo));
+    const prev = previousCalendarRange(filters.dateFrom, filters.dateTo);
     previousFilters = {
       ...filters,
-      dateFrom: toDateInputValue(prev.from.toISOString()),
-      dateTo: toDateInputValue(prev.to.toISOString()),
+      dateFrom: prev.from,
+      dateTo: prev.to,
     };
   }
 

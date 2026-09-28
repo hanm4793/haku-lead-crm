@@ -22,7 +22,7 @@ export function criteriaFromExportFilters(filters: ExportFilters | undefined): L
     salesRooms: f.salesRooms,
     assignees: f.assignees,
     carModels: f.carModels,
-    b10: f.b10,
+    facebookPageIds: f.facebookPageIds,
     overdueOnly: f.overdueOnly,
   };
 }

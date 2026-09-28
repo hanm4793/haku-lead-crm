@@ -363,7 +363,7 @@ export function FacebookSyncPanel({
           </Button>
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">Chỉ ADMIN mới quản lý Fanpage / đồng bộ.</p>
+        <p className="text-xs text-muted-foreground">Chỉ super admin mới quản lý Fanpage / đồng bộ.</p>
       )}
 
       <Dialog open={purgeOpen} onOpenChange={setPurgeOpen}>

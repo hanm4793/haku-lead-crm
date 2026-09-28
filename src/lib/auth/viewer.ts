@@ -1,8 +1,10 @@
 import { eq, isNull, or } from "drizzle-orm";
 
+import { pageGrantUserId } from "@/lib/auth/roles";
+
 import { getDb, isDatabaseConfigured } from "@/lib/db/client";
 import type { ViewerScope } from "@/lib/db/leads-repo";
-import { appUsers } from "@/lib/db/schema";
+import { appUsers, userFacebookPages } from "@/lib/db/schema";
 import { createSupabaseServerClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export interface Viewer extends ViewerScope {
@@ -13,9 +15,11 @@ export interface Viewer extends ViewerScope {
 }
 
 const DEMO_VIEWER: Viewer = {
-  role: "ADMIN",
+  role: "SUPER_ADMIN",
   showroomId: null,
   appUserId: null,
+  pageIds: [],
+  aiEnabled: true,
   fullName: "Chế độ demo",
   email: null,
   isDemo: true,
@@ -101,23 +105,36 @@ async function provisionViewer(
         authUserId,
         email: normalizedEmail,
         fullName: fullNameHint?.trim() || normalizedEmail?.split("@")[0] || "Người dùng mới",
-        role: isAdmin ? "ADMIN" : "SALES",
+        role: isAdmin ? "SUPER_ADMIN" : "STAFF",
       })
       .returning();
-  } else if (normalizedEmail && adminEmails().includes(normalizedEmail) && row.role !== "ADMIN") {
-    [row] = await db.update(appUsers).set({ role: "ADMIN" }).where(eq(appUsers.id, row.id)).returning();
+  } else if (normalizedEmail && adminEmails().includes(normalizedEmail) && row.role !== "SUPER_ADMIN") {
+    [row] = await db.update(appUsers).set({ role: "SUPER_ADMIN" }).where(eq(appUsers.id, row.id)).returning();
   }
 
   if (!row.active) return null;
+
+  const pageOwnerId = pageGrantUserId({ role: row.role, id: row.id, partnerId: row.partnerId });
+  const pageIds = pageOwnerId ? await listGrantedPageIds(pageOwnerId) : [];
 
   return {
     role: row.role,
     showroomId: row.showroomId,
     appUserId: row.id,
+    pageIds,
+    aiEnabled: row.role === "SUPER_ADMIN" || row.aiEnabled,
     fullName: row.fullName,
     email: row.email,
     isDemo: false,
   };
+}
+
+async function listGrantedPageIds(userId: string): Promise<string[]> {
+  const rows = await getDb()
+    .select({ facebookPageId: userFacebookPages.facebookPageId })
+    .from(userFacebookPages)
+    .where(eq(userFacebookPages.userId, userId));
+  return rows.map((row) => row.facebookPageId);
 }
 
 /** Nhân sự chưa gắn tài khoản — hiển thị ở trang cài đặt để quản trị mời vào. */

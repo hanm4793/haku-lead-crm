@@ -25,6 +25,6 @@ export function exportSpecToFilters(spec: ExportSpec): LeadFilters {
     carModels: f.carModels ?? [],
     categories: (f.categories ?? []) as LeadCategory[],
     failReasons: (f.failReasons ?? []) as FailReason[],
-    b10: f.b10 ?? "ALL",
+    facebookPageIds: f.facebookPageIds ?? [],
   };
 }

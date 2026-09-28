@@ -1,5 +1,4 @@
 import {
-  B10_STATUS_LABEL,
   CHANNEL_LABEL,
   FAIL_REASON_LABEL,
   SOURCE_LABEL,
@@ -26,9 +25,6 @@ export const LEAD_COLUMNS: LeadColumn[] = [
   { id: "contactStatus", header: "Trạng thái", width: 145, sortable: true, value: (l) => l.contactStatus },
   { id: "category", header: "Phân loại", width: 140, sortable: true, value: (l) => l.category },
   { id: "failReason", header: "Lý do loại", width: 210, value: (l) => (l.failReason ? FAIL_REASON_LABEL[l.failReason] : null) },
-  { id: "pushedToB10", header: "B10", width: 80, align: "center", value: (l) => (l.pushedToB10 ? "Đã lên B10" : null) },
-  { id: "b10Status", header: "Trạng thái B10", width: 150, value: (l) => B10_STATUS_LABEL[l.b10Status] },
-  { id: "b10CareNote", header: "Nội dung chăm sóc B10", width: 230, value: (l) => l.b10CareNote },
   { id: "source", header: "Nguồn", width: 115, sortable: true, value: (l) => SOURCE_LABEL[l.source] },
   {
     id: "brand",
@@ -58,9 +54,6 @@ export const DEFAULT_VISIBLE_COLUMNS = [
   "contactStatus",
   "category",
   "failReason",
-  "pushedToB10",
-  "b10Status",
-  "b10CareNote",
   "source",
   "brand",
   "carModel",

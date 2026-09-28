@@ -27,7 +27,7 @@ export function parseExportRequestLocally(
   if (!wantsExport) {
     return {
       reply:
-        "Mình hiện chạy ở chế độ không có API key nên chỉ xử lý được yêu cầu xuất dữ liệu. Bạn thử: \"xuất lead Facebook tháng này chưa lên B10, tách sheet theo phụ trách\".",
+        "Mình hiện chạy ở chế độ không có API key nên chỉ xử lý được yêu cầu xuất dữ liệu. Bạn thử: \"xuất lead Facebook tháng này, tách sheet theo phụ trách\".",
       spec: null,
     };
   }
@@ -82,14 +82,6 @@ export function parseExportRequestLocally(
   } else if (/ky hop dong|khd/.test(q)) {
     filters.categories = ["KHD"];
     described.push("khách ký hợp đồng");
-  }
-
-  if (/chua len b10|chua doi soat/.test(q)) {
-    filters.b10 = "NOT_PUSHED";
-    described.push("chưa lên B10");
-  } else if (/da len b10|da doi soat/.test(q)) {
-    filters.b10 = "PUSHED";
-    described.push("đã lên B10");
   }
 
   if (/qua han/.test(q)) {

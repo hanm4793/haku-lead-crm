@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+﻿import ExcelJS from "exceljs";
 
 import { COLUMN_BY_ID, displayValue } from "@/components/leads/columns";
 import type { ExportSpec } from "@/lib/ai/export-spec";
@@ -68,7 +68,7 @@ function safeSheetName(name: string, used: Set<string>) {
 
 export async function buildLeadWorkbook(spec: ExportSpec, leads: Lead[]): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "CRM THACO Auto";
+  workbook.creator = "SEMTOP Marketing CRM";
   workbook.created = new Date();
 
   if (spec.includeSummarySheet) {

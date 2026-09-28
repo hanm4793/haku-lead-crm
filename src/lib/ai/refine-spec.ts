@@ -88,11 +88,6 @@ export function refineSpec(spec: ExportSpec, userText: string): ExportSpec {
     if (sources.length) filters.sources = sources;
   }
 
-  if (!filters.b10 || filters.b10 === "ALL") {
-    if (/chua (len |day |dua )?b10|chua doi soat/.test(q)) filters.b10 = "NOT_PUSHED";
-    else if (/da (len |day |dua )?b10|da doi soat/.test(q)) filters.b10 = "PUSHED";
-  }
-
   if (!filters.overdueOnly && /qua han/.test(q)) filters.overdueOnly = true;
 
   return { ...spec, filters };

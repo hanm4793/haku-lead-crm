@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL, type SQLWrapper }
 
 import { getDb } from "@/lib/db/client";
 import { activityLogs, appUsers, carModels, leads, salesRooms, showrooms } from "@/lib/db/schema";
+import { canEditLead, dataScope, type UserRole } from "@/lib/auth/roles";
 import type { ActivityLog, Brand, Lead, LeadFilters, LeadKpis } from "@/lib/types";
 import { UNASSIGNED_ASSIGNMENT_LABEL } from "@/lib/constants";
 import { ratio } from "@/lib/utils";
@@ -11,9 +12,12 @@ import { ratio } from "@/lib/utils";
  * AI) gửi lên và không bao giờ nhận từ client — đây là ranh giới phân quyền.
  */
 export interface ViewerScope {
-  role: "ADMIN" | "SHOWROOM_MANAGER" | "SALES";
+  role: UserRole;
   showroomId?: string | null;
   appUserId?: string | null;
+  /** Fanpage được xem. Super admin bỏ qua danh sách này. Rỗng nghĩa là không thấy lead nào. */
+  pageIds: string[];
+  aiEnabled?: boolean;
 }
 
 /**
@@ -36,8 +40,12 @@ export interface LeadCriteria {
   salesRooms?: string[];
   assignees?: string[];
   carModels?: string[];
-  b10?: "ALL" | "PUSHED" | "NOT_PUSHED";
+  facebookPageIds?: string[];
   overdueOnly?: boolean;
+  /** Khớp một phần tên chiến dịch, không phân biệt dấu. */
+  campaignContains?: string;
+  /** Khớp một phần tên người phụ trách. */
+  assigneeContains?: string;
 }
 
 /**
@@ -107,10 +115,22 @@ export function criteriaConditions(criteria: LeadCriteria, viewer: ViewerScope, 
   if (criteria.showrooms?.length) parts.push(inArray(showrooms.name, criteria.showrooms));
   if (criteria.salesRooms?.length) parts.push(inArray(salesRooms.name, criteria.salesRooms));
   if (criteria.assignees?.length) parts.push(inArray(appUsers.fullName, criteria.assignees));
+  if (criteria.assigneeContains) {
+    const name = normalizeSearch(criteria.assigneeContains);
+    if (name) {
+      parts.push(sql`lower(unaccent(coalesce(${appUsers.fullName}, ''))) like ${`%${name}%`}`);
+    }
+  }
   if (criteria.carModels?.length) parts.push(inArray(carModels.name, criteria.carModels));
-
-  if (criteria.b10 === "PUSHED") parts.push(eq(leads.pushedToB10, true));
-  if (criteria.b10 === "NOT_PUSHED") parts.push(eq(leads.pushedToB10, false));
+  if (criteria.campaignContains) {
+    const campaign = normalizeSearch(criteria.campaignContains);
+    if (campaign) {
+      parts.push(sql`lower(unaccent(coalesce(${leads.campaign}, ''))) like ${`%${campaign}%`}`);
+    }
+  }
+  if (criteria.facebookPageIds?.length) {
+    parts.push(inArray(leads.facebookPageId, criteria.facebookPageIds));
+  }
 
   if (criteria.overdueOnly) parts.push(overdueSql(now));
 
@@ -119,13 +139,10 @@ export function criteriaConditions(criteria: LeadCriteria, viewer: ViewerScope, 
 }
 
 export function scopeConditions(viewer: ViewerScope): SQL[] {
-  if (viewer.role === "SHOWROOM_MANAGER" && viewer.showroomId) {
-    return [eq(leads.showroomId, viewer.showroomId)];
-  }
-  if (viewer.role === "SALES" && viewer.appUserId) {
-    return [eq(leads.assigneeId, viewer.appUserId)];
-  }
-  return [];
+  const scope = dataScope(viewer);
+  if (scope === "all") return [];
+  if (scope === "none") return [sql`false`];
+  return [inArray(leads.facebookPageId, viewer.pageIds)];
 }
 
 /** Bộ lọc của trang danh sách; `includeTab` để tách ra bản dùng đếm số trên tab. */
@@ -142,7 +159,7 @@ export function criteriaFromLeadFilters(filters: LeadFilters, includeTab = true)
     carModels: filters.carModels,
     categories: filters.categories,
     failReasons: filters.failReasons,
-    b10: filters.b10,
+    facebookPageIds: filters.facebookPageIds,
   };
 
   if (!includeTab) return criteria;
@@ -162,14 +179,12 @@ const LEAD_SELECTION = {
   contactStatus: leads.contactStatus,
   category: leads.category,
   failReason: leads.failReason,
-  pushedToB10: leads.pushedToB10,
-  b10Status: leads.b10Status,
-  b10CareNote: leads.b10CareNote,
   source: leads.source,
   channelDetail: leads.channelDetail,
   brand: leads.brand,
   showroom: showrooms.name,
   salesRoom: salesRooms.name,
+  assigneeId: leads.assigneeId,
   assignee: appUsers.fullName,
   carModel: carModels.name,
   careNote: leads.careNote,
@@ -179,6 +194,7 @@ const LEAD_SELECTION = {
   campaign: leads.campaign,
   adContent: leads.adContent,
   costPerLead: leads.costPerLead,
+  facebookPageId: leads.facebookPageId,
 };
 
 interface LeadRow {
@@ -189,14 +205,12 @@ interface LeadRow {
   contactStatus: Lead["contactStatus"];
   category: Lead["category"];
   failReason: Lead["failReason"];
-  pushedToB10: boolean;
-  b10Status: Lead["b10Status"];
-  b10CareNote: string | null;
   source: Lead["source"];
   channelDetail: Lead["channelDetail"];
   brand: Lead["brand"];
   showroom: string | null;
   salesRoom: string | null;
+  assigneeId: string | null;
   assignee: string | null;
   carModel: string | null;
   careNote: string | null;
@@ -206,6 +220,7 @@ interface LeadRow {
   campaign: string | null;
   adContent: string | null;
   costPerLead: number | null;
+  facebookPageId: string | null;
 }
 
 /** Đưa hàng từ database về đúng shape `Lead` mà toàn bộ UI đang dùng. */
@@ -228,8 +243,6 @@ const SORTABLE: Record<string, SQLWrapper> = {
   contactStatus: leads.contactStatus,
   category: leads.category,
   failReason: leads.failReason,
-  pushedToB10: leads.pushedToB10,
-  b10Status: leads.b10Status,
   source: leads.source,
   channelDetail: leads.channelDetail,
   brand: leads.brand,
@@ -440,6 +453,9 @@ export async function appendActivityLog(
 
   const current = await getLeadById(leadId, viewer);
   if (!current) return null;
+  if (!canEditLead(viewer, current)) {
+    throw new Error("Chỉ được sửa lead được phân công cho bạn.");
+  }
 
   await getDb().insert(activityLogs).values(
     logs.map((log) => ({
@@ -472,6 +488,9 @@ export async function updateLead(
 ): Promise<Lead | null> {
   const current = await getLeadById(id, viewer);
   if (!current) return null;
+  if (!canEditLead(viewer, current)) {
+    throw new Error("Chỉ được sửa lead được phân công cho bạn.");
+  }
 
   const values: Record<string, unknown> = { updatedAt: new Date() };
 

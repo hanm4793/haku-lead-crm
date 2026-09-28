@@ -23,14 +23,20 @@ import { cn } from "@/lib/utils";
 
 const toOptions = (values: readonly string[]) => values.map((v) => ({ value: v, label: v }));
 
+export type FanpageFilterOption = { value: string; label: string };
+
 export function LeadFilterPopover({
   filters,
   onChange,
   onReset,
+  fanpageOptions = [],
+  assigneeOptions,
 }: {
   filters: LeadFilters;
   onChange: (patch: Partial<LeadFilters>) => void;
   onReset: () => void;
+  fanpageOptions?: FanpageFilterOption[];
+  assigneeOptions?: string[];
 }) {
   const activeCount = countActiveFilters(filters);
 
@@ -63,6 +69,14 @@ export function LeadFilterPopover({
               onChange={(v) => onChange({ sources: v as LeadSource[] })}
             />
           </Field>
+          <Field label="Fanpage">
+            <MultiSelect
+              options={fanpageOptions}
+              selected={filters.facebookPageIds}
+              onChange={(v) => onChange({ facebookPageIds: v })}
+              searchable={fanpageOptions.length > 6}
+            />
+          </Field>
           <Field label="Thương hiệu">
             <MultiSelect
               options={BRAND_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
@@ -77,7 +91,11 @@ export function LeadFilterPopover({
             <MultiSelect options={toOptions(SALES_ROOMS)} selected={filters.salesRooms} onChange={(v) => onChange({ salesRooms: v })} />
           </Field>
           <Field label="Phụ trách">
-            <MultiSelect options={toOptions(ASSIGNEES)} selected={filters.assignees} onChange={(v) => onChange({ assignees: v })} />
+            <MultiSelect
+              options={toOptions(assigneeOptions ?? ASSIGNEES)}
+              selected={filters.assignees}
+              onChange={(v) => onChange({ assignees: v })}
+            />
           </Field>
           <Field label="Dòng xe">
             <MultiSelect options={toOptions(ALL_CAR_MODELS)} selected={filters.carModels} onChange={(v) => onChange({ carModels: v })} />
@@ -97,18 +115,6 @@ export function LeadFilterPopover({
               onChange={(v) => onChange({ failReasons: v as FailReason[] })}
               searchable={false}
             />
-          </Field>
-          <Field label="Đối soát B10">
-            <Select value={filters.b10} onValueChange={(v) => onChange({ b10: v as LeadFilters["b10"] })}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Tất cả</SelectItem>
-                <SelectItem value="PUSHED">Đã lên B10</SelectItem>
-                <SelectItem value="NOT_PUSHED">Chưa lên B10</SelectItem>
-              </SelectContent>
-            </Select>
           </Field>
         </div>
       </PopoverContent>

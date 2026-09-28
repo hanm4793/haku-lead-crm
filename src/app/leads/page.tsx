@@ -1,14 +1,17 @@
-import { redirect } from "next/navigation";
+﻿import { redirect } from "next/navigation";
 
 import { LeadsPage } from "@/components/leads/leads-page";
 import { NowProvider } from "@/components/providers/now-provider";
+import { isPageVisible } from "@/lib/auth/roles";
 import { getViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
+import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
 import { queryLeadPage } from "@/lib/db/leads-repo";
+import { listAssignableStaff } from "@/lib/db/users-repo";
 import { EMPTY_FILTERS } from "@/lib/filters";
 import type { LeadSearchInput } from "@/lib/leads/query";
 
-export const metadata = { title: "Lead — CRM THACO Auto" };
+export const metadata = { title: "Lead — SEMTOP Marketing CRM" };
 export const dynamic = "force-dynamic";
 
 /** Trang đầu tiên được render sẵn ở server; các lần lọc sau đi qua /api/leads/search. */
@@ -42,11 +45,28 @@ export default async function Page() {
   if (!viewer) redirect("/login");
 
   const now = new Date();
-  const initialData = await queryLeadPage({ ...INITIAL_REQUEST, now }, viewer);
+  const [initialData, facebookPages, assignees] = await Promise.all([
+    queryLeadPage({ ...INITIAL_REQUEST, now }, viewer),
+    listFacebookPages(),
+    listAssignableStaff(viewer),
+  ]);
+
+  const fanpageOptions = facebookPages
+    .filter((page) => page.active && isPageVisible(viewer, page.facebookPageId))
+    .map((page) => ({
+      value: page.facebookPageId,
+      label: page.name?.trim() || page.facebookPageId,
+    }));
 
   return (
     <NowProvider value={now.toISOString()}>
-      <LeadsPage initialData={initialData} initialRequest={INITIAL_REQUEST} />
+      <LeadsPage
+        initialData={initialData}
+        initialRequest={INITIAL_REQUEST}
+        fanpageOptions={fanpageOptions}
+        assignees={assignees}
+        editor={{ role: viewer.role, appUserId: viewer.appUserId }}
+      />
     </NowProvider>
   );
 }

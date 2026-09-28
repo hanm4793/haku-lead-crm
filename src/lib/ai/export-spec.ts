@@ -37,7 +37,10 @@ export const exportFiltersSchema = z.object({
   showrooms: z.array(z.enum(SHOWROOMS as unknown as [string, ...string[]])).optional().describe("Showroom. Bỏ trống nếu không giới hạn — kể cả khi tách sheet theo showroom"),
   salesRooms: z.array(z.enum(SALES_ROOMS as unknown as [string, ...string[]])).optional(),
   assignees: z.array(z.enum(ASSIGNEES as unknown as [string, ...string[]])).optional().describe("Nhân viên phụ trách"),
-  b10: z.enum(["ALL", "PUSHED", "NOT_PUSHED"]).optional(),
+  facebookPageIds: z
+    .array(z.string().regex(/^\d{5,}$/))
+    .optional()
+    .describe("Meta Fanpage IDs — lọc lead theo trang Facebook nguồn"),
   overdueOnly: z.boolean().optional().describe("Chỉ lấy lead quá hạn gọi lại"),
 });
 

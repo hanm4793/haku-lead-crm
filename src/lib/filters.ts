@@ -14,7 +14,7 @@ export const EMPTY_FILTERS: LeadFilters = {
   carModels: [],
   categories: [],
   failReasons: [],
-  b10: "ALL",
+  facebookPageIds: [],
 };
 
 /**
@@ -79,16 +79,20 @@ export function applyLeadFilters(leads: Lead[], filters: LeadFilters, now: Date 
     if (filters.carModels.length && !filters.carModels.includes(lead.carModel ?? "")) return false;
     if (filters.categories.length && !filters.categories.includes(lead.category)) return false;
     if (filters.failReasons.length && !filters.failReasons.includes(lead.failReason!)) return false;
-    if (filters.b10 === "PUSHED" && !lead.pushedToB10) return false;
-    if (filters.b10 === "NOT_PUSHED" && lead.pushedToB10) return false;
+    if (
+      filters.facebookPageIds.length &&
+      (!lead.facebookPageId || !filters.facebookPageIds.includes(lead.facebookPageId))
+    ) {
+      return false;
+    }
 
     return true;
   });
 }
 
+/** Đếm điều kiện trong popover Bộ lọc. Khoảng ngày nằm ở nút chọn thời gian riêng, không tính vào badge. */
 export function countActiveFilters(filters: LeadFilters) {
   let n = 0;
-  if (filters.dateFrom || filters.dateTo) n += 1;
   n += filters.sources.length ? 1 : 0;
   n += filters.brands.length ? 1 : 0;
   n += filters.showrooms.length ? 1 : 0;
@@ -97,6 +101,6 @@ export function countActiveFilters(filters: LeadFilters) {
   n += filters.carModels.length ? 1 : 0;
   n += filters.categories.length ? 1 : 0;
   n += filters.failReasons.length ? 1 : 0;
-  n += filters.b10 !== "ALL" ? 1 : 0;
+  n += filters.facebookPageIds.length ? 1 : 0;
   return n;
 }

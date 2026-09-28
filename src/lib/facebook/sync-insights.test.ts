@@ -46,9 +46,36 @@ function createDb(existingObjectIds: string[] = []) {
 }
 
 describe("syncFacebookInsights", () => {
+  const graphState: {
+    campaignRows: unknown[];
+    adRows: unknown[];
+    catalog: unknown[];
+    servedCampaign: boolean;
+  } = {
+    campaignRows: [],
+    adRows: [],
+    catalog: [],
+    servedCampaign: false,
+  };
+
+  function assignCampaignRows(rows: unknown[]) {
+    graphState.campaignRows = rows;
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
+    graphState.campaignRows = [];
+    graphState.adRows = [];
+    graphState.catalog = [];
+    graphState.servedCampaign = false;
+    mocks.graphGetAllData.mockImplementation(async (path: string, params?: { level?: string }) => {
+      if (path.endsWith("/ads")) return graphState.catalog;
+      if (params?.level === "ad") return graphState.adRows;
+      if (graphState.servedCampaign) return [];
+      graphState.servedCampaign = true;
+      return graphState.campaignRows;
+    });
     mocks.getFacebookConfig.mockReturnValue({
       token: "test-token",
       pageId: "page-1",
@@ -63,7 +90,7 @@ describe("syncFacebookInsights", () => {
     vi.setSystemTime(new Date("2026-09-23T16:00:00.000Z"));
     const { db, inserted, updated } = createDb();
     mocks.getDb.mockReturnValue(db);
-    mocks.graphGetAllData.mockResolvedValue([
+    assignCampaignRows([
       {
         campaign_id: "campaign-1",
         campaign_name: "Campaign one",
@@ -89,13 +116,22 @@ describe("syncFacebookInsights", () => {
 
     const result = await syncFacebookInsights();
 
-    expect(mocks.graphGetAllData).toHaveBeenCalledWith("/act_123/insights", {
+    const campaignCalls = mocks.graphGetAllData.mock.calls.filter(
+      (call) => (call[1] as { level?: string } | undefined)?.level === "campaign",
+    );
+    expect(campaignCalls[0]?.[1]).toMatchObject({
       level: "campaign",
       time_increment: "1",
-      time_range: JSON.stringify({ since: "2026-08-25", until: "2026-09-23" }),
-      fields:
-        "campaign_id,campaign_name,spend,impressions,clicks,reach,actions,cpc,cpm,ctr,cost_per_action_type",
+      time_range: JSON.stringify({ since: "2026-08-25", until: "2026-08-31" }),
+      limit: "500",
     });
+    expect(campaignCalls.at(-1)?.[1]).toMatchObject({
+      time_range: JSON.stringify({ since: "2026-09-22", until: "2026-09-23" }),
+    });
+    expect(mocks.graphGetAllData).toHaveBeenCalledWith(
+      "/act_123/insights",
+      expect.objectContaining({ level: "ad", limit: "500" }),
+    );
     expect(result).toMatchObject({
       imported: 2,
       updated: 0,
@@ -140,7 +176,7 @@ describe("syncFacebookInsights", () => {
   it("counts an existing campaign date as updated", async () => {
     const { db } = createDb(["insight-1"]);
     mocks.getDb.mockReturnValue(db);
-    mocks.graphGetAllData.mockResolvedValue([
+    assignCampaignRows([
       {
         campaign_id: "campaign-1",
         date_start: "2026-09-01",
@@ -173,7 +209,7 @@ describe("syncFacebookInsights", () => {
       })),
     };
     mocks.getDb.mockReturnValue(db);
-    mocks.graphGetAllData.mockResolvedValue([
+    assignCampaignRows([
       { campaign_id: "campaign-1", date_start: "2026-09-01" },
     ]);
 
@@ -186,7 +222,7 @@ describe("syncFacebookInsights", () => {
   it("uses one prioritized lead action and its matching cost without summing aliases", async () => {
     const { db, inserted } = createDb();
     mocks.getDb.mockReturnValue(db);
-    mocks.graphGetAllData.mockResolvedValue([
+    assignCampaignRows([
       {
         campaign_id: "campaign-1",
         date_start: "2026-09-01",
@@ -215,7 +251,7 @@ describe("syncFacebookInsights", () => {
   it("matches cost per lead to the selected lower-priority action type", async () => {
     const { db, inserted } = createDb();
     mocks.getDb.mockReturnValue(db);
-    mocks.graphGetAllData.mockResolvedValue([
+    assignCampaignRows([
       {
         campaign_id: "campaign-1",
         date_start: "2026-09-01",
@@ -232,6 +268,43 @@ describe("syncFacebookInsights", () => {
     expect(inserted).toContainEqual({
       table: metaAdInsights,
       values: expect.objectContaining({ leads: 2, costPerLead: 12.5 }),
+    });
+  });
+
+  it("stores each ad with its campaign and the fanpage from the creative", async () => {
+    const { db, inserted } = createDb();
+    mocks.getDb.mockReturnValue(db);
+    graphState.adRows = [
+      {
+        ad_id: "ad-1",
+        ad_name: "Ad one",
+        adset_id: "set-1",
+        adset_name: "Set one",
+        campaign_id: "campaign-1",
+        campaign_name: "Campaign one",
+        date_start: "2026-09-01",
+        spend: "10",
+        impressions: "100",
+        clicks: "4",
+        actions: [{ action_type: "lead", value: "1" }],
+        cost_per_action_type: [{ action_type: "lead", value: "10" }],
+      },
+    ];
+    graphState.catalog = [{ id: "ad-1", creative: { object_story_spec: { page_id: "999" } } }];
+
+    await syncFacebookInsights({ since: "2026-09-01", until: "2026-09-01" });
+
+    expect(inserted).toContainEqual({
+      table: metaAdInsights,
+      values: expect.objectContaining({
+        level: "ad",
+        objectId: "ad-1",
+        campaignId: "campaign-1",
+        adsetId: "set-1",
+        pageId: "999",
+        leads: 1,
+        costPerLead: 10,
+      }),
     });
   });
 
