@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { getViewer } from "@/lib/auth/viewer";
+import { getScopedViewer } from "@/lib/auth/viewer";
 import { queryLeadPage } from "@/lib/db/leads-repo";
 import { leadSearchSchema } from "@/lib/leads/query";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (!viewer) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
   const parsed = leadSearchSchema.safeParse(await request.json());

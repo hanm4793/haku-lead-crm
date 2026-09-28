@@ -4,13 +4,20 @@ import { existsSync } from "node:fs";
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");
 
 import { drizzle } from "drizzle-orm/postgres-js";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import postgres from "postgres";
 
-import { ASSIGNEES, CAR_MODELS_BY_BRAND, SALES_ROOMS, SHOWROOMS } from "../src/lib/constants";
+import {
+  ASSIGNEES,
+  DEFAULT_BRAND_SEED,
+  DEFAULT_CATALOG_LABELS,
+  DEFAULT_PROJECT_NAME,
+  DEFAULT_PROJECT_SLUG,
+  LOCATIONS,
+  PRODUCTS_BY_BRAND,
+} from "../src/lib/constants";
 import * as schema from "../src/lib/db/schema";
 import { generateDemoData } from "../src/lib/mock-data";
-import type { Brand } from "../src/lib/types";
 
 const seedDemoLeads =
   process.env.SEED_DEMO_LEADS === "1" || process.argv.includes("--demo");
@@ -23,28 +30,88 @@ function chunked<T>(rows: T[], size = CHUNK): T[][] {
   return out;
 }
 
-/**
- * Tên phòng bán hàng có dạng "KIA MAZDA_PHÒNG 1_Trần Thanh Điệp" — phần sau dấu
- * gạch dưới cuối là trưởng phòng, dùng để nối sang app_users.
- */
-function managerNameOf(salesRoom: string) {
-  return salesRoom.split("_").pop()?.trim() ?? null;
-}
+type Db = ReturnType<typeof drizzle>;
 
 type CatalogMaps = {
-  showroomIdByName: Map<string, string>;
+  projectId: string;
+  brandIdByCode: Map<string, string>;
+  locationIdByName: Map<string, string>;
   userIdByName: Map<string, string>;
-  salesRoomIdByName: Map<string, string>;
-  carModelIdByKey: Map<string, string>;
+  productIdByKey: Map<string, string>;
 };
 
-/** Bổ sung danh mục thiếu — không xóa lead hay hàng tham chiếu đang được lead trỏ tới. */
-async function ensureCatalogs(db: ReturnType<typeof drizzle>): Promise<CatalogMaps> {
+/** Project mặc định (một project ở Phase B) — tạo nếu chưa có. */
+async function ensureProject(db: Db): Promise<string> {
   await db
-    .insert(schema.showrooms)
-    .values(SHOWROOMS.map((name, i) => ({ name, sortOrder: i })))
-    .onConflictDoNothing({ target: schema.showrooms.name });
+    .insert(schema.projects)
+    .values({
+      slug: DEFAULT_PROJECT_SLUG,
+      name: DEFAULT_PROJECT_NAME,
+      brandLabel: DEFAULT_CATALOG_LABELS.brand,
+      productLabel: DEFAULT_CATALOG_LABELS.product,
+      locationLabel: DEFAULT_CATALOG_LABELS.location,
+    })
+    .onConflictDoNothing({ target: schema.projects.slug });
+  const [project] = await db
+    .select({ id: schema.projects.id })
+    .from(schema.projects)
+    .where(eq(schema.projects.slug, DEFAULT_PROJECT_SLUG));
+  if (!project) throw new Error("Không tạo được project mặc định.");
+  return project.id;
+}
 
+/** Brand → product → location theo project; idempotent nhờ unique key. */
+async function ensureDimensionCatalogs(
+  db: Db,
+  projectId: string,
+): Promise<Pick<CatalogMaps, "brandIdByCode" | "locationIdByName" | "productIdByKey">> {
+  await db
+    .insert(schema.brands)
+    .values(DEFAULT_BRAND_SEED.map((b, i) => ({ projectId, code: b.code, name: b.name, sortOrder: i })))
+    .onConflictDoNothing({ target: [schema.brands.projectId, schema.brands.code] });
+  const brandRows = await db
+    .select({ id: schema.brands.id, code: schema.brands.code })
+    .from(schema.brands)
+    .where(eq(schema.brands.projectId, projectId));
+  const brandIdByCode = new Map(brandRows.map((r) => [r.code, r.id]));
+
+  const productValues = Object.entries(PRODUCTS_BY_BRAND).flatMap(([code, names]) => {
+    const brandId = brandIdByCode.get(code);
+    if (!brandId) return [];
+    return names.map((name) => ({ projectId, brandId, name }));
+  });
+  if (productValues.length) {
+    await db
+      .insert(schema.products)
+      .values(productValues)
+      .onConflictDoNothing({ target: [schema.products.brandId, schema.products.name] });
+  }
+  const productRows = await db
+    .select({ id: schema.products.id, brandId: schema.products.brandId, name: schema.products.name })
+    .from(schema.products)
+    .where(eq(schema.products.projectId, projectId));
+  const codeByBrandId = new Map(brandRows.map((r) => [r.id, r.code]));
+  const productIdByKey = new Map(
+    productRows.map((r) => [`${codeByBrandId.get(r.brandId) ?? ""}|${r.name}`, r.id]),
+  );
+
+  await db
+    .insert(schema.locations)
+    .values(LOCATIONS.map((name, i) => ({ projectId, name, sortOrder: i })))
+    .onConflictDoNothing({ target: [schema.locations.projectId, schema.locations.name] });
+  const locationRows = await db
+    .select({ id: schema.locations.id, name: schema.locations.name })
+    .from(schema.locations)
+    .where(eq(schema.locations.projectId, projectId));
+
+  return {
+    brandIdByCode,
+    locationIdByName: new Map(locationRows.map((r) => [r.name, r.id])),
+    productIdByKey,
+  };
+}
+
+async function ensureUsers(db: Db): Promise<Map<string, string>> {
   const existingUsers = await db
     .select({ id: schema.appUsers.id, fullName: schema.appUsers.fullName })
     .from(schema.appUsers)
@@ -64,60 +131,26 @@ async function ensureCatalogs(db: ReturnType<typeof drizzle>): Promise<CatalogMa
       .returning({ id: schema.appUsers.id, fullName: schema.appUsers.fullName });
     for (const row of inserted) userIdByName.set(row.fullName, row.id);
   }
+  return userIdByName;
+}
 
-  await db
-    .insert(schema.salesRooms)
-    .values(
-      SALES_ROOMS.map((name) => {
-        const manager = managerNameOf(name);
-        return { name, managerId: manager ? (userIdByName.get(manager) ?? null) : null };
-      }),
-    )
-    .onConflictDoNothing({ target: schema.salesRooms.name });
-
-  const carModelValues = Object.entries(CAR_MODELS_BY_BRAND).flatMap(([brand, models]) =>
-    models.map((name) => ({ brand: brand as Brand, name })),
-  );
-  await db.insert(schema.carModels).values(carModelValues).onConflictDoNothing({
-    target: [schema.carModels.brand, schema.carModels.name],
-  });
-
-  const showroomRows = await db
-    .select({ id: schema.showrooms.id, name: schema.showrooms.name })
-    .from(schema.showrooms)
-    .where(inArray(schema.showrooms.name, [...SHOWROOMS]));
-  const salesRoomRows = await db
-    .select({ id: schema.salesRooms.id, name: schema.salesRooms.name })
-    .from(schema.salesRooms)
-    .where(inArray(schema.salesRooms.name, [...SALES_ROOMS]));
-  const carModelRows = await db
-    .select({
-      id: schema.carModels.id,
-      brand: schema.carModels.brand,
-      name: schema.carModels.name,
-    })
-    .from(schema.carModels);
-
-  return {
-    showroomIdByName: new Map(showroomRows.map((r) => [r.name, r.id])),
-    userIdByName,
-    salesRoomIdByName: new Map(salesRoomRows.map((r) => [r.name, r.id])),
-    carModelIdByKey: new Map(carModelRows.map((r) => [`${r.brand}|${r.name}`, r.id])),
-  };
+/** Bổ sung danh mục thiếu — không xóa lead hay hàng tham chiếu đang được lead trỏ tới. */
+async function ensureCatalogs(db: Db): Promise<CatalogMaps> {
+  const projectId = await ensureProject(db);
+  const dimensions = await ensureDimensionCatalogs(db, projectId);
+  const userIdByName = await ensureUsers(db);
+  return { projectId, ...dimensions, userIdByName };
 }
 
 /** Xóa sạch và nạp lại danh mục (chế độ demo — sẽ xóa lead trước). */
-async function replaceCatalogs(db: ReturnType<typeof drizzle>): Promise<CatalogMaps> {
-  await db.delete(schema.salesRooms);
+async function replaceCatalogs(db: Db): Promise<CatalogMaps> {
   await db.delete(schema.appUsers);
-  await db.delete(schema.carModels);
-  await db.delete(schema.showrooms);
+  await db.delete(schema.products);
+  await db.delete(schema.brands);
+  await db.delete(schema.locations);
 
-  const showroomRows = await db
-    .insert(schema.showrooms)
-    .values(SHOWROOMS.map((name, i) => ({ name, sortOrder: i })))
-    .returning({ id: schema.showrooms.id, name: schema.showrooms.name });
-  const showroomIdByName = new Map(showroomRows.map((r) => [r.name, r.id]));
+  const projectId = await ensureProject(db);
+  const dimensions = await ensureDimensionCatalogs(db, projectId);
 
   const userRows = await db
     .insert(schema.appUsers)
@@ -130,27 +163,11 @@ async function replaceCatalogs(db: ReturnType<typeof drizzle>): Promise<CatalogM
     .returning({ id: schema.appUsers.id, fullName: schema.appUsers.fullName });
   const userIdByName = new Map(userRows.map((r) => [r.fullName, r.id]));
 
-  const salesRoomRows = await db
-    .insert(schema.salesRooms)
-    .values(
-      SALES_ROOMS.map((name) => {
-        const manager = managerNameOf(name);
-        return { name, managerId: manager ? (userIdByName.get(manager) ?? null) : null };
-      }),
-    )
-    .returning({ id: schema.salesRooms.id, name: schema.salesRooms.name });
-  const salesRoomIdByName = new Map(salesRoomRows.map((r) => [r.name, r.id]));
+  return { projectId, ...dimensions, userIdByName };
+}
 
-  const carModelValues = Object.entries(CAR_MODELS_BY_BRAND).flatMap(([brand, models]) =>
-    models.map((name) => ({ brand: brand as Brand, name })),
-  );
-  const carModelRows = await db
-    .insert(schema.carModels)
-    .values(carModelValues)
-    .returning({ id: schema.carModels.id, brand: schema.carModels.brand, name: schema.carModels.name });
-  const carModelIdByKey = new Map(carModelRows.map((r) => [`${r.brand}|${r.name}`, r.id]));
-
-  return { showroomIdByName, userIdByName, salesRoomIdByName, carModelIdByKey };
+function describe(maps: CatalogMaps) {
+  return `  ${maps.brandIdByCode.size} ${DEFAULT_CATALOG_LABELS.brand.toLowerCase()} · ${maps.productIdByKey.size} ${DEFAULT_CATALOG_LABELS.product.toLowerCase()} · ${maps.locationIdByName.size} ${DEFAULT_CATALOG_LABELS.location.toLowerCase()} · ${maps.userIdByName.size} nhân sự`;
 }
 
 async function main() {
@@ -165,9 +182,7 @@ async function main() {
   if (!seedDemoLeads) {
     console.log("Bổ sung danh mục (giữ nguyên lead và lịch sử hoạt động)…");
     const maps = await ensureCatalogs(db);
-    console.log(
-      `  ${maps.showroomIdByName.size} showroom · ${maps.userIdByName.size} nhân sự · ${maps.salesRoomIdByName.size} phòng bán hàng · ${maps.carModelIdByKey.size} dòng xe (trong DB)`,
-    );
+    console.log(`${describe(maps)} (trong DB)`);
     await sql.end();
     console.log("Xong. Không nạp lead demo — dùng pnpm db:seed:demo chỉ trên DB dev trống.");
     return;
@@ -178,12 +193,9 @@ async function main() {
   await db.delete(schema.leads);
 
   console.log("Nạp lại danh mục tham chiếu…");
-  const { showroomIdByName, userIdByName, salesRoomIdByName, carModelIdByKey } =
-    await replaceCatalogs(db);
-
-  console.log(
-    `  ${showroomIdByName.size} showroom · ${userIdByName.size} nhân sự · ${salesRoomIdByName.size} phòng bán hàng · ${carModelIdByKey.size} dòng xe`,
-  );
+  const maps = await replaceCatalogs(db);
+  const { projectId, brandIdByCode, locationIdByName, userIdByName, productIdByKey } = maps;
+  console.log(describe(maps));
 
   console.log("Sinh dữ liệu demo…");
   const { leads, logsByLead } = generateDemoData(new Date());
@@ -191,10 +203,12 @@ async function main() {
   const mockIdToDbId = new Map(leads.map((lead) => [lead.id, randomUUID()]));
 
   const leadValues = leads.map((lead) => {
-    const showroomId = showroomIdByName.get(lead.showroom);
-    const salesRoomId = salesRoomIdByName.get(lead.salesRoom);
-    if (!showroomId || !salesRoomId) {
-      throw new Error(`Không map được showroom/phòng bán hàng cho lead ${lead.id}`);
+    const locationId = lead.location ? locationIdByName.get(lead.location) : undefined;
+    const brandId = lead.brand ? brandIdByCode.get(lead.brand) : undefined;
+    if (!locationId || !brandId) {
+      throw new Error(
+        `Không map được ${DEFAULT_CATALOG_LABELS.location}/${DEFAULT_CATALOG_LABELS.brand} cho lead ${lead.id}`,
+      );
     }
 
     return {
@@ -208,11 +222,12 @@ async function main() {
       failReason: lead.failReason,
       source: lead.source,
       channelDetail: lead.channelDetail,
-      brand: lead.brand,
-      showroomId,
-      salesRoomId,
+      projectId,
+      brandId,
+      locationId,
       assigneeId: lead.assignee ? (userIdByName.get(lead.assignee) ?? null) : null,
-      carModelId: lead.carModel ? (carModelIdByKey.get(`${lead.brand}|${lead.carModel}`) ?? null) : null,
+      productId: lead.product ? (productIdByKey.get(`${lead.brand}|${lead.product}`) ?? null) : null,
+      attrs: lead.attrs ?? {},
       careNote: lead.careNote,
       callbackAt: lead.callbackAt ? new Date(lead.callbackAt) : null,
       contactCount: lead.contactCount,

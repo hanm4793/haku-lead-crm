@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getViewer } from "@/lib/auth/viewer";
+import { getScopedViewer } from "@/lib/auth/viewer";
 import { exportSpecSchema } from "@/lib/ai/export-spec";
 import { queryLeads } from "@/lib/ai/query-leads";
 import { buildLeadCsv, buildLeadWorkbook } from "@/lib/export/build-workbook";
@@ -8,7 +8,7 @@ import { buildLeadCsv, buildLeadWorkbook } from "@/lib/export/build-workbook";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (!viewer) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
   const parsed = exportSpecSchema.safeParse(await request.json());

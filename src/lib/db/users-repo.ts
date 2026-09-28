@@ -10,6 +10,7 @@ import {
 } from "@/lib/auth/roles";
 import type { ViewerScope } from "@/lib/db/leads-repo";
 import { getDb } from "@/lib/db/client";
+import { addProjectMember } from "@/lib/db/project-repo";
 import { appUsers, userFacebookPages } from "@/lib/db/schema";
 
 const partnerUser = alias(appUsers, "partner_user");
@@ -35,6 +36,7 @@ export interface CreateUserInput {
   active?: boolean;
   aiEnabled?: boolean;
   partnerId?: string | null;
+  projectId?: string | null;
   pageIds?: string[];
 }
 
@@ -46,6 +48,7 @@ export interface UpdateUserInput {
   active?: boolean;
   aiEnabled?: boolean;
   partnerId?: string | null;
+  projectId?: string | null;
   pageIds?: string[];
 }
 
@@ -196,18 +199,31 @@ export async function createManagedUser(input: CreateUserInput, actor: ViewerSco
   const email = normalizeEmail(input.email);
   await assertEmailAvailable(email);
 
-  const prepared = prepareCreateAccount(actor, {
-    role: input.role,
-    partnerId: input.partnerId ?? null,
-    aiEnabled: input.aiEnabled,
-    pageIds: input.pageIds,
-  });
-  const { role, partnerId, aiEnabled, pageIds } = prepared;
+  const prepared = prepareCreateAccount(
+    { role: actor.role, appUserId: actor.appUserId, projectId: actor.projectId ?? null },
+    {
+      role: input.role,
+      partnerId: input.partnerId ?? null,
+      projectId: input.projectId ?? null,
+      aiEnabled: input.aiEnabled,
+      pageIds: input.pageIds,
+    },
+  );
+  let { role, partnerId, projectId, aiEnabled, pageIds } = prepared;
   if (actor.role === "SUPER_ADMIN" && role === "STAFF" && partnerId) {
     await assertPartner(partnerId);
   }
 
   const db = getDb();
+  if (role === "STAFF" && partnerId && !projectId) {
+    const [partner] = await db
+      .select({ projectId: appUsers.projectId })
+      .from(appUsers)
+      .where(eq(appUsers.id, partnerId))
+      .limit(1);
+    projectId = partner?.projectId ?? null;
+  }
+
   const [row] = await db
     .insert(appUsers)
     .values({
@@ -215,12 +231,16 @@ export async function createManagedUser(input: CreateUserInput, actor: ViewerSco
       email,
       role,
       partnerId,
+      projectId,
       aiEnabled,
       active: input.active ?? true,
     })
     .returning({ id: appUsers.id });
 
   if (role === "PARTNER_ADMIN") await replacePageGrants(row.id, pageIds);
+  if (projectId && (role === "PARTNER_ADMIN" || role === "STAFF")) {
+    await addProjectMember(projectId, row.id);
+  }
 
   const users = await listManagedUsers(actor);
   const created = users.find((user) => user.id === row.id);
@@ -243,6 +263,7 @@ export async function updateManagedUser(
   const nextFullName = input.fullName !== undefined ? input.fullName.trim() : row.fullName;
   const nextEmail = input.email !== undefined ? normalizeEmail(input.email) : row.email;
   let nextPartnerId = input.partnerId !== undefined ? input.partnerId : row.partnerId;
+  let nextProjectId = input.projectId !== undefined ? input.projectId : row.projectId;
   let nextAi = row.aiEnabled;
 
   if (!nextFullName) throw new Error("Họ tên không được để trống.");
@@ -259,12 +280,25 @@ export async function updateManagedUser(
     if (nextRole === "STAFF") {
       if (!nextPartnerId) throw new Error("Nhân viên phải thuộc một partner admin.");
       await assertPartner(nextPartnerId);
+      if (!nextProjectId && nextPartnerId) {
+        const [partner] = await db
+          .select({ projectId: appUsers.projectId })
+          .from(appUsers)
+          .where(eq(appUsers.id, nextPartnerId))
+          .limit(1);
+        nextProjectId = partner?.projectId ?? null;
+      }
     }
     if (nextRole === "PARTNER_ADMIN") {
       nextPartnerId = null;
+      if (input.projectId !== undefined) nextProjectId = input.projectId;
+      if (!nextProjectId) throw new Error("Partner admin phải thuộc một project.");
       if (input.aiEnabled !== undefined) nextAi = input.aiEnabled;
     }
-    if (nextRole === "SUPER_ADMIN") nextPartnerId = null;
+    if (nextRole === "SUPER_ADMIN") {
+      nextPartnerId = null;
+      nextProjectId = null;
+    }
   }
 
   const isSelf = actor.appUserId !== null && actor.appUserId === row.id;
@@ -288,6 +322,7 @@ export async function updateManagedUser(
       email: nextEmail,
       role: nextRole,
       partnerId: nextPartnerId,
+      projectId: nextProjectId,
       aiEnabled: nextRole === "PARTNER_ADMIN" ? nextAi : false,
       active: nextActive,
     })
@@ -298,6 +333,9 @@ export async function updateManagedUser(
   }
   if (nextRole !== "PARTNER_ADMIN") {
     await db.delete(userFacebookPages).where(eq(userFacebookPages.userId, row.id));
+  }
+  if (nextProjectId && (nextRole === "PARTNER_ADMIN" || nextRole === "STAFF")) {
+    await addProjectMember(nextProjectId, row.id);
   }
 
   const users = await listManagedUsers(actor);

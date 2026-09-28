@@ -8,14 +8,18 @@ const mocks = vi.hoisted(() => ({
   getFacebookConfig: vi.fn(),
   graphGetAllData: vi.fn(),
   resolveActiveFacebookPageIds: vi.fn(),
+  getFacebookPageProjectId: vi.fn(),
   resolvePageAccessTokens: vi.fn(),
+  getDefaultProject: vi.fn(),
 }));
 
 vi.mock("@/lib/db/client", () => ({ getDb: mocks.getDb }));
 vi.mock("./env", () => ({ getFacebookConfig: mocks.getFacebookConfig }));
 vi.mock("@/lib/db/facebook-pages-repo", () => ({
   resolveActiveFacebookPageIds: mocks.resolveActiveFacebookPageIds,
+  getFacebookPageProjectId: mocks.getFacebookPageProjectId,
 }));
+vi.mock("@/lib/db/project-repo", () => ({ getDefaultProject: mocks.getDefaultProject }));
 vi.mock("./page-tokens", () => ({
   resolvePageAccessTokens: mocks.resolvePageAccessTokens,
 }));
@@ -93,6 +97,8 @@ describe("syncFacebookLeads", () => {
     mocks.resolvePageAccessTokens.mockResolvedValue(
       new Map([["page-1", { token: "page-token-1", name: "Page One" }]]),
     );
+    mocks.getDefaultProject.mockResolvedValue({ id: "project-1", slug: "semtop-auto" });
+    mocks.getFacebookPageProjectId.mockResolvedValue("project-1");
   });
 
   it("imports leads including those without phone", async () => {
@@ -107,6 +113,7 @@ describe("syncFacebookLeads", () => {
           field_data: [
             { name: "full_name", values: ["Nguyen A"] },
             { name: "phone_number", values: ["0901234567"] },
+            { name: "email", values: ["a@example.com"] },
           ],
           ad_id: "ad-1",
           ad_name: "Ad one",
@@ -137,10 +144,12 @@ describe("syncFacebookLeads", () => {
         phone: "0901234567",
         source: "FACEBOOK",
         channelDetail: "FORM",
-        showroomId: null,
-        salesRoomId: null,
-        brand: null,
+        projectId: "project-1",
+        brandId: null,
+        productId: null,
+        locationId: null,
         assigneeId: null,
+        attrs: { email: "a@example.com" },
         costPerLead: null,
       }),
       inTransaction: true,
@@ -151,6 +160,7 @@ describe("syncFacebookLeads", () => {
         facebookLeadId: "fb-2",
         phone: "",
         name: "No phone",
+        attrs: {},
       }),
       inTransaction: true,
     });
@@ -200,10 +210,11 @@ describe("syncFacebookLeads", () => {
     const leadUpdate = updated.find((entry) => entry.table === leads)?.values;
     expect(leadUpdate).not.toHaveProperty("name");
     expect(leadUpdate).not.toHaveProperty("campaign");
-    expect(leadUpdate).not.toHaveProperty("showroomId");
-    expect(leadUpdate).not.toHaveProperty("salesRoomId");
-    expect(leadUpdate).not.toHaveProperty("brand");
+    expect(leadUpdate).not.toHaveProperty("locationId");
+    expect(leadUpdate).not.toHaveProperty("brandId");
+    expect(leadUpdate).not.toHaveProperty("productId");
     expect(leadUpdate).not.toHaveProperty("assigneeId");
+    expect(leadUpdate).not.toHaveProperty("attrs");
     expect(inserted.filter((entry) => entry.table === activityLogs)).toHaveLength(0);
   });
 

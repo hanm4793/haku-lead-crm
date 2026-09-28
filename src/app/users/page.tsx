@@ -2,18 +2,21 @@
 
 import { UsersAdmin } from "@/components/users/users-admin";
 import { canManageUsers } from "@/lib/auth/roles";
-import { getViewer } from "@/lib/auth/viewer";
+import { getScopedViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
+import { listProjects, toProjectInfo } from "@/lib/db/project-repo";
 import { listManagedUsers } from "@/lib/db/users-repo";
+import type { ProjectInfo } from "@/lib/types";
 
-export const metadata = { title: "Tài khoản — SEMTOP Marketing CRM" };
+export const metadata = { title: "Người dùng — SEMTOP Marketing CRM" };
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (!viewer) redirect("/login?next=%2Fusers");
   if (!canManageUsers(viewer.role)) redirect("/leads");
+  const projectId = viewer.activeProjectId ?? undefined;
 
   if (!isDatabaseConfigured()) {
     return (
@@ -26,7 +29,14 @@ export default async function Page() {
     );
   }
 
-  const [users, facebookPages] = await Promise.all([listManagedUsers(viewer), listFacebookPages()]);
+  let projects: ProjectInfo[] = [];
+  if (viewer.role === "SUPER_ADMIN") {
+    projects = (await listProjects().catch(() => [])).map(toProjectInfo);
+  }
+  const [users, facebookPages] = await Promise.all([
+    listManagedUsers(viewer),
+    listFacebookPages(projectId ? { projectId } : undefined),
+  ]);
   const pages = facebookPages
     .filter((page) => page.active)
     .map((page) => ({
@@ -42,6 +52,7 @@ export default async function Page() {
       initialUsers={users}
       pages={pages}
       partners={partners}
+      projects={projects}
       actorRole={viewer.role}
       currentUserId={viewer.appUserId ?? null}
     />

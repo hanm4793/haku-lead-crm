@@ -11,7 +11,7 @@ import {
 } from "@/lib/db/leads-repo";
 import { queryMarketingSnapshot, listCampaignNames } from "@/lib/db/insights-repo";
 import { queryPivot, queryReportKpis } from "@/lib/db/report-queries";
-import { appUsers, carModels, facebookPages, leads, salesRooms, showrooms } from "@/lib/db/schema";
+import { appUsers, brands, facebookPages, leads, locations, products } from "@/lib/db/schema";
 import type { PivotDimension } from "@/lib/metrics";
 
 import {
@@ -47,10 +47,10 @@ async function queryByFanpage(
     })
     .from(leads)
     .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+    .leftJoin(products, eq(leads.productId, products.id))
     .where(parts.length ? and(...parts) : undefined)
     .groupBy(sql`1`)
     .orderBy(desc(sql`count(*)`))
@@ -82,7 +82,10 @@ export async function answerFromStats(query: StatsQuery, viewer: ViewerScope, no
     });
   }
 
-  const visible = pagesInScope(await listFacebookPages(), viewer);
+  const visible = pagesInScope(
+    await listFacebookPages(viewer.activeProjectId ? { projectId: viewer.activeProjectId } : undefined),
+    viewer,
+  );
   let pageIds = query.pageIds ?? [];
   if (!pageIds.length && query.pageQuery) {
     const matched = matchPages(visible, query.pageQuery);
@@ -198,7 +201,8 @@ async function marketingSection(query: StatsQuery, viewer: ViewerScope, pageIds:
   }
   const previousRange = previousRangeFor(query);
   const groupBy = marketingGroupBy(query.groupBy);
-  const brands = (query.filters.brands ?? []) as Array<"KIA" | "MAZDA" | "PEUGEOT" | "BMW">;
+  // Insights không có brand_id — lọc theo heuristic tên chiến dịch, chỉ với brand đã biết.
+  const brands = (query.filters.brands ?? []).filter(isCampaignBrand);
   const [current, previous] = await Promise.all([
     queryMarketingSnapshot({
       from: query.dateFrom,
@@ -234,6 +238,13 @@ async function marketingSection(query: StatsQuery, viewer: ViewerScope, pageIds:
     previousRange,
     breakdown: current.rows,
   });
+}
+
+type CampaignBrand = "KIA" | "MAZDA" | "PEUGEOT" | "BMW";
+const CAMPAIGN_BRANDS: readonly CampaignBrand[] = ["KIA", "MAZDA", "PEUGEOT", "BMW"];
+
+function isCampaignBrand(code: string): code is CampaignBrand {
+  return (CAMPAIGN_BRANDS as readonly string[]).includes(code);
 }
 
 async function lookupTaggedLeads(ids: string[], viewer: ViewerScope) {

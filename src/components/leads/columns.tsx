@@ -1,11 +1,12 @@
 import {
   CHANNEL_LABEL,
+  DEFAULT_CATALOG_LABELS,
   FAIL_REASON_LABEL,
   SOURCE_LABEL,
   UNASSIGNED_ASSIGNMENT_LABEL,
-  UNASSIGNED_MODEL_LABEL,
+  UNASSIGNED_PRODUCT_LABEL,
 } from "@/lib/constants";
-import type { Lead } from "@/lib/types";
+import type { CatalogLabels, Lead } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
 export interface LeadColumn {
@@ -28,14 +29,25 @@ export const LEAD_COLUMNS: LeadColumn[] = [
   { id: "source", header: "Nguồn", width: 115, sortable: true, value: (l) => SOURCE_LABEL[l.source] },
   {
     id: "brand",
-    header: "Thương hiệu",
+    header: DEFAULT_CATALOG_LABELS.brand,
     width: 125,
     sortable: true,
     value: (l) => l.brand ?? UNASSIGNED_ASSIGNMENT_LABEL,
   },
-  { id: "carModel", header: "Dòng xe", width: 140, sortable: true, value: (l) => l.carModel ?? UNASSIGNED_MODEL_LABEL },
-  { id: "showroom", header: "Showroom", width: 150, sortable: true, value: (l) => l.showroom || UNASSIGNED_ASSIGNMENT_LABEL },
-  { id: "salesRoom", header: "Phòng bán hàng", width: 250, value: (l) => l.salesRoom || UNASSIGNED_ASSIGNMENT_LABEL },
+  {
+    id: "product",
+    header: DEFAULT_CATALOG_LABELS.product,
+    width: 140,
+    sortable: true,
+    value: (l) => l.product ?? UNASSIGNED_PRODUCT_LABEL,
+  },
+  {
+    id: "location",
+    header: DEFAULT_CATALOG_LABELS.location,
+    width: 150,
+    sortable: true,
+    value: (l) => l.location || UNASSIGNED_ASSIGNMENT_LABEL,
+  },
   { id: "assignee", header: "Phụ trách", width: 160, sortable: true, value: (l) => l.assignee },
   { id: "careNote", header: "Nội dung chăm sóc", width: 260, value: (l) => l.careNote },
   { id: "callbackAt", header: "Hẹn gọi lại", width: 130, sortable: true, value: (l) => l.callbackAt },
@@ -56,15 +68,22 @@ export const DEFAULT_VISIBLE_COLUMNS = [
   "failReason",
   "source",
   "brand",
-  "carModel",
-  "showroom",
-  "salesRoom",
+  "product",
+  "location",
   "assignee",
   "careNote",
   "callbackAt",
 ];
 
 export const COLUMN_BY_ID = new Map(LEAD_COLUMNS.map((c) => [c.id, c]));
+
+/** Tiêu đề cột theo nhãn catalog của project — ba cột dimension đổi tên theo ngành. */
+export function columnHeader(columnId: string, labels: CatalogLabels = DEFAULT_CATALOG_LABELS): string {
+  if (columnId === "brand") return labels.brand;
+  if (columnId === "product") return labels.product;
+  if (columnId === "location") return labels.location;
+  return COLUMN_BY_ID.get(columnId)?.header ?? columnId;
+}
 
 /** Chuỗi hiển thị trong ô — cũng dùng làm giá trị ô Excel. */
 export function displayValue(lead: Lead, columnId: string): string {

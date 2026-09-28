@@ -4,33 +4,41 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, ChevronLeft, Megaphone, Settings, Shield, Sparkles, Users } from "lucide-react";
+import { BarChart3, Briefcase, ChevronLeft, Megaphone, Settings, Shield, Sparkles, Users } from "lucide-react";
 
 import { AiChatPanel } from "@/components/ai/ai-chat-panel";
+import { ProjectSwitcher } from "@/components/layout/project-switcher";
 import { UserMenu } from "@/components/layout/user-menu";
 import { Button } from "@/components/ui/button";
 import { canSeeNav, canUseAi, ROLE_LABELS, type NavGate, type UserRole } from "@/lib/auth/roles";
+import type { ProjectInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS: { href: string; label: string; icon: typeof Users; access: NavGate }[] = [
   { href: "/leads", label: "Lead", icon: Users, access: "all" },
   { href: "/reports", label: "Báo cáo", icon: BarChart3, access: "reports" },
   { href: "/marketing", label: "Marketing", icon: Megaphone, access: "marketing" },
-  { href: "/users", label: "Tài khoản", icon: Shield, access: "users" },
+  { href: "/projects", label: "Dự án", icon: Briefcase, access: "projects" },
+  { href: "/users", label: "Người dùng", icon: Shield, access: "users" },
   { href: "/settings", label: "Cài đặt App", icon: Settings, access: "settings" },
 ];
 
 export function AppShell({
   children,
   viewer,
+  projects = [],
+  activeProjectId = null,
 }: {
   children: React.ReactNode;
   viewer?: {
     fullName: string;
     role: UserRole;
+    email?: string | null;
     isDemo: boolean;
     aiEnabled: boolean;
   } | null;
+  projects?: ProjectInfo[];
+  activeProjectId?: string | null;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = React.useState(false);
@@ -38,7 +46,13 @@ export function AppShell({
 
   if (pathname.startsWith("/login")) return <>{children}</>;
 
-  const user = viewer ?? { fullName: "Chế độ demo", role: "SUPER_ADMIN" as const, isDemo: true, aiEnabled: true };
+  const user = viewer ?? {
+    fullName: "Chế độ demo",
+    role: "SUPER_ADMIN" as const,
+    email: null,
+    isDemo: true,
+    aiEnabled: true,
+  };
   const navItems = NAV_ITEMS.filter((item) => canSeeNav(user.role, item.access));
   const showAi = canUseAi(user);
 
@@ -52,26 +66,18 @@ export function AppShell({
       >
         <div
           className={cn(
-            "flex items-center gap-3 border-b border-white/10 px-4 py-4",
-            collapsed && "justify-center px-2",
+            "flex items-center border-b border-white/10 px-4 py-4",
+            collapsed ? "justify-center px-2" : "px-4",
           )}
         >
           <Image
             src="/brand/logo-white.png"
             alt="SEMTOP"
-            width={collapsed ? 36 : 120}
-            height={collapsed ? 36 : 32}
-            className={cn("object-contain", collapsed ? "h-8 w-8" : "h-8 w-auto")}
+            width={collapsed ? 36 : 140}
+            height={collapsed ? 36 : 36}
+            className={cn("object-contain", collapsed ? "h-8 w-8" : "h-9 w-auto")}
             priority
           />
-          {!collapsed && (
-            <div className="min-w-0">
-              <div className="truncate text-[13px] font-bold tracking-tight">SEMTOP</div>
-              <div className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-white/65">
-                Marketing CRM
-              </div>
-            </div>
-          )}
         </div>
 
         <nav className="mt-3 flex flex-1 flex-col gap-1 px-2.5">
@@ -131,12 +137,23 @@ export function AppShell({
         <UserMenu
           fullName={user.fullName}
           role={ROLE_LABELS[user.role]}
+          email={user.email}
           isDemo={user.isDemo}
           collapsed={collapsed}
         />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {((user.role === "SUPER_ADMIN" || user.role === "PARTNER_ADMIN") && projects.length >= 1) ||
+        (user.role === "STAFF" && projects.length > 1) ? (
+          <div className="flex items-center justify-end border-b border-border bg-card px-4 py-2">
+            <ProjectSwitcher
+              projects={projects}
+              activeProjectId={activeProjectId}
+              hideWhenSingle={user.role === "STAFF"}
+            />
+          </div>
+        ) : null}
         <main className="min-w-0 flex-1">{children}</main>
 
         <footer className="flex items-center justify-between border-t border-border bg-card px-5 py-2.5 text-[11px] text-muted-foreground">

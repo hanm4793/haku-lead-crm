@@ -13,8 +13,13 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 | Lead | Có | Có | Có |
 | Báo cáo | Có | Có | Không, chuyển về Lead. API trả 403 |
 | Marketing | Có | Có | Không, chuyển về Lead |
+| Dự án (`/projects`) | Có. `canViewProjects` | Có. Project trong `project_members` | Không, chuyển về Lead |
 | Tài khoản | Có | Có. Chỉ nhân viên của mình | Không, chuyển về Lead |
 | Cài đặt và đồng bộ Facebook | Có | Không | Không |
+| Danh mục / field phụ trên **Cài đặt** | Có. `canManageCatalogs` / `canManageAttrFields` | Không | Không |
+| Danh mục / field phụ trên **Dự án → chi tiết** | Có | Có trên project là thành viên. `canManageCatalogsInProject` | Không |
+| Quản lý project (tạo, gán fanpage, partner, ads) | Có. `canManageProjects` | Không (xem danh sách read-only) | Không |
+| Đổi project đang xem (switcher header) | Có. Cookie `semtop_project_id` | Có. Membership ≥ 1 (hiện cả khi 1 project) | Có khi > 1 membership (kế thừa partner) |
 | Đổi mật khẩu khi đã đăng nhập | Có | Có | Có |
 
 ## Dữ liệu
@@ -34,7 +39,7 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 
 | Hạng mục | Super admin | Partner admin | Nhân viên |
 | --- | --- | --- | --- |
-| Tạo partner admin | Có. Gán fanpage và cờ AI | Không | Không |
+| Tạo partner admin | Có. Bắt buộc chọn project, gán fanpage và cờ AI | Không | Không |
 | Tạo nhân viên | Có. Bắt buộc chọn partner. Không grant riêng | Có. Gắn vào mình. Tắt AI. Không grant riêng | Không |
 | Tạo super admin từ màn Tài khoản | Không | Không | Không |
 | Sửa tài khoản | Mọi tài khoản | Chỉ nhân viên của mình. Không đổi role, AI, grant | Không |

@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import { canManageSettings } from "@/lib/auth/roles";
-import { getViewer } from "@/lib/auth/viewer";
+import { getScopedViewer } from "@/lib/auth/viewer";
+import { resolveActiveProject, toProjectViewer } from "@/lib/db/project-repo";
 import {
   addFacebookPage,
   removeFacebookPage,
@@ -33,11 +34,11 @@ export type FacebookPageActionResult =
   | { ok: true; page?: FacebookPageRow }
   | { ok: false; error: string };
 
-async function requireAdmin(): Promise<string | null> {
-  const viewer = await getViewer();
-  if (!viewer) return "Phiên đăng nhập đã hết hạn.";
-  if (!canManageSettings(viewer.role)) return "Chỉ super admin mới đồng bộ dữ liệu Facebook.";
-  return null;
+async function requireAdmin(): Promise<{ error: string } | { viewer: NonNullable<Awaited<ReturnType<typeof getScopedViewer>>> }> {
+  const viewer = await getScopedViewer();
+  if (!viewer) return { error: "Phiên đăng nhập đã hết hạn." };
+  if (!canManageSettings(viewer.role)) return { error: "Chỉ super admin mới đồng bộ dữ liệu Facebook." };
+  return { viewer };
 }
 
 function revalidateFacebookPages() {
@@ -46,8 +47,8 @@ function revalidateFacebookPages() {
 }
 
 export async function syncFacebookLeadsAction(): Promise<SyncFacebookLeadsActionResult> {
-  const gateError = await requireAdmin();
-  if (gateError) return { ok: false, error: gateError };
+  const gate = await requireAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
 
   try {
     const result = await syncFacebookLeads();
@@ -62,8 +63,8 @@ export async function syncFacebookLeadsAction(): Promise<SyncFacebookLeadsAction
 }
 
 export async function syncFacebookInsightsAction(): Promise<SyncFacebookInsightsActionResult> {
-  const gateError = await requireAdmin();
-  if (gateError) return { ok: false, error: gateError };
+  const gate = await requireAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
 
   try {
     const result = await syncFacebookInsights();
@@ -79,8 +80,8 @@ export async function syncFacebookInsightsAction(): Promise<SyncFacebookInsights
 }
 
 export async function purgeSampleLeadsAction(): Promise<PurgeSampleLeadsActionResult> {
-  const gateError = await requireAdmin();
-  if (gateError) return { ok: false, error: gateError };
+  const gate = await requireAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
 
   try {
     const { deleted } = await purgeSampleLeads();
@@ -98,10 +99,11 @@ export async function addFacebookPageAction(input: {
   facebookPageId: string;
   name?: string;
 }): Promise<FacebookPageActionResult> {
-  const gateError = await requireAdmin();
-  if (gateError) return { ok: false, error: gateError };
+  const gate = await requireAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
   try {
-    const page = await addFacebookPage(input.facebookPageId, input.name ?? null);
+    const active = await resolveActiveProject(toProjectViewer(gate.viewer));
+    const page = await addFacebookPage(input.facebookPageId, input.name ?? null, active.id);
     revalidatePath("/settings");
     return { ok: true, page };
   } catch (error) {
@@ -116,8 +118,8 @@ export async function setFacebookPageActiveAction(input: {
   id: string;
   active: boolean;
 }): Promise<FacebookPageActionResult> {
-  const gateError = await requireAdmin();
-  if (gateError) return { ok: false, error: gateError };
+  const gate = await requireAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
   try {
     const page = await setFacebookPageActive(input.id, input.active);
     revalidatePath("/settings");
@@ -131,8 +133,8 @@ export async function setFacebookPageActiveAction(input: {
 }
 
 export async function removeFacebookPageAction(id: string): Promise<FacebookPageActionResult> {
-  const gateError = await requireAdmin();
-  if (gateError) return { ok: false, error: gateError };
+  const gate = await requireAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
   try {
     await removeFacebookPage(id);
     revalidatePath("/settings");

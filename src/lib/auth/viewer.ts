@@ -4,6 +4,11 @@ import { pageGrantUserId } from "@/lib/auth/roles";
 
 import { getDb, isDatabaseConfigured } from "@/lib/db/client";
 import type { ViewerScope } from "@/lib/db/leads-repo";
+import {
+  listProjectIdsForViewer,
+  resolveActiveProject,
+  toProjectViewer,
+} from "@/lib/db/project-repo";
 import { appUsers, userFacebookPages } from "@/lib/db/schema";
 import { createSupabaseServerClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -12,12 +17,18 @@ export interface Viewer extends ViewerScope {
   email: string | null;
   /** Chưa bật Supabase Auth — đang chạy chế độ demo quyền admin. */
   isDemo: boolean;
+  /** Project được phép (membership). */
+  projectIds: string[];
+  partnerId?: string | null;
 }
 
 const DEMO_VIEWER: Viewer = {
   role: "SUPER_ADMIN",
-  showroomId: null,
+  locationId: null,
   appUserId: null,
+  projectId: null,
+  projectIds: [],
+  partnerId: null,
   pageIds: [],
   aiEnabled: true,
   fullName: "Chế độ demo",
@@ -59,6 +70,19 @@ export async function getViewer(): Promise<Viewer | null> {
     return null;
   }
   return viewer;
+}
+
+/** Gắn `activeProjectId` để lọc lead, báo cáo và catalog. */
+export async function getScopedViewer(): Promise<Viewer | null> {
+  const viewer = await getViewer();
+  if (!viewer) return null;
+  if (!isDatabaseConfigured()) return viewer;
+  try {
+    const active = await resolveActiveProject(toProjectViewer(viewer));
+    return { ...viewer, activeProjectId: active.id };
+  } catch {
+    return viewer;
+  }
 }
 
 /** Alias theo tên trong kế hoạch migration — cùng nghĩa với `getViewer`. */
@@ -114,13 +138,34 @@ async function provisionViewer(
 
   if (!row.active) return null;
 
+  let projectId = row.projectId;
+  if (row.role === "STAFF" && !projectId && row.partnerId) {
+    const [partner] = await db
+      .select({ projectId: appUsers.projectId })
+      .from(appUsers)
+      .where(eq(appUsers.id, row.partnerId))
+      .limit(1);
+    projectId = partner?.projectId ?? null;
+  }
+
   const pageOwnerId = pageGrantUserId({ role: row.role, id: row.id, partnerId: row.partnerId });
   const pageIds = pageOwnerId ? await listGrantedPageIds(pageOwnerId) : [];
 
+  const projectViewer = toProjectViewer({
+    role: row.role,
+    appUserId: row.id,
+    projectId,
+    partnerId: row.partnerId,
+  });
+  const projectIds = await listProjectIdsForViewer(projectViewer);
+
   return {
     role: row.role,
-    showroomId: row.showroomId,
+    locationId: row.locationId,
     appUserId: row.id,
+    projectId,
+    projectIds,
+    partnerId: row.partnerId,
     pageIds,
     aiEnabled: row.role === "SUPER_ADMIN" || row.aiEnabled,
     fullName: row.fullName,

@@ -19,6 +19,8 @@ import { useLeadLogs } from "@/hooks/use-lead-logs";
 import { useLeadPage } from "@/hooks/use-lead-page";
 import { updateLeadAction } from "@/app/leads/actions";
 import { canEditLead, type UserRole } from "@/lib/auth/roles";
+import { DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/lib/catalog";
+import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import type { LeadPage } from "@/lib/db/leads-repo";
 import { downloadExport } from "@/lib/export/download";
 import { filtersToExportSpec } from "@/lib/export/from-filters";
@@ -44,12 +46,16 @@ export function LeadsPage({
   initialRequest,
   fanpageOptions = [],
   assignees = [],
+  catalog = DEFAULT_LEAD_CATALOG,
+  attrFields = [],
   editor,
 }: {
   initialData: LeadPage;
   initialRequest: LeadSearchInput;
   fanpageOptions?: FanpageFilterOption[];
   assignees?: string[];
+  catalog?: LeadCatalogOptions;
+  attrFields?: AttrFieldRow[];
   editor?: { role: UserRole; appUserId?: string | null };
 }) {
   const now = useNow();
@@ -201,6 +207,7 @@ export function LeadsPage({
             filters={filters}
             fanpageOptions={fanpageOptions}
             assigneeOptions={assignees}
+            catalog={catalog}
             onChange={setFilters}
             onReset={() => {
               resetFilters();
@@ -250,6 +257,8 @@ export function LeadsPage({
         open={Boolean(selected)}
         onOpenChange={(open) => !open && setSelectedId(null)}
         assignees={assignees}
+        catalog={catalog}
+        attrFields={attrFields}
         readOnly={selected ? !leadEditable(selected) : false}
         onSave={(patch, entries) => selected && leadEditable(selected) && void save(selected, patch, entries)}
       />

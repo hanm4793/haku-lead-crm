@@ -1,12 +1,13 @@
 import {
   CATEGORY_CHART_LABEL,
+  DEFAULT_CATALOG_LABELS,
   FAIL_REASON_LABEL,
   SOURCE_LABEL,
   UNASSIGNED_ASSIGNMENT_LABEL,
-  UNASSIGNED_MODEL_LABEL,
+  UNASSIGNED_PRODUCT_LABEL,
 } from "./constants";
 import { isOverdue } from "./filters";
-import type { Lead, LeadCategory, LeadKpis } from "./types";
+import type { CatalogLabels, Lead, LeadCategory, LeadKpis } from "./types";
 import { ratio } from "./utils";
 
 const INTERESTED: LeadCategory[] = ["KHQT", "GDTD", "KHD"];
@@ -136,10 +137,10 @@ export interface ModelBar {
   khqt: number;
 }
 
-export function computeByCarModel(leads: Lead[], limit = 10): ModelBar[] {
+export function computeByProduct(leads: Lead[], limit = 10): ModelBar[] {
   const map = new Map<string, ModelBar>();
   for (const lead of leads) {
-    const key = lead.carModel ?? UNASSIGNED_MODEL_LABEL;
+    const key = lead.product ?? UNASSIGNED_PRODUCT_LABEL;
     const row = map.get(key) ?? { model: key, leads: 0, khqt: 0 };
     row.leads += 1;
     if (INTERESTED.includes(lead.category)) row.khqt += 1;
@@ -213,14 +214,17 @@ export function computeSourceQuality(leads: Lead[], previousLeads: Lead[] = []):
     .sort((a, b) => b.leads - a.leads);
 }
 
-/** Các chiều có thể chọn ở tab "Bảng chi tiết". */
+/**
+ * Các chiều có thể chọn ở tab "Bảng chi tiết". Nhãn của product / brand /
+ * location là fallback cho project mặc định — UI có project thì dùng
+ * `pivotDimensionLabels(labels)`.
+ */
 export const PIVOT_DIMENSIONS = {
-  carModel: "Dòng xe",
+  product: DEFAULT_CATALOG_LABELS.product,
   source: "Nguồn",
   category: "Trạng thái",
-  brand: "Thương hiệu",
-  showroom: "Showroom",
-  salesRoom: "Phòng bán hàng",
+  brand: DEFAULT_CATALOG_LABELS.brand,
+  location: DEFAULT_CATALOG_LABELS.location,
   assignee: "Phụ trách",
   channelDetail: "Chi tiết kênh",
   campaign: "Chiến dịch",
@@ -228,20 +232,28 @@ export const PIVOT_DIMENSIONS = {
 
 export type PivotDimension = keyof typeof PIVOT_DIMENSIONS;
 
+/** Nhãn chiều pivot theo nhãn catalog của project đang dùng. */
+export function pivotDimensionLabels(labels: CatalogLabels = DEFAULT_CATALOG_LABELS): Record<PivotDimension, string> {
+  return {
+    ...PIVOT_DIMENSIONS,
+    product: labels.product,
+    brand: labels.brand,
+    location: labels.location,
+  };
+}
+
 export function dimensionValue(lead: Lead, dim: PivotDimension): string {
   switch (dim) {
-    case "carModel":
-      return lead.carModel ?? UNASSIGNED_MODEL_LABEL;
+    case "product":
+      return lead.product ?? UNASSIGNED_PRODUCT_LABEL;
     case "source":
       return SOURCE_LABEL[lead.source];
     case "category":
       return CATEGORY_CHART_LABEL[lead.category];
     case "brand":
       return lead.brand ?? UNASSIGNED_ASSIGNMENT_LABEL;
-    case "showroom":
-      return lead.showroom;
-    case "salesRoom":
-      return lead.salesRoom;
+    case "location":
+      return lead.location;
     case "assignee":
       return lead.assignee ?? "Chưa giao";
     case "channelDetail":

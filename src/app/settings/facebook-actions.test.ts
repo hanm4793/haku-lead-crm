@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  getViewer: vi.fn(),
+  getScopedViewer: vi.fn(),
   purgeSampleLeads: vi.fn(),
   revalidatePath: vi.fn(),
   syncFacebookInsights: vi.fn(),
@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
-vi.mock("@/lib/auth/viewer", () => ({ getViewer: mocks.getViewer }));
+vi.mock("@/lib/auth/viewer", () => ({ getScopedViewer: mocks.getScopedViewer }));
 vi.mock("@/lib/facebook/purge-sample-leads", () => ({
   purgeSampleLeads: mocks.purgeSampleLeads,
 }));
@@ -32,7 +32,7 @@ describe("Facebook settings actions", () => {
   });
 
   it("rejects partner admins without starting a sync", async () => {
-    mocks.getViewer.mockResolvedValue({ role: "PARTNER_ADMIN" });
+    mocks.getScopedViewer.mockResolvedValue({ role: "PARTNER_ADMIN" });
 
     await expect(syncFacebookLeadsAction()).resolves.toEqual({
       ok: false,
@@ -42,7 +42,7 @@ describe("Facebook settings actions", () => {
   });
 
   it("rejects non-admin viewers without starting a sync", async () => {
-    mocks.getViewer.mockResolvedValue({ role: "STAFF" });
+    mocks.getScopedViewer.mockResolvedValue({ role: "STAFF" });
 
     await expect(syncFacebookLeadsAction()).resolves.toEqual({
       ok: false,
@@ -52,7 +52,7 @@ describe("Facebook settings actions", () => {
   });
 
   it("runs sync for admins and revalidates affected pages", async () => {
-    mocks.getViewer.mockResolvedValue({ role: "SUPER_ADMIN" });
+    mocks.getScopedViewer.mockResolvedValue({ role: "SUPER_ADMIN" });
     const result = {
       imported: 2,
       updated: 1,
@@ -69,7 +69,7 @@ describe("Facebook settings actions", () => {
   });
 
   it("purges sample leads for admins", async () => {
-    mocks.getViewer.mockResolvedValue({ role: "SUPER_ADMIN" });
+    mocks.getScopedViewer.mockResolvedValue({ role: "SUPER_ADMIN" });
     mocks.purgeSampleLeads.mockResolvedValue({ deleted: 4 });
 
     await expect(purgeSampleLeadsAction()).resolves.toEqual({ ok: true, deleted: 4 });
@@ -78,7 +78,7 @@ describe("Facebook settings actions", () => {
   });
 
   it("rejects Insights sync for non-admin viewers", async () => {
-    mocks.getViewer.mockResolvedValue({ role: "STAFF" });
+    mocks.getScopedViewer.mockResolvedValue({ role: "STAFF" });
 
     await expect(syncFacebookInsightsAction()).resolves.toEqual({
       ok: false,
@@ -88,7 +88,7 @@ describe("Facebook settings actions", () => {
   });
 
   it("runs Insights sync for admins and revalidates Marketing", async () => {
-    mocks.getViewer.mockResolvedValue({ role: "SUPER_ADMIN" });
+    mocks.getScopedViewer.mockResolvedValue({ role: "SUPER_ADMIN" });
     const result = {
       imported: 1,
       updated: 2,

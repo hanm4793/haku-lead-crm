@@ -6,18 +6,20 @@ import {
   FAIL_REASON_LABEL,
   SOURCE_LABEL,
   UNASSIGNED_ASSIGNMENT_LABEL,
-  UNASSIGNED_MODEL_LABEL,
+  UNASSIGNED_PRODUCT_LABEL,
 } from "@/lib/constants";
 import { getDb } from "@/lib/db/client";
 import {
   criteriaConditions,
   criteriaFromLeadFilters,
   dueTodaySql,
+  LEAD_SELECTION,
   overdueSql,
+  toLead,
   type LeadCriteria,
   type ViewerScope,
 } from "@/lib/db/leads-repo";
-import { appUsers, carModels, leads, salesRooms, showrooms } from "@/lib/db/schema";
+import { appUsers, brands, leads, locations, products } from "@/lib/db/schema";
 import type {
   CategoryShare,
   DailyPoint,
@@ -81,18 +83,16 @@ const FAIL_REASON_CASE = caseMap(
 
 function dimensionExpr(dim: PivotDimension): SQL {
   switch (dim) {
-    case "carModel":
-      return sql`coalesce(${carModels.name}, ${UNASSIGNED_MODEL_LABEL})`;
+    case "product":
+      return sql`coalesce(${products.name}, ${UNASSIGNED_PRODUCT_LABEL})`;
     case "source":
       return SOURCE_CASE;
     case "category":
       return CATEGORY_CASE;
     case "brand":
-      return sql`coalesce(${leads.brand}::text, ${UNASSIGNED_ASSIGNMENT_LABEL})`;
-    case "showroom":
-      return sql`coalesce(${showrooms.name}, ${UNASSIGNED_ASSIGNMENT_LABEL})`;
-    case "salesRoom":
-      return sql`coalesce(${salesRooms.name}, ${UNASSIGNED_ASSIGNMENT_LABEL})`;
+      return sql`coalesce(${brands.code}, ${UNASSIGNED_ASSIGNMENT_LABEL})`;
+    case "location":
+      return sql`coalesce(${locations.name}, ${UNASSIGNED_ASSIGNMENT_LABEL})`;
     case "assignee":
       return sql`coalesce(${appUsers.fullName}, ${"Chưa giao"})`;
     case "channelDetail":
@@ -158,10 +158,10 @@ async function selectKpiRow(
       overdue: sql<number>`count(*) filter (where ${overdueSql(now)})::int`,
     })
     .from(leads)
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+    .leftJoin(products, eq(leads.productId, products.id))
     .where(whereClause(filters, viewer, now, extra));
 
   return row;
@@ -221,10 +221,10 @@ export async function queryDailySeries(
       khqt: sql<number>`count(*) filter (where ${leads.category} in ('KHQT', 'GDTD', 'KHD'))::int`,
     })
     .from(leads)
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+    .leftJoin(products, eq(leads.productId, products.id))
     .where(whereClause(filters, viewer, now))
     .groupBy(sql`1`)
     .orderBy(asc(sql`1`));
@@ -251,10 +251,10 @@ export async function queryCategoryDistribution(
       value: sql<number>`count(*)::int`,
     })
     .from(leads)
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+    .leftJoin(products, eq(leads.productId, products.id))
     .where(whereClause(filters, viewer, now))
     .groupBy(leads.category);
 
@@ -282,10 +282,10 @@ export async function queryBySource(
       khqt: sql<number>`count(*) filter (where ${leads.category} in ('KHQT', 'GDTD', 'KHD'))::int`,
     })
     .from(leads)
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+    .leftJoin(products, eq(leads.productId, products.id))
     .where(whereClause(filters, viewer, now))
     .groupBy(leads.source)
     .orderBy(desc(sql`count(*)`));
@@ -297,7 +297,7 @@ export async function queryBySource(
   }));
 }
 
-export async function queryByCarModel(
+export async function queryByProduct(
   filters: LeadFilters,
   viewer: ViewerScope,
   now: Date,
@@ -305,15 +305,15 @@ export async function queryByCarModel(
 ): Promise<ModelBar[]> {
   const rows = await getDb()
     .select({
-      model: sql<string>`coalesce(${carModels.name}, ${UNASSIGNED_MODEL_LABEL})`,
+      model: sql<string>`coalesce(${products.name}, ${UNASSIGNED_PRODUCT_LABEL})`,
       leads: sql<number>`count(*)::int`,
       khqt: sql<number>`count(*) filter (where ${leads.category} in ('KHQT', 'GDTD', 'KHD'))::int`,
     })
     .from(leads)
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+    .leftJoin(products, eq(leads.productId, products.id))
     .where(whereClause(filters, viewer, now))
     .groupBy(sql`1`)
     .orderBy(desc(sql`count(*)`))
@@ -334,10 +334,10 @@ export async function queryFailReasons(
       count: sql<number>`count(*)::int`,
     })
     .from(leads)
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+    .leftJoin(products, eq(leads.productId, products.id))
     .where(whereClause(failFilters, viewer, now))
     .groupBy(sql`1`)
     .orderBy(desc(sql`count(*)`));
@@ -366,10 +366,10 @@ export async function querySourceQuality(
         failed: sql<number>`count(*) filter (where ${leads.category} = 'FAIL')::int`,
       })
       .from(leads)
-      .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-      .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+      .leftJoin(brands, eq(leads.brandId, brands.id))
+      .leftJoin(locations, eq(leads.locationId, locations.id))
       .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-      .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+      .leftJoin(products, eq(leads.productId, products.id))
       .where(whereClause(f, viewer, now))
       .groupBy(leads.source);
 
@@ -425,10 +425,10 @@ async function queryPivotGrouped(
         overdue: PIVOT_METRICS.overdue(now),
       })
       .from(leads)
-      .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-      .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+      .leftJoin(brands, eq(leads.brandId, brands.id))
+      .leftJoin(locations, eq(leads.locationId, locations.id))
       .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-      .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+      .leftJoin(products, eq(leads.productId, products.id))
       .where(whereClause(filters, viewer, now, extra))
       .groupBy(sql`1`)
       .orderBy(desc(sql`count(*)`));
@@ -466,10 +466,10 @@ async function queryPivotGrouped(
       overdue: PIVOT_METRICS.overdue(now),
     })
     .from(leads)
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+    .leftJoin(products, eq(leads.productId, products.id))
     .where(whereClause(filters, viewer, now, extra))
     .groupBy(sql`1`, sql`2`);
 
@@ -540,48 +540,17 @@ export async function queryCallList(
   ];
 
   const rows = await getDb()
-    .select({
-      id: leads.id,
-      createdAt: leads.createdAt,
-      name: leads.name,
-      phone: leads.phone,
-      contactStatus: leads.contactStatus,
-      category: leads.category,
-      failReason: leads.failReason,
-      source: leads.source,
-      channelDetail: leads.channelDetail,
-      brand: leads.brand,
-      showroom: showrooms.name,
-      salesRoom: salesRooms.name,
-      assigneeId: leads.assigneeId,
-      assignee: appUsers.fullName,
-      carModel: carModels.name,
-      careNote: leads.careNote,
-      callbackAt: leads.callbackAt,
-      contactCount: leads.contactCount,
-      lastContactAt: leads.lastContactAt,
-      campaign: leads.campaign,
-      adContent: leads.adContent,
-      costPerLead: leads.costPerLead,
-      facebookPageId: leads.facebookPageId,
-    })
+    .select(LEAD_SELECTION)
     .from(leads)
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+    .leftJoin(products, eq(leads.productId, products.id))
     .where(and(...parts))
     .orderBy(asc(leads.callbackAt))
     .limit(limit);
 
-  return rows.map((row) => ({
-    ...row,
-    createdAt: row.createdAt.toISOString(),
-    callbackAt: row.callbackAt?.toISOString() ?? null,
-    lastContactAt: row.lastContactAt?.toISOString() ?? null,
-    showroom: row.showroom ?? UNASSIGNED_ASSIGNMENT_LABEL,
-    salesRoom: row.salesRoom ?? UNASSIGNED_ASSIGNMENT_LABEL,
-  }));
+  return rows.map(toLead);
 }
 
 /** Sheet breakdown cho AI preview — GROUP BY thay vì đếm trong JS. */
@@ -598,10 +567,10 @@ export async function querySheetCounts(
       count: sql<number>`count(*)::int`,
     })
     .from(leads)
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id))
+    .leftJoin(products, eq(leads.productId, products.id))
     .where(whereClause(filters, viewer, now))
     .groupBy(sql`1`)
     .orderBy(desc(sql`count(*)`));

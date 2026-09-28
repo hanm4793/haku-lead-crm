@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { getViewer } from "@/lib/auth/viewer";
+import { getScopedViewer } from "@/lib/auth/viewer";
 import { getActivityLogs, getLeadById } from "@/lib/db/leads-repo";
 
 export const runtime = "nodejs";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (!viewer) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
   const { id } = await params;

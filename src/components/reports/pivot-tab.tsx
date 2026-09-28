@@ -7,7 +7,9 @@ import { ColumnVisibilityPopover } from "@/components/common/column-visibility";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PIVOT_DIMENSIONS, type PivotDimension, type PivotResult, type PivotRow } from "@/lib/metrics";
+import { DEFAULT_CATALOG_LABELS } from "@/lib/constants";
+import { pivotDimensionLabels, type PivotDimension, type PivotResult, type PivotRow } from "@/lib/metrics";
+import type { CatalogLabels } from "@/lib/types";
 import { cn, formatNumber, formatPercent } from "@/lib/utils";
 
 interface MetricColumn {
@@ -49,6 +51,7 @@ export function PivotTab({
   splitBy,
   onGroupByChange,
   onSplitByChange,
+  labels = DEFAULT_CATALOG_LABELS,
 }: {
   pivot: PivotResult;
   pivotByDimension: Record<string, PivotResult>;
@@ -56,7 +59,10 @@ export function PivotTab({
   splitBy: PivotDimension | "NONE";
   onGroupByChange: (dim: PivotDimension) => void;
   onSplitByChange: (dim: PivotDimension | "NONE") => void;
+  /** Nhãn brand / sản phẩm / location theo project. */
+  labels?: CatalogLabels;
 }) {
+  const PIVOT_DIMENSIONS = React.useMemo(() => pivotDimensionLabels(labels), [labels]);
   const [metrics, setMetrics] = React.useState<string[]>(DEFAULT_METRICS);
   const [sortBy, setSortBy] = React.useState<keyof PivotRow>("leads");
   const [sortOrder, setSortOrder] = React.useState<"asc" | "desc">("desc");
@@ -271,7 +277,7 @@ export function PivotTab({
         </div>
 
         <p className="px-5 py-3 text-[11px] text-muted-foreground">
-          Nút Xuất Excel tạo file .xlsx gồm bảng đang xem + 1 sheet cho mỗi chiều (Dòng xe, Nguồn, Trạng thái).
+          Nút Xuất Excel tạo file .xlsx gồm bảng đang xem + 1 sheet cho mỗi chiều ({labels.product}, Nguồn, Trạng thái).
         </p>
       </div>
     </div>

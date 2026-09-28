@@ -28,9 +28,8 @@ function describeFilters(spec: ExportSpec): string[] {
   if (f.failReasons?.length) chips.push(f.failReasons.map((r) => FAIL_REASON_LABEL[r as FailReason]).join(" / "));
   if (f.sources?.length) chips.push(f.sources.map((s) => SOURCE_LABEL[s as LeadSource]).join(" / "));
   if (f.brands?.length) chips.push(f.brands.join(" / "));
-  if (f.carModels?.length) chips.push(f.carModels.join(" / "));
-  if (f.showrooms?.length) chips.push(`SR ${f.showrooms.join(" / ")}`);
-  if (f.salesRooms?.length) chips.push(f.salesRooms.join(" / "));
+  if (f.products?.length) chips.push(f.products.join(" / "));
+  if (f.locations?.length) chips.push(f.locations.join(" / "));
   if (f.assignees?.length) chips.push(f.assignees.join(" / "));
   if (f.overdueOnly) chips.push("Quá hạn gọi lại");
   if (f.search) chips.push(`Tìm "${f.search}"`);

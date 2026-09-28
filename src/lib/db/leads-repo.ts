@@ -1,9 +1,19 @@
 import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
+import { listAttrFields, type AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import { getDb } from "@/lib/db/client";
-import { activityLogs, appUsers, carModels, leads, salesRooms, showrooms } from "@/lib/db/schema";
+import { activityLogs, appUsers, brands, leads, locations, products } from "@/lib/db/schema";
+import { getCatalogLabels, getDefaultProject, getProjectById, toProjectInfo } from "@/lib/db/project-repo";
 import { canEditLead, dataScope, type UserRole } from "@/lib/auth/roles";
-import type { ActivityLog, Brand, Lead, LeadFilters, LeadKpis } from "@/lib/types";
+import type {
+  ActivityLog,
+  BrandCode,
+  CatalogLabels,
+  Lead,
+  LeadFilters,
+  LeadKpis,
+  ProjectInfo,
+} from "@/lib/types";
 import { UNASSIGNED_ASSIGNMENT_LABEL } from "@/lib/constants";
 import { ratio } from "@/lib/utils";
 
@@ -13,8 +23,15 @@ import { ratio } from "@/lib/utils";
  */
 export interface ViewerScope {
   role: UserRole;
-  showroomId?: string | null;
+  locationId?: string | null;
   appUserId?: string | null;
+  /** app_users.project_id — null với super admin. */
+  projectId?: string | null;
+  /** Membership project (`project_members`). */
+  projectIds?: string[];
+  partnerId?: string | null;
+  /** Project đang làm việc (cookie / gán tài khoản). Dùng lọc lead và catalog. */
+  activeProjectId?: string | null;
   /** Fanpage được xem. Super admin bỏ qua danh sách này. Rỗng nghĩa là không thấy lead nào. */
   pageIds: string[];
   aiEnabled?: boolean;
@@ -35,11 +52,13 @@ export interface LeadCriteria {
   categories?: Lead["category"][];
   failReasons?: NonNullable<Lead["failReason"]>[];
   sources?: Lead["source"][];
-  brands?: Brand[];
-  showrooms?: string[];
-  salesRooms?: string[];
+  /** Mã brand (brands.code). */
+  brands?: BrandCode[];
+  /** Tên location (locations.name). */
+  locations?: string[];
   assignees?: string[];
-  carModels?: string[];
+  /** Tên sản phẩm (products.name). */
+  products?: string[];
   facebookPageIds?: string[];
   overdueOnly?: boolean;
   /** Khớp một phần tên chiến dịch, không phân biệt dấu. */
@@ -109,11 +128,10 @@ export function criteriaConditions(criteria: LeadCriteria, viewer: ViewerScope, 
 
   if (criteria.contactStatus) parts.push(eq(leads.contactStatus, criteria.contactStatus));
   if (criteria.sources?.length) parts.push(inArray(leads.source, criteria.sources));
-  if (criteria.brands?.length) parts.push(inArray(leads.brand, criteria.brands));
+  if (criteria.brands?.length) parts.push(inArray(brands.code, criteria.brands));
   if (criteria.categories?.length) parts.push(inArray(leads.category, criteria.categories));
   if (criteria.failReasons?.length) parts.push(inArray(leads.failReason, criteria.failReasons));
-  if (criteria.showrooms?.length) parts.push(inArray(showrooms.name, criteria.showrooms));
-  if (criteria.salesRooms?.length) parts.push(inArray(salesRooms.name, criteria.salesRooms));
+  if (criteria.locations?.length) parts.push(inArray(locations.name, criteria.locations));
   if (criteria.assignees?.length) parts.push(inArray(appUsers.fullName, criteria.assignees));
   if (criteria.assigneeContains) {
     const name = normalizeSearch(criteria.assigneeContains);
@@ -121,7 +139,7 @@ export function criteriaConditions(criteria: LeadCriteria, viewer: ViewerScope, 
       parts.push(sql`lower(unaccent(coalesce(${appUsers.fullName}, ''))) like ${`%${name}%`}`);
     }
   }
-  if (criteria.carModels?.length) parts.push(inArray(carModels.name, criteria.carModels));
+  if (criteria.products?.length) parts.push(inArray(products.name, criteria.products));
   if (criteria.campaignContains) {
     const campaign = normalizeSearch(criteria.campaignContains);
     if (campaign) {
@@ -139,10 +157,16 @@ export function criteriaConditions(criteria: LeadCriteria, viewer: ViewerScope, 
 }
 
 export function scopeConditions(viewer: ViewerScope): SQL[] {
+  const parts: SQL[] = [];
+  if (viewer.activeProjectId) {
+    parts.push(eq(leads.projectId, viewer.activeProjectId));
+  }
   const scope = dataScope(viewer);
-  if (scope === "all") return [];
   if (scope === "none") return [sql`false`];
-  return [inArray(leads.facebookPageId, viewer.pageIds)];
+  if (scope === "granted-pages") {
+    parts.push(inArray(leads.facebookPageId, viewer.pageIds));
+  }
+  return parts;
 }
 
 /** Bộ lọc của trang danh sách; `includeTab` để tách ra bản dùng đếm số trên tab. */
@@ -153,10 +177,9 @@ export function criteriaFromLeadFilters(filters: LeadFilters, includeTab = true)
     dateTo: filters.dateTo,
     sources: filters.sources,
     brands: filters.brands,
-    showrooms: filters.showrooms,
-    salesRooms: filters.salesRooms,
+    locations: filters.locations,
     assignees: filters.assignees,
-    carModels: filters.carModels,
+    products: filters.products,
     categories: filters.categories,
     failReasons: filters.failReasons,
     facebookPageIds: filters.facebookPageIds,
@@ -171,7 +194,11 @@ export function criteriaFromLeadFilters(filters: LeadFilters, includeTab = true)
   return criteria;
 }
 
-const LEAD_SELECTION = {
+/**
+ * Selection chuẩn cho một dòng lead — dùng chung với report-queries để mọi
+ * chỗ trả `Lead` có cùng shape.
+ */
+export const LEAD_SELECTION = {
   id: leads.id,
   createdAt: leads.createdAt,
   name: leads.name,
@@ -181,12 +208,15 @@ const LEAD_SELECTION = {
   failReason: leads.failReason,
   source: leads.source,
   channelDetail: leads.channelDetail,
-  brand: leads.brand,
-  showroom: showrooms.name,
-  salesRoom: salesRooms.name,
+  brand: brands.code,
+  brandId: leads.brandId,
+  location: locations.name,
+  locationId: leads.locationId,
   assigneeId: leads.assigneeId,
   assignee: appUsers.fullName,
-  carModel: carModels.name,
+  product: products.name,
+  productId: leads.productId,
+  attrs: leads.attrs,
   careNote: leads.careNote,
   callbackAt: leads.callbackAt,
   contactCount: leads.contactCount,
@@ -197,7 +227,7 @@ const LEAD_SELECTION = {
   facebookPageId: leads.facebookPageId,
 };
 
-interface LeadRow {
+export interface LeadRow {
   id: string;
   createdAt: Date;
   name: string | null;
@@ -207,12 +237,15 @@ interface LeadRow {
   failReason: Lead["failReason"];
   source: Lead["source"];
   channelDetail: Lead["channelDetail"];
-  brand: Lead["brand"];
-  showroom: string | null;
-  salesRoom: string | null;
+  brand: string | null;
+  brandId: string | null;
+  location: string | null;
+  locationId: string | null;
   assigneeId: string | null;
   assignee: string | null;
-  carModel: string | null;
+  product: string | null;
+  productId: string | null;
+  attrs: Record<string, string> | null;
   careNote: string | null;
   callbackAt: Date | null;
   contactCount: number;
@@ -224,14 +257,14 @@ interface LeadRow {
 }
 
 /** Đưa hàng từ database về đúng shape `Lead` mà toàn bộ UI đang dùng. */
-function toLead(row: LeadRow): Lead {
+export function toLead(row: LeadRow): Lead {
   return {
     ...row,
     createdAt: row.createdAt.toISOString(),
     callbackAt: row.callbackAt?.toISOString() ?? null,
     lastContactAt: row.lastContactAt?.toISOString() ?? null,
-    showroom: row.showroom ?? UNASSIGNED_ASSIGNMENT_LABEL,
-    salesRoom: row.salesRoom ?? UNASSIGNED_ASSIGNMENT_LABEL,
+    location: row.location ?? UNASSIGNED_ASSIGNMENT_LABEL,
+    attrs: row.attrs ?? {},
   };
 }
 
@@ -245,11 +278,10 @@ const SORTABLE: Record<string, SQLWrapper> = {
   failReason: leads.failReason,
   source: leads.source,
   channelDetail: leads.channelDetail,
-  brand: leads.brand,
-  showroom: showrooms.name,
-  salesRoom: salesRooms.name,
+  brand: brands.code,
+  location: locations.name,
   assignee: appUsers.fullName,
-  carModel: carModels.name,
+  product: products.name,
   careNote: leads.careNote,
   callbackAt: leads.callbackAt,
   contactCount: leads.contactCount,
@@ -261,7 +293,7 @@ const SORTABLE: Record<string, SQLWrapper> = {
 
 /**
  * Bốn bảng tham chiếu phải join ở mọi truy vấn vì bộ lọc và sắp xếp đều có thể
- * chạm vào tên showroom, phòng bán hàng, người phụ trách hoặc dòng xe.
+ * chạm vào brand, location, người phụ trách hoặc sản phẩm.
  *
  * Kiểu builder của Drizzle không chịu được selection dạng generic, nên tách
  * thành hai helper với selection cố định thay vì một helper nhận tham số.
@@ -270,10 +302,10 @@ function selectLeadRows() {
   return getDb()
     .select(LEAD_SELECTION)
     .from(leads)
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id));
+    .leftJoin(products, eq(leads.productId, products.id));
 }
 
 /**
@@ -294,10 +326,10 @@ function selectLeadCounts(now: Date) {
       overdue: sql<number>`count(*) filter (where ${overdueSql(now)})::int`,
     })
     .from(leads)
-    .leftJoin(showrooms, eq(leads.showroomId, showrooms.id))
-    .leftJoin(salesRooms, eq(leads.salesRoomId, salesRooms.id))
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(carModels, eq(leads.carModelId, carModels.id));
+    .leftJoin(products, eq(leads.productId, products.id));
 }
 
 export interface LeadPage {
@@ -422,10 +454,16 @@ export interface LeadPatch {
   channelDetail?: Lead["channelDetail"];
   /** Tên người phụ trách; repository tự đổi sang khóa ngoại. */
   assignee?: string | null;
-  /** Tên dòng xe; repository tự đổi sang khóa ngoại. */
-  carModel?: string | null;
+  /** Mã brand (brands.code); repository tự đổi sang khóa ngoại. */
+  brand?: BrandCode | null;
+  /** Tên sản phẩm; repository tự đổi sang khóa ngoại. */
+  product?: string | null;
+  /** Tên location; repository tự đổi sang khóa ngoại. */
+  location?: string | null;
   careNote?: string | null;
   callbackAt?: string | null;
+  /** Giá trị field phụ đã validate; key không thuộc định nghĩa active giữ nguyên từ DB. */
+  attrs?: Record<string, string>;
 }
 
 export interface LogDraft {
@@ -506,8 +544,25 @@ export async function updateLead(
   if (patch.assignee !== undefined) {
     values.assigneeId = patch.assignee ? await resolveAssigneeId(patch.assignee) : null;
   }
-  if (patch.carModel !== undefined) {
-    values.carModelId = patch.carModel ? await resolveCarModelId(patch.carModel, current.brand) : null;
+
+  // Brand quyết định tập sản phẩm hợp lệ, nên resolve brand trước rồi mới tới product.
+  let brandCode: BrandCode | null = current.brand;
+  if (patch.brand !== undefined) {
+    brandCode = patch.brand;
+    values.brandId = patch.brand ? await resolveBrandId(patch.brand) : null;
+    // Đổi brand mà không nói gì về product thì bỏ product cũ (thuộc brand khác).
+    if (patch.product === undefined && patch.brand !== current.brand) values.productId = null;
+  }
+  if (patch.product !== undefined) {
+    values.productId = patch.product ? await resolveProductId(patch.product, brandCode) : null;
+  }
+  if (patch.location !== undefined) {
+    values.locationId = patch.location ? await resolveLocationId(patch.location) : null;
+  }
+  if (patch.attrs !== undefined) {
+    const projectId = await resolveLeadProjectId(id);
+    if (!projectId) throw new Error("Lead chưa gắn project.");
+    values.attrs = await mergeLeadAttrs(projectId, current.attrs ?? {}, patch.attrs);
   }
 
   await getDb().transaction(async (tx) => {
@@ -533,6 +588,48 @@ export async function updateLead(
   return getLeadById(id, viewer);
 }
 
+async function resolveLeadProjectId(leadId: string): Promise<string | null> {
+  const [row] = await getDb().select({ projectId: leads.projectId }).from(leads).where(eq(leads.id, leadId)).limit(1);
+  return row?.projectId ?? null;
+}
+
+function validateAttrValue(def: AttrFieldRow, raw: string): string {
+  const value = raw.trim();
+  if (!value) {
+    if (def.required) throw new Error(`Field "${def.label}" là bắt buộc.`);
+    return "";
+  }
+  if (def.fieldType === "number" && Number.isNaN(Number(value))) {
+    throw new Error(`Field "${def.label}" phải là số.`);
+  }
+  if (def.fieldType === "select" && !def.options.includes(value)) {
+    throw new Error(`Giá trị không hợp lệ cho "${def.label}".`);
+  }
+  return value;
+}
+
+/** Giữ key lạ + field tắt; thay giá trị field đang bật từ client. */
+async function mergeLeadAttrs(
+  projectId: string,
+  current: Record<string, string>,
+  incoming: Record<string, string>,
+): Promise<Record<string, string>> {
+  const defs = await listAttrFields(projectId);
+  const activeKeys = new Set(defs.filter((d) => d.active).map((d) => d.key));
+  const knownKeys = new Set(defs.map((d) => d.key));
+
+  const merged: Record<string, string> = {};
+  for (const [key, value] of Object.entries(current)) {
+    if (!knownKeys.has(key) || !activeKeys.has(key)) merged[key] = value;
+  }
+  for (const def of defs) {
+    if (!def.active) continue;
+    const value = validateAttrValue(def, incoming[def.key] ?? "");
+    if (value) merged[def.key] = value;
+  }
+  return merged;
+}
+
 async function resolveAssigneeId(fullName: string) {
   const rows = await getDb()
     .select({ id: appUsers.id })
@@ -542,67 +639,110 @@ async function resolveAssigneeId(fullName: string) {
   return rows[0]?.id ?? null;
 }
 
+/** Brand theo mã, trong project mặc định. */
+export async function resolveBrandId(code: BrandCode): Promise<string | null> {
+  const project = await getDefaultProject();
+  const conditions = [eq(brands.code, code)];
+  if (project) conditions.push(eq(brands.projectId, project.id));
+  const rows = await getDb()
+    .select({ id: brands.id })
+    .from(brands)
+    .where(and(...conditions))
+    .limit(1);
+  return rows[0]?.id ?? null;
+}
+
 /**
- * Tên dòng xe chỉ unique trong phạm vi một hãng, nên ưu tiên khớp theo hãng của
- * lead rồi mới nới ra khớp theo tên.
+ * Tên sản phẩm chỉ unique trong phạm vi một brand, nên ưu tiên khớp theo brand
+ * của lead rồi mới nới ra khớp theo tên.
  */
-async function resolveCarModelId(name: string, brand: Lead["brand"]) {
+export async function resolveProductId(name: string, brandCode: BrandCode | null): Promise<string | null> {
   const db = getDb();
-  if (brand) {
+  if (brandCode) {
     const exact = await db
-      .select({ id: carModels.id })
-      .from(carModels)
-      .where(and(eq(carModels.name, name), eq(carModels.brand, brand)))
+      .select({ id: products.id })
+      .from(products)
+      .innerJoin(brands, eq(products.brandId, brands.id))
+      .where(and(eq(products.name, name), eq(brands.code, brandCode)))
       .limit(1);
     if (exact[0]) return exact[0].id;
   }
 
-  const fallback = await db.select({ id: carModels.id }).from(carModels).where(eq(carModels.name, name)).limit(1);
+  const fallback = await db.select({ id: products.id }).from(products).where(eq(products.name, name)).limit(1);
   return fallback[0]?.id ?? null;
 }
 
-export interface ReferenceData {
-  showrooms: string[];
-  salesRooms: string[];
-  assignees: string[];
-  carModelsByBrand: Record<string, string[]>;
+/** Location theo tên, trong project mặc định. */
+export async function resolveLocationId(name: string): Promise<string | null> {
+  const project = await getDefaultProject();
+  const conditions = [eq(locations.name, name)];
+  if (project) conditions.push(eq(locations.projectId, project.id));
+  const rows = await getDb()
+    .select({ id: locations.id })
+    .from(locations)
+    .where(and(...conditions))
+    .limit(1);
+  return rows[0]?.id ?? null;
 }
 
-/** Danh mục cho các dropdown — thay cho hằng số cứng trong constants.ts. */
-export async function getReferenceData(): Promise<ReferenceData> {
+export interface BrandOption {
+  code: BrandCode;
+  name: string;
+}
+
+export interface ReferenceData {
+  project: ProjectInfo | null;
+  labels: CatalogLabels;
+  brands: BrandOption[];
+  locations: string[];
+  assignees: string[];
+  /** brand code → tên sản phẩm đang bật. */
+  productsByBrand: Record<string, string[]>;
+}
+
+/** Danh mục cho các dropdown — đọc từ DB theo project (mặc định nếu không truyền). */
+export async function getReferenceData(projectId?: string): Promise<ReferenceData> {
   const db = getDb();
-  const [showroomRows, salesRoomRows, userRows, modelRows] = await Promise.all([
+  const project = projectId
+    ? await getProjectById(projectId)
+    : await getDefaultProject();
+  const resolvedProjectId = project?.id;
+
+  const [brandRows, locationRows, userRows, productRows] = await Promise.all([
     db
-      .select({ name: showrooms.name })
-      .from(showrooms)
-      .where(eq(showrooms.active, true))
-      .orderBy(asc(showrooms.sortOrder), asc(showrooms.name)),
+      .select({ code: brands.code, name: brands.name })
+      .from(brands)
+      .where(and(eq(brands.active, true), resolvedProjectId ? eq(brands.projectId, resolvedProjectId) : undefined))
+      .orderBy(asc(brands.sortOrder), asc(brands.name)),
     db
-      .select({ name: salesRooms.name })
-      .from(salesRooms)
-      .where(eq(salesRooms.active, true))
-      .orderBy(asc(salesRooms.name)),
+      .select({ name: locations.name })
+      .from(locations)
+      .where(and(eq(locations.active, true), resolvedProjectId ? eq(locations.projectId, resolvedProjectId) : undefined))
+      .orderBy(asc(locations.sortOrder), asc(locations.name)),
     db
       .select({ name: appUsers.fullName })
       .from(appUsers)
       .where(eq(appUsers.active, true))
       .orderBy(asc(appUsers.fullName)),
     db
-      .select({ brand: carModels.brand, name: carModels.name })
-      .from(carModels)
-      .where(eq(carModels.active, true))
-      .orderBy(asc(carModels.brand), asc(carModels.name)),
+      .select({ brand: brands.code, name: products.name })
+      .from(products)
+      .innerJoin(brands, eq(products.brandId, brands.id))
+      .where(and(eq(products.active, true), resolvedProjectId ? eq(products.projectId, resolvedProjectId) : undefined))
+      .orderBy(asc(brands.sortOrder), asc(brands.code), asc(products.name)),
   ]);
 
-  const carModelsByBrand: Record<string, string[]> = {};
-  for (const row of modelRows) {
-    (carModelsByBrand[row.brand] ??= []).push(row.name);
+  const productsByBrand: Record<string, string[]> = {};
+  for (const row of productRows) {
+    (productsByBrand[row.brand] ??= []).push(row.name);
   }
 
   return {
-    showrooms: showroomRows.map((r) => r.name),
-    salesRooms: salesRoomRows.map((r) => r.name),
+    project: project ? toProjectInfo(project) : null,
+    labels: getCatalogLabels(project),
+    brands: brandRows,
+    locations: locationRows.map((r) => r.name),
     assignees: userRows.map((r) => r.name),
-    carModelsByBrand,
+    productsByBrand,
   };
 }

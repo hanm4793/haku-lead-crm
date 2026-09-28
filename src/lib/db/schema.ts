@@ -4,6 +4,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -16,7 +17,6 @@ import {
 
 import type {
   ActivityKind,
-  Brand,
   ChannelDetail,
   ContactStatus,
   FailReason,
@@ -83,11 +83,6 @@ export const channelDetailEnum = pgEnum(
   enumValues<ChannelDetail>({ TIN_NHAN: true, FORM: true, COMMENT: true, CUOC_GOI: true, CHAT_WEB: true }),
 );
 
-export const brandEnum = pgEnum(
-  "brand",
-  enumValues<Brand>({ KIA: true, MAZDA: true, PEUGEOT: true, BMW: true }),
-);
-
 export const activityKindEnum = pgEnum(
   "activity_kind",
   enumValues<ActivityKind>({
@@ -106,13 +101,86 @@ export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "PARTNER_ADMIN",
 export const metaInsightLevelEnum = pgEnum("meta_insight_level", ["campaign", "adset", "ad"]);
 export const metaSyncKindEnum = pgEnum("meta_sync_kind", ["leads", "insights"]);
 export const metaSyncStatusEnum = pgEnum("meta_sync_status", ["ok", "error"]);
+/** Tài khoản ads/leads ngoài Meta Page — lưu kết nối theo project (sync đầy đủ làm sau). */
+export const adPlatformEnum = pgEnum("ad_platform", ["google", "tiktok", "zalo"]);
+export const attrFieldTypeEnum = pgEnum("attr_field_type", ["text", "number", "select", "date"]);
 
-export const showrooms = pgTable("showrooms", {
+/** Project cấu hình nhãn 3 catalog dimension. Phase B: một project active. */
+export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull().unique(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  brandLabel: text("brand_label").notNull().default("Thương hiệu"),
+  productLabel: text("product_label").notNull().default("Sản phẩm"),
+  locationLabel: text("location_label").notNull().default("Địa điểm"),
   active: boolean("active").notNull().default(true),
-  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Partner / staff có thể thuộc nhiều project. */
+export const projectMembers = pgTable(
+  "project_members",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.userId] })],
+);
+
+/** Field phụ theo project — giá trị nằm ở leads.attrs[key]. */
+export const projectAttrFields = pgTable(
+  "project_attr_fields",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    fieldType: attrFieldTypeEnum("field_type").notNull().default("text"),
+    options: jsonb("options").$type<string[]>().notNull().default([]),
+    required: boolean("required").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique("project_attr_fields_project_key").on(table.projectId, table.key)],
+);
+
+export const brands = pgTable(
+  "brands",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    active: boolean("active").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (table) => [unique("brands_project_code_key").on(table.projectId, table.code)],
+);
+
+export const locations = pgTable(
+  "locations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    active: boolean("active").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (table) => [unique("locations_project_name_key").on(table.projectId, table.name)],
+);
 
 /**
  * Nhân sự tồn tại độc lập với tài khoản đăng nhập: seed được người phụ trách
@@ -124,7 +192,9 @@ export const appUsers = pgTable("app_users", {
   email: text("email").unique(),
   fullName: text("full_name").notNull(),
   role: userRoleEnum("role").notNull().default("STAFF"),
-  showroomId: uuid("showroom_id").references(() => showrooms.id, { onDelete: "set null" }),
+  locationId: uuid("location_id").references(() => locations.id, { onDelete: "set null" }),
+  /** Partner/Staff thuộc project này. Super admin để null = mọi project. */
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
   /** Staff thuộc partner-admin này và nhìn đúng các fanpage của partner. */
   partnerId: uuid("partner_id").references((): AnyPgColumn => appUsers.id, { onDelete: "set null" }),
   /** Super admin bật cho từng partner-admin. Super admin luôn dùng được AI. */
@@ -144,22 +214,20 @@ export const userFacebookPages = pgTable(
   (table) => [primaryKey({ columns: [table.userId, table.facebookPageId] })],
 );
 
-export const salesRooms = pgTable("sales_rooms", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull().unique(),
-  managerId: uuid("manager_id").references(() => appUsers.id, { onDelete: "set null" }),
-  active: boolean("active").notNull().default(true),
-});
-
-export const carModels = pgTable(
-  "car_models",
+export const products = pgTable(
+  "products",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    brand: brandEnum("brand").notNull(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    brandId: uuid("brand_id")
+      .notNull()
+      .references(() => brands.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     active: boolean("active").notNull().default(true),
   },
-  (table) => [unique("car_models_brand_name_key").on(table.brand, table.name)],
+  (table) => [unique("products_brand_name_key").on(table.brandId, table.name)],
 );
 
 export const leads = pgTable(
@@ -178,12 +246,16 @@ export const leads = pgTable(
 
     source: leadSourceEnum("source").notNull(),
     channelDetail: channelDetailEnum("channel_detail").notNull(),
-    brand: brandEnum("brand"),
 
-    showroomId: uuid("showroom_id").references(() => showrooms.id, { onDelete: "restrict" }),
-    salesRoomId: uuid("sales_room_id").references(() => salesRooms.id, { onDelete: "restrict" }),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "restrict" }),
+    brandId: uuid("brand_id").references(() => brands.id, { onDelete: "set null" }),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+    locationId: uuid("location_id").references(() => locations.id, { onDelete: "restrict" }),
+
     assigneeId: uuid("assignee_id").references(() => appUsers.id, { onDelete: "set null" }),
-    carModelId: uuid("car_model_id").references(() => carModels.id, { onDelete: "set null" }),
+
+    /** Field phụ / FB form không map vào 3 dimension. */
+    attrs: jsonb("attrs").$type<Record<string, string>>().notNull().default({}),
 
     careNote: text("care_note"),
     callbackAt: timestamp("callback_at", { withTimezone: true }),
@@ -206,7 +278,7 @@ export const leads = pgTable(
     index("leads_phone_idx").on(table.phone),
     index("leads_category_idx").on(table.category),
     index("leads_source_idx").on(table.source),
-    index("leads_showroom_idx").on(table.showroomId),
+    index("leads_location_idx").on(table.locationId),
     index("leads_assignee_idx").on(table.assigneeId),
     // Phục vụ tab "Quá hạn" và widget nhắc gọi lại.
     index("leads_callback_at_idx").on(table.callbackAt),
@@ -259,17 +331,48 @@ export const metaSyncRuns = pgTable("meta_sync_runs", {
 });
 
 /**
- * Fanpage Meta dùng cho Lead Ads — CRM đa dự án/đa page.
- * Sync lead lấy mọi page `active`; env FACEBOOK_PAGE_IDS chỉ bootstrap lần đầu.
+ * Fanpage Meta dùng cho Lead Ads — mỗi page thuộc đúng một project.
+ * Sync lead lấy page `active` trong project (hoặc mọi page nếu super admin sync all).
+ * Env FACEBOOK_PAGE_IDS chỉ bootstrap lần đầu vào project mặc định.
  */
 export const facebookPages = pgTable("facebook_pages", {
   id: uuid("id").primaryKey().defaultRandom(),
   facebookPageId: text("facebook_page_id").notNull().unique(),
   name: text("name"),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Kết nối tài khoản quảng cáo / lead ngoài Meta Page (Google, TikTok, Zalo).
+ * MVP: lưu cấu hình để admin gắn vào project; pipeline sync làm sau.
+ */
+export const projectAdAccounts = pgTable(
+  "project_ad_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    platform: adPlatformEnum("platform").notNull(),
+    externalAccountId: text("external_account_id").notNull(),
+    name: text("name"),
+    /** Token / customer id / notes — không log ra client. */
+    config: jsonb("config").$type<Record<string, string>>().notNull().default({}),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("project_ad_accounts_project_platform_ext_key").on(
+      table.projectId,
+      table.platform,
+      table.externalAccountId,
+    ),
+  ],
+);
 
 export const activityLogs = pgTable(
   "activity_logs",
@@ -290,10 +393,11 @@ export const activityLogs = pgTable(
 );
 
 export const leadsRelations = relations(leads, ({ one, many }) => ({
-  showroom: one(showrooms, { fields: [leads.showroomId], references: [showrooms.id] }),
-  salesRoom: one(salesRooms, { fields: [leads.salesRoomId], references: [salesRooms.id] }),
+  project: one(projects, { fields: [leads.projectId], references: [projects.id] }),
+  brand: one(brands, { fields: [leads.brandId], references: [brands.id] }),
+  product: one(products, { fields: [leads.productId], references: [products.id] }),
+  location: one(locations, { fields: [leads.locationId], references: [locations.id] }),
   assignee: one(appUsers, { fields: [leads.assigneeId], references: [appUsers.id] }),
-  carModel: one(carModels, { fields: [leads.carModelId], references: [carModels.id] }),
   logs: many(activityLogs),
 }));
 
@@ -303,5 +407,32 @@ export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
 }));
 
 export const appUsersRelations = relations(appUsers, ({ one }) => ({
-  showroom: one(showrooms, { fields: [appUsers.showroomId], references: [showrooms.id] }),
+  location: one(locations, { fields: [appUsers.locationId], references: [locations.id] }),
+  project: one(projects, { fields: [appUsers.projectId], references: [projects.id] }),
+}));
+
+export const facebookPagesRelations = relations(facebookPages, ({ one }) => ({
+  project: one(projects, { fields: [facebookPages.projectId], references: [projects.id] }),
+}));
+
+export const projectAdAccountsRelations = relations(projectAdAccounts, ({ one }) => ({
+  project: one(projects, { fields: [projectAdAccounts.projectId], references: [projects.id] }),
+}));
+
+export const projectAttrFieldsRelations = relations(projectAttrFields, ({ one }) => ({
+  project: one(projects, { fields: [projectAttrFields.projectId], references: [projects.id] }),
+}));
+
+export const brandsRelations = relations(brands, ({ one, many }) => ({
+  project: one(projects, { fields: [brands.projectId], references: [projects.id] }),
+  products: many(products),
+}));
+
+export const productsRelations = relations(products, ({ one }) => ({
+  project: one(projects, { fields: [products.projectId], references: [projects.id] }),
+  brand: one(brands, { fields: [products.brandId], references: [brands.id] }),
+}));
+
+export const locationsRelations = relations(locations, ({ one }) => ({
+  project: one(projects, { fields: [locations.projectId], references: [projects.id] }),
 }));

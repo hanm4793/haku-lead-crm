@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { answerFromStats } from "@/lib/ai/answer-stats";
+import { catalogFromReference, DEFAULT_AI_CATALOG, type AiCatalog } from "@/lib/ai/catalog-context";
 import { exportSpecSchema, type ExportSpec } from "@/lib/ai/export-spec";
 import { parseExportRequestLocally } from "@/lib/ai/fallback-parser";
 import type { ExportPreview } from "@/lib/ai/export-preview";
@@ -11,8 +12,8 @@ import { buildSystemPrompt } from "@/lib/ai/prompt";
 import { refineSpec } from "@/lib/ai/refine-spec";
 import { parseStatsQuestion, mergeStats, applyMentions, blankStats, statsFromModel, statsQuerySchema, type ChatMention } from "@/lib/ai/stats-query";
 import { canUseAi } from "@/lib/auth/roles";
-import { getViewer } from "@/lib/auth/viewer";
-import type { ViewerScope } from "@/lib/db/leads-repo";
+import { getScopedViewer } from "@/lib/auth/viewer";
+import { getReferenceData, type ViewerScope } from "@/lib/db/leads-repo";
 import { queryReportKpis, querySheetCounts } from "@/lib/db/report-queries";
 import { exportSpecToFilters } from "@/lib/export/to-filters";
 import type { PivotDimension } from "@/lib/metrics";
@@ -62,7 +63,23 @@ async function buildPreview(spec: ExportSpec, viewer: ViewerScope, now: Date): P
   };
 }
 
-async function fallbackResponse(text: string, viewer: ViewerScope, now: Date, mentions: ChatMention[] = [], note?: string) {
+/** Danh mục brand / sản phẩm / location đọc từ DB để prompt và bộ dò từ khóa dùng đúng tên. */
+async function loadCatalog(projectId?: string): Promise<AiCatalog> {
+  try {
+    return catalogFromReference(await getReferenceData(projectId));
+  } catch {
+    return DEFAULT_AI_CATALOG;
+  }
+}
+
+async function fallbackResponse(
+  text: string,
+  viewer: ViewerScope,
+  now: Date,
+  catalog: AiCatalog,
+  mentions: ChatMention[] = [],
+  note?: string,
+) {
   const parsedQuestion = parseStatsQuestion(text, now);
   const base = parsedQuestion ?? (mentions.length ? blankStats() : null);
   if (base && (parsedQuestion || mentions.length)) {
@@ -77,8 +94,8 @@ async function fallbackResponse(text: string, viewer: ViewerScope, now: Date, me
     });
   }
 
-  const local = parseExportRequestLocally(text, now);
-  const spec = local.spec ? refineSpec(local.spec, text) : null;
+  const local = parseExportRequestLocally(text, now, catalog);
+  const spec = local.spec ? refineSpec(local.spec, text, catalog) : null;
   return NextResponse.json({
     mode: "fallback",
     action: spec ? "EXPORT" : "ANSWER",
@@ -89,7 +106,7 @@ async function fallbackResponse(text: string, viewer: ViewerScope, now: Date, me
 }
 
 export async function POST(request: Request) {
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (!viewer) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
   if (!canUseAi(viewer)) {
     return NextResponse.json({ error: "Tài khoản này chưa được bật trợ lý AI." }, { status: 403 });
@@ -103,9 +120,10 @@ export async function POST(request: Request) {
   const { messages, mentions = [] } = parsed.data;
   const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const now = new Date();
+  const catalog = await loadCatalog(viewer.activeProjectId ?? undefined);
 
   const resolved = resolveModel();
-  if (!resolved) return fallbackResponse(lastUserMessage, viewer, now, mentions);
+  if (!resolved) return fallbackResponse(lastUserMessage, viewer, now, catalog, mentions);
 
   // Thử lại một lần: lỗi thoáng qua và lỗi schema đều thường qua ở lần hai.
   let lastError: unknown = null;
@@ -114,7 +132,7 @@ export async function POST(request: Request) {
       const result = await generateObject({
         model: resolved.model,
         schema: responseSchema,
-        system: buildSystemPrompt(now),
+        system: buildSystemPrompt(now, catalog),
         messages,
         temperature: 0,
       });
@@ -153,7 +171,7 @@ export async function POST(request: Request) {
       const validated = object.spec ? exportSpecSchema.safeParse(object.spec) : null;
 
       if (object.action === "EXPORT" && validated?.success) {
-        const spec = refineSpec(validated.data, lastUserMessage);
+        const spec = refineSpec(validated.data, lastUserMessage, catalog);
         return NextResponse.json({
           mode: "ai",
           action: "EXPORT",
@@ -190,6 +208,7 @@ export async function POST(request: Request) {
     lastUserMessage,
     viewer,
     now,
+    catalog,
     mentions,
     `Không gọi được ${resolved.providerLabel} (${detail}). Mình tạm hiểu theo từ khóa:`,
   );

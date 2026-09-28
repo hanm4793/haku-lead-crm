@@ -32,12 +32,14 @@ import { cn } from "@/lib/utils";
 
 type PageOption = { value: string; label: string };
 type PartnerOption = { id: string; name: string };
+type ProjectOption = { id: string; name: string };
 
 type FormState = {
   fullName: string;
   email: string;
   role: "PARTNER_ADMIN" | "STAFF";
   partnerId: string | null;
+  projectId: string | null;
   pageIds: string[];
   aiEnabled: boolean;
   active: boolean;
@@ -48,6 +50,7 @@ const EMPTY_FORM: FormState = {
   email: "",
   role: "STAFF",
   partnerId: null,
+  projectId: null,
   pageIds: [],
   aiEnabled: false,
   active: true,
@@ -62,6 +65,7 @@ function toForm(user: ManagedUser | null, actorRole: UserRole): FormState {
     email: user.email ?? "",
     role: user.role === "PARTNER_ADMIN" ? "PARTNER_ADMIN" : "STAFF",
     partnerId: user.partnerId,
+    projectId: null,
     pageIds: user.pageIds,
     aiEnabled: user.aiEnabled,
     active: user.active,
@@ -72,12 +76,14 @@ export function UsersAdmin({
   initialUsers,
   pages,
   partners,
+  projects,
   actorRole,
   currentUserId,
 }: {
   initialUsers: ManagedUser[];
   pages: PageOption[];
   partners: PartnerOption[];
+  projects: ProjectOption[];
   actorRole: UserRole;
   currentUserId: string | null;
 }) {
@@ -108,7 +114,11 @@ export function UsersAdmin({
   const openCreate = () => {
     setEditing(null);
     setCreating(true);
-    setForm({ ...EMPTY_FORM, role: tab === "PARTNER_ADMIN" ? "PARTNER_ADMIN" : "STAFF" });
+    setForm({
+      ...EMPTY_FORM,
+      role: tab === "PARTNER_ADMIN" ? "PARTNER_ADMIN" : "STAFF",
+      projectId: projects[0]?.id ?? null,
+    });
     setError(null);
   };
 
@@ -135,6 +145,7 @@ export function UsersAdmin({
       active: form.active,
       aiEnabled: form.role === "PARTNER_ADMIN" ? form.aiEnabled : false,
       partnerId: form.role === "STAFF" ? form.partnerId : null,
+      projectId: form.role === "PARTNER_ADMIN" ? form.projectId : null,
       pageIds: form.role === "PARTNER_ADMIN" ? form.pageIds : [],
     };
     const result = editing
@@ -311,6 +322,25 @@ export function UsersAdmin({
                     {partners.map((partner) => (
                       <SelectItem key={partner.id} value={partner.id}>
                         {partner.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+            {form.role === "PARTNER_ADMIN" && actorRole === "SUPER_ADMIN" && (
+              <Field label="Project">
+                <Select
+                  value={form.projectId ?? ""}
+                  onValueChange={(value) => setForm((f) => ({ ...f, projectId: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Chọn project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
                       </SelectItem>
                     ))}
                   </SelectContent>

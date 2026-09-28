@@ -25,7 +25,8 @@ export type LeadSource = "FACEBOOK" | "GOOGLE" | "TIKTOK" | "ZALO" | "WEBSITE" |
 
 export type ChannelDetail = "TIN_NHAN" | "FORM" | "COMMENT" | "CUOC_GOI" | "CHAT_WEB";
 
-export type Brand = "KIA" | "MAZDA" | "PEUGEOT" | "BMW";
+/** Mã brand trong catalog (vd. KIA). Không còn enum Postgres cố định. */
+export type BrandCode = string;
 
 export type ActivityKind =
   | "CALL"
@@ -47,6 +48,19 @@ export interface ActivityLog {
   byAi?: boolean;
 }
 
+export interface CatalogLabels {
+  brand: string;
+  product: string;
+  location: string;
+}
+
+export interface ProjectInfo {
+  id: string;
+  slug: string;
+  name: string;
+  labels: CatalogLabels;
+}
+
 export interface Lead {
   id: string;
   createdAt: string;
@@ -57,12 +71,17 @@ export interface Lead {
   failReason: FailReason | null;
   source: LeadSource;
   channelDetail: ChannelDetail;
-  brand: Brand | null;
-  showroom: string;
-  salesRoom: string;
+  /** Mã brand (code), null nếu chưa gán. */
+  brand: BrandCode | null;
+  brandId: string | null;
+  location: string;
+  locationId: string | null;
   assigneeId: string | null;
   assignee: string | null;
-  carModel: string | null;
+  product: string | null;
+  productId: string | null;
+  /** Field phụ / FB form không map vào 3 dimension. */
+  attrs: Record<string, string>;
   careNote: string | null;
   /** Hẹn gọi lại — dùng để tính "quá hạn". */
   callbackAt: string | null;
@@ -81,11 +100,11 @@ export interface LeadFilters {
   dateFrom: string | null;
   dateTo: string | null;
   sources: LeadSource[];
-  brands: Brand[];
-  showrooms: string[];
-  salesRooms: string[];
+  /** Brand codes. */
+  brands: BrandCode[];
+  locations: string[];
   assignees: string[];
-  carModels: string[];
+  products: string[];
   categories: LeadCategory[];
   failReasons: FailReason[];
   /** Meta Page IDs — lọc lead theo Fanpage nguồn. */

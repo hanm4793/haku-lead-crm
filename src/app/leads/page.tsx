@@ -3,10 +3,12 @@
 import { LeadsPage } from "@/components/leads/leads-page";
 import { NowProvider } from "@/components/providers/now-provider";
 import { isPageVisible } from "@/lib/auth/roles";
-import { getViewer } from "@/lib/auth/viewer";
+import { getScopedViewer } from "@/lib/auth/viewer";
+import { catalogOptionsFromReference, DEFAULT_LEAD_CATALOG } from "@/lib/catalog";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
-import { queryLeadPage } from "@/lib/db/leads-repo";
+import { listAttrFields } from "@/lib/db/attr-fields-repo";
+import { getReferenceData, queryLeadPage } from "@/lib/db/leads-repo";
 import { listAssignableStaff } from "@/lib/db/users-repo";
 import { EMPTY_FILTERS } from "@/lib/filters";
 import type { LeadSearchInput } from "@/lib/leads/query";
@@ -41,15 +43,19 @@ export default async function Page() {
     );
   }
 
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (!viewer) redirect("/login");
 
+  const projectId = viewer.activeProjectId ?? undefined;
   const now = new Date();
-  const [initialData, facebookPages, assignees] = await Promise.all([
+  const [initialData, facebookPages, assignees, reference, attrFields] = await Promise.all([
     queryLeadPage({ ...INITIAL_REQUEST, now }, viewer),
-    listFacebookPages(),
+    listFacebookPages(projectId ? { projectId } : undefined),
     listAssignableStaff(viewer),
+    getReferenceData(projectId).catch(() => null),
+    projectId ? listAttrFields(projectId, { activeOnly: true }).catch(() => []) : Promise.resolve([]),
   ]);
+  const catalog = reference ? catalogOptionsFromReference(reference) : DEFAULT_LEAD_CATALOG;
 
   const fanpageOptions = facebookPages
     .filter((page) => page.active && isPageVisible(viewer, page.facebookPageId))
@@ -65,7 +71,9 @@ export default async function Page() {
         initialRequest={INITIAL_REQUEST}
         fanpageOptions={fanpageOptions}
         assignees={assignees}
+        catalog={catalog}
         editor={{ role: viewer.role, appUserId: viewer.appUserId }}
+        attrFields={attrFields}
       />
     </NowProvider>
   );

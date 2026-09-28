@@ -1,5 +1,6 @@
 import type {
-  Brand,
+  BrandCode,
+  CatalogLabels,
   ChannelDetail,
   ContactStatus,
   FailReason,
@@ -83,14 +84,32 @@ export const CHANNEL_DETAIL_OPTIONS: Option<ChannelDetail>[] = [
   { value: "CHAT_WEB", label: "Chat web" },
 ];
 
-export const BRAND_OPTIONS: Option<Brand>[] = [
-  { value: "KIA", label: "KIA" },
-  { value: "MAZDA", label: "Mazda" },
-  { value: "PEUGEOT", label: "Peugeot" },
-  { value: "BMW", label: "BMW" },
+/** Seed / fallback khi DB chưa có project. UI runtime dùng getReferenceData(). */
+export const DEFAULT_PROJECT_SLUG = "semtop-auto";
+
+export const DEFAULT_PROJECT_NAME = "Semtop Auto";
+
+/** Nhãn 3 dimension cho project mặc định — fallback khi chưa đọc được DB. */
+export const DEFAULT_CATALOG_LABELS: CatalogLabels = {
+  brand: "Thương hiệu",
+  product: "Dòng xe",
+  location: "Showroom",
+};
+
+export const DEFAULT_BRAND_SEED: { code: BrandCode; name: string }[] = [
+  { code: "KIA", name: "KIA" },
+  { code: "MAZDA", name: "Mazda" },
+  { code: "PEUGEOT", name: "Peugeot" },
+  { code: "BMW", name: "BMW" },
 ];
 
-export const SHOWROOMS = [
+/** @deprecated Dùng getReferenceData().brands — giữ cho seed/demo. */
+export const BRAND_OPTIONS: Option<BrandCode>[] = DEFAULT_BRAND_SEED.map((b) => ({
+  value: b.code,
+  label: b.name,
+}));
+
+export const LOCATIONS = [
   "Trần Khát Chân",
   "Long Biên",
   "Phạm Văn Đồng",
@@ -98,12 +117,8 @@ export const SHOWROOMS = [
   "Gia Lâm",
 ] as const;
 
-export const SALES_ROOMS = [
-  "KIA MAZDA_PHÒNG 1_Trần Thanh Điệp",
-  "KIA MAZDA_PHÒNG 2_Nguyễn Văn Hải",
-  "KIA_PHÒNG 3_Lê Minh Tuấn",
-  "MAZDA_PHÒNG 4_Phạm Thu Trang",
-] as const;
+/** @deprecated Dùng LOCATIONS / getReferenceData().locations */
+export const SHOWROOMS = LOCATIONS;
 
 export const ASSIGNEES = [
   "Bùi Ngọc Thành",
@@ -116,7 +131,7 @@ export const ASSIGNEES = [
   "Hoàng Trung Kiên",
 ] as const;
 
-export const CAR_MODELS_BY_BRAND: Record<Brand, string[]> = {
+export const PRODUCTS_BY_BRAND: Record<string, string[]> = {
   KIA: [
     "New Sorento",
     "New Seltos",
@@ -132,11 +147,20 @@ export const CAR_MODELS_BY_BRAND: Record<Brand, string[]> = {
   BMW: ["X3", "X5", "Series 3", "Series 5"],
 };
 
-export const ALL_CAR_MODELS = Object.values(CAR_MODELS_BY_BRAND).flat();
+/** @deprecated Dùng PRODUCTS_BY_BRAND / getReferenceData().productsByBrand */
+export const CAR_MODELS_BY_BRAND = PRODUCTS_BY_BRAND;
 
-export const UNASSIGNED_MODEL_LABEL = "Chưa gán dòng xe";
+export const ALL_PRODUCTS = Object.values(PRODUCTS_BY_BRAND).flat();
 
-/** Showroom / phòng BH / hãng chưa gán (lead Meta hoặc chưa phân bổ). */
+/** @deprecated */
+export const ALL_CAR_MODELS = ALL_PRODUCTS;
+
+export const UNASSIGNED_PRODUCT_LABEL = "Chưa gán sản phẩm";
+
+/** @deprecated Dùng UNASSIGNED_PRODUCT_LABEL */
+export const UNASSIGNED_MODEL_LABEL = UNASSIGNED_PRODUCT_LABEL;
+
+/** Location / phòng BH / brand chưa gán (lead Meta hoặc chưa phân bổ). */
 export const UNASSIGNED_ASSIGNMENT_LABEL = "Chưa phân bổ";
 
 export const SOURCE_LABEL: Record<LeadSource, string> = Object.fromEntries(

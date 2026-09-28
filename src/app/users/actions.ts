@@ -21,6 +21,7 @@ const createSchema = z.object({
   active: z.boolean().optional(),
   aiEnabled: z.boolean().optional(),
   partnerId: z.string().uuid().nullable().optional(),
+  projectId: z.string().uuid().nullable().optional(),
   pageIds: z.array(z.string().min(1)).optional(),
 });
 
@@ -63,6 +64,7 @@ export async function createUserAction(input: unknown): Promise<UserActionResult
         active: parsed.data.active,
         aiEnabled: parsed.data.aiEnabled,
         partnerId: parsed.data.partnerId ?? null,
+        projectId: parsed.data.projectId ?? null,
         pageIds: parsed.data.pageIds,
       },
       viewer,
@@ -125,6 +127,7 @@ export async function updateUserAction(input: unknown): Promise<UserActionResult
         active: parsed.data.active,
         aiEnabled: parsed.data.aiEnabled,
         partnerId: parsed.data.partnerId,
+        projectId: parsed.data.projectId,
         pageIds: parsed.data.pageIds,
       },
       viewer,

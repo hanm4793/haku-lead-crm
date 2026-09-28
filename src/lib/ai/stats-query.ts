@@ -35,7 +35,7 @@ export const statsQuerySchema = z.object({
     .enum(GROUP_VALUES)
     .nullable()
     .optional()
-    .describe("ad = từng quảng cáo. campaign = chiến dịch. fanpage, source, category, assignee, brand, carModel, showroom, salesRoom, channelDetail"),
+    .describe("ad = từng quảng cáo. campaign = chiến dịch. fanpage, source, category, assignee, brand, product, location, channelDetail"),
   rankBy: z
     .enum(["leads", "spend", "clicks", "cpl"])
     .nullable()
@@ -268,11 +268,10 @@ export function statsToFilters(query: StatsQuery, pageIds: string[]): LeadFilter
     dateFrom: query.dateFrom,
     dateTo: query.dateTo,
     sources: (filters.sources ?? []) as LeadFilters["sources"],
-    brands: (filters.brands ?? []) as LeadFilters["brands"],
-    showrooms: filters.showrooms ?? [],
-    salesRooms: filters.salesRooms ?? [],
+    brands: filters.brands ?? [],
+    locations: filters.locations ?? [],
     assignees: filters.assignees ?? [],
-    carModels: filters.carModels ?? [],
+    products: filters.products ?? [],
     categories: (filters.categories ?? []) as LeadFilters["categories"],
     failReasons: (filters.failReasons ?? []) as LeadFilters["failReasons"],
     facebookPageIds: pageIds,
@@ -557,8 +556,8 @@ export function parseStatsQuestion(text: string, now: Date = new Date()): StatsQ
   else if (/phu trach|nhan vien/.test(q)) groupBy = "assignee";
   else if (/trang thai|phan loai/.test(q)) groupBy = "category";
   else if (/thuong hieu|hang xe|\bhang\b/.test(q)) groupBy = "brand";
-  else if (/dong xe/.test(q)) groupBy = "carModel";
-  else if (/showroom/.test(q)) groupBy = "showroom";
+  else if (/dong xe|san pham/.test(q)) groupBy = "product";
+  else if (/showroom|dia diem|chi nhanh/.test(q)) groupBy = "location";
 
   let pageQuery = extractPageFilter(q);
   if (!pageQuery && groupBy !== "fanpage") {
@@ -597,7 +596,7 @@ export function datasetFor(text: string): StatsDataset {
   const marketing = /(chi phi|chi tieu|ngan sach|spend|impression|hien thi|luot click|\bclick\b|ctr|\bcpl\b|quang cao|ads|marketing|hieu qua)/.test(
     q,
   );
-  const crm = /(lien he|khqt|gdtd|qua han|ky hop dong|bi loai|phu trach|trang thai|showroom|crm)/.test(q);
+  const crm = /(lien he|khqt|gdtd|qua han|ky hop dong|bi loai|phu trach|trang thai|showroom|dia diem|crm)/.test(q);
   if (marketing && crm) return "both";
   if (marketing) return "marketing";
   if (crm) return "leads";

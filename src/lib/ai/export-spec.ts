@@ -1,16 +1,7 @@
 import { z } from "zod";
 
 import { LEAD_COLUMNS } from "@/components/leads/columns";
-import {
-  ALL_CAR_MODELS,
-  ASSIGNEES,
-  BRAND_OPTIONS,
-  CATEGORY_OPTIONS,
-  FAIL_REASON_OPTIONS,
-  SALES_ROOMS,
-  SHOWROOMS,
-  SOURCE_OPTIONS,
-} from "@/lib/constants";
+import { CATEGORY_OPTIONS, FAIL_REASON_OPTIONS, SOURCE_OPTIONS } from "@/lib/constants";
 import { PIVOT_DIMENSIONS } from "@/lib/metrics";
 
 const COLUMN_IDS = LEAD_COLUMNS.map((c) => c.id) as [string, ...string[]];
@@ -22,6 +13,10 @@ const SPLIT_DIMENSIONS = Object.keys(PIVOT_DIMENSIONS) as [string, ...string[]];
  * LLM không sinh SQL và không sinh dữ liệu — nó chỉ điền vào cấu trúc này.
  * Backend validate bằng schema, tự áp quyền của người dùng rồi mới truy vấn,
  * nên sai sót tệ nhất của model chỉ là lọc sai chứ không thể rò rỉ dữ liệu.
+ *
+ * Brand / sản phẩm / location / người phụ trách là danh mục
+ * trong DB nên để chuỗi tự do; danh sách hợp lệ được đưa vào system prompt và
+ * `refineSpec` dò lại theo tên. Repository bind chúng làm tham số `inArray`.
  */
 export const exportFiltersSchema = z.object({
   search: z.string().optional().describe("Từ khóa tìm theo tên khách hoặc số điện thoại"),
@@ -32,11 +27,10 @@ export const exportFiltersSchema = z.object({
   categories: z.array(z.enum(CATEGORY_OPTIONS.map((o) => o.value) as [string, ...string[]])).optional(),
   failReasons: z.array(z.enum(FAIL_REASON_OPTIONS.map((o) => o.value) as [string, ...string[]])).optional(),
   sources: z.array(z.enum(SOURCE_OPTIONS.map((o) => o.value) as [string, ...string[]])).optional().describe("Nguồn lead. Bỏ trống nếu người dùng không giới hạn nguồn"),
-  brands: z.array(z.enum(BRAND_OPTIONS.map((o) => o.value) as [string, ...string[]])).optional().describe("Hãng xe khách quan tâm"),
-  carModels: z.array(z.enum(ALL_CAR_MODELS as [string, ...string[]])).optional().describe("BẮT BUỘC điền khi người dùng nhắc tên dòng xe, ví dụ 'New Sonet', 'Seltos', 'Carnival'"),
-  showrooms: z.array(z.enum(SHOWROOMS as unknown as [string, ...string[]])).optional().describe("Showroom. Bỏ trống nếu không giới hạn — kể cả khi tách sheet theo showroom"),
-  salesRooms: z.array(z.enum(SALES_ROOMS as unknown as [string, ...string[]])).optional(),
-  assignees: z.array(z.enum(ASSIGNEES as unknown as [string, ...string[]])).optional().describe("Nhân viên phụ trách"),
+  brands: z.array(z.string().max(40)).optional().describe("Mã thương hiệu khách quan tâm, đúng theo danh sách hợp lệ"),
+  products: z.array(z.string().max(80)).optional().describe("BẮT BUỘC điền khi người dùng nhắc tên sản phẩm / dòng xe, đúng theo danh sách hợp lệ"),
+  locations: z.array(z.string().max(120)).optional().describe("Địa điểm / showroom. Bỏ trống nếu không giới hạn — kể cả khi tách sheet theo địa điểm"),
+  assignees: z.array(z.string().max(120)).optional().describe("Nhân viên phụ trách"),
   facebookPageIds: z
     .array(z.string().regex(/^\d{5,}$/))
     .optional()
@@ -68,7 +62,7 @@ export const DEFAULT_EXPORT_COLUMNS = [
   "category",
   "failReason",
   "source",
-  "carModel",
-  "showroom",
+  "product",
+  "location",
   "assignee",
 ];

@@ -4,7 +4,11 @@ import { getDb } from "@/lib/db/client";
 import { activityLogs, facebookPages, leads, metaSyncRuns } from "@/lib/db/schema";
 
 import { getFacebookConfig } from "./env";
-import { resolveActiveFacebookPageIds } from "@/lib/db/facebook-pages-repo";
+import {
+  getFacebookPageProjectId,
+  resolveActiveFacebookPageIds,
+} from "@/lib/db/facebook-pages-repo";
+import { getDefaultProject } from "@/lib/db/project-repo";
 import { FacebookGraphError, graphGetAllData } from "./graph-client";
 import { mapFacebookLeadFields, type FacebookFieldDatum } from "./map-lead";
 import { resolvePageAccessTokens } from "./page-tokens";
@@ -134,8 +138,10 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
 
   try {
     const pageTokens = await resolvePageAccessTokens(pageIds);
+    const fallbackProjectId = (await getDefaultProject().catch(() => null))?.id ?? null;
 
     for (const pageId of pageIds) {
+      const projectId = (await getFacebookPageProjectId(pageId)) ?? fallbackProjectId;
       const pageAuth = pageTokens.get(pageId);
       if (!pageAuth) {
         recordError(
@@ -182,10 +188,13 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
               .where(eq(leads.facebookLeadId, facebookLead.id))
               .limit(1);
 
+            const hasAttrs = Object.keys(mapped.attrs).length > 0;
             const facebookMetadata = {
               ...(mapped.name !== null ? { name: mapped.name } : {}),
               ...(mapped.campaign !== null ? { campaign: mapped.campaign } : {}),
               ...(mapped.adContent !== null ? { adContent: mapped.adContent } : {}),
+              // Field phụ của form đi vào attrs; form không có field phụ thì giữ attrs cũ.
+              ...(hasAttrs ? { attrs: mapped.attrs } : {}),
               facebookFormId: form.id,
               facebookPageId: pageId,
               facebookAdId: optionalText(facebookLead.ad_id),
@@ -213,10 +222,12 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
                   source: "FACEBOOK",
                   channelDetail: "FORM",
                   facebookLeadId: facebookLead.id,
-                  showroomId: null,
-                  salesRoomId: null,
-                  brand: null,
+                  projectId,
+                  brandId: null,
+                  productId: null,
+                  locationId: null,
                   assigneeId: null,
+                  attrs: mapped.attrs,
                   costPerLead: null,
                 })
                 .returning({ id: leads.id });

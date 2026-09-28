@@ -4,7 +4,7 @@ import { z } from "zod";
 import { searchMentions } from "@/lib/ai/mention-search";
 import { MENTION_TYPES } from "@/lib/ai/stats-query";
 import { canUseAi } from "@/lib/auth/roles";
-import { getViewer } from "@/lib/auth/viewer";
+import { getScopedViewer } from "@/lib/auth/viewer";
 
 export const runtime = "nodejs";
 
@@ -14,7 +14,7 @@ const querySchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (!viewer) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
   if (!canUseAi(viewer)) return NextResponse.json({ error: "Tài khoản này chưa được bật trợ lý AI." }, { status: 403 });
 

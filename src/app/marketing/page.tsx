@@ -2,7 +2,7 @@
 
 import { MarketingPage } from "@/components/marketing/marketing-page";
 import { canViewMarketing, dataScope, isPageVisible } from "@/lib/auth/roles";
-import { getViewer } from "@/lib/auth/viewer";
+import { getScopedViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { hasSyncedInsights, latestInsightSync, listAdInsights, listCampaignInsights } from "@/lib/db/insights-repo";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
@@ -12,9 +12,10 @@ export const metadata = { title: "Marketing — SEMTOP Marketing CRM" };
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (!viewer) redirect("/login?next=%2Fmarketing");
   if (!canViewMarketing(viewer.role)) redirect("/leads");
+  const projectId = viewer.activeProjectId ?? undefined;
 
   if (!isDatabaseConfigured()) {
     return (
@@ -30,7 +31,7 @@ export default async function Page() {
   const [campaignRows, adInsightRows, pages, hasSynced, latestSync] = await Promise.all([
     listCampaignInsights(),
     listAdInsights(),
-    listFacebookPages(),
+    listFacebookPages(projectId ? { projectId } : undefined),
     hasSyncedInsights(),
     latestInsightSync(),
   ]);

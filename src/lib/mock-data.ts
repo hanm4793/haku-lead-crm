@@ -1,7 +1,7 @@
-import { ASSIGNEES, CAR_MODELS_BY_BRAND, SALES_ROOMS, SHOWROOMS } from "./constants";
+import { ASSIGNEES, LOCATIONS, PRODUCTS_BY_BRAND } from "./constants";
 import type {
   ActivityLog,
-  Brand,
+  BrandCode,
   ChannelDetail,
   FailReason,
   Lead,
@@ -104,7 +104,7 @@ function buildLead(index: number, rng: () => number, now: Date): Lead {
   createdAt.setDate(createdAt.getDate() - daysAgo);
   createdAt.setHours(8 + Math.floor(rng() * 11), Math.floor(rng() * 60), 0, 0);
 
-  const brand = weighted<Brand>(rng, [
+  const brand = weighted<BrandCode>(rng, [
     ["KIA", 46],
     ["MAZDA", 40],
     ["PEUGEOT", 9],
@@ -163,8 +163,8 @@ function buildLead(index: number, rng: () => number, now: Date): Lead {
   const hasName = contacted && failReason !== "SAI_SO" && rng() < 0.42;
 
   const interested = category === "KHQT" || category === "GDTD" || category === "KHD";
-  const hasCarModel = interested ? rng() < 0.86 : rng() < 0.55;
-  const carModel = hasCarModel ? pick(rng, CAR_MODELS_BY_BRAND[brand]) : null;
+  const hasProduct = interested ? rng() < 0.86 : rng() < 0.55;
+  const product = hasProduct ? pick(rng, PRODUCTS_BY_BRAND[brand] ?? []) ?? null : null;
 
   const contactCount = contacted ? 1 + Math.floor(rng() * 4) : 0;
 
@@ -183,8 +183,7 @@ function buildLead(index: number, rng: () => number, now: Date): Lead {
     }
   }
 
-  const showroom = pick(rng, SHOWROOMS);
-  const salesRoom = pick(rng, SALES_ROOMS);
+  const location = pick(rng, LOCATIONS);
   const assignee = rng() < 0.94 ? pick(rng, ASSIGNEES) : null;
   const assigneeId = null;
 
@@ -199,11 +198,14 @@ function buildLead(index: number, rng: () => number, now: Date): Lead {
     source,
     channelDetail,
     brand,
-    showroom,
-    salesRoom,
+    brandId: null,
+    location,
+    locationId: null,
     assigneeId,
     assignee,
-    carModel,
+    product,
+    productId: null,
+    attrs: {},
     careNote: contacted && rng() < 0.5 ? pick(rng, CARE_NOTES) : null,
     callbackAt,
     contactCount,
@@ -238,7 +240,7 @@ function buildActivityLogs(lead: Lead, rng: () => number): ActivityLog[] {
 
   if (lead.assignee) {
     cursor += 2 * 60_000;
-    push("ASSIGN_CHANGE", `Đổi người phụ trách: Chưa giao → ${lead.assignee}.`, lead.salesRoom.split("_").pop() ?? "Quản lý");
+    push("ASSIGN_CHANGE", `Đổi người phụ trách: Chưa giao → ${lead.assignee}.`, "Quản lý");
   }
 
   const actor = lead.assignee ?? "Hệ thống";

@@ -11,20 +11,22 @@ import {
 } from "@/components/reports/charts";
 import { useNow } from "@/components/providers/now-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CATEGORY_SHORT_LABEL, SOURCE_LABEL } from "@/lib/constants";
+import { CATEGORY_SHORT_LABEL, DEFAULT_CATALOG_LABELS, SOURCE_LABEL } from "@/lib/constants";
 import { isOverdue } from "@/lib/filters";
 import type { ReportSummary } from "@/lib/reports/summary";
-import type { Lead } from "@/lib/types";
+import type { CatalogLabels, Lead } from "@/lib/types";
 import { formatDate, formatNumber } from "@/lib/utils";
 
 export function OverviewTab({
   data,
   totalLeads,
   onSelectLead,
+  labels = DEFAULT_CATALOG_LABELS,
 }: {
   data: ReportSummary["overview"];
   totalLeads: number;
   onSelectLead: (lead: Lead) => void;
+  labels?: CatalogLabels;
 }) {
   const now = useNow();
   const { daily, funnel, distribution, bySource, byModel, callList } = data;
@@ -76,8 +78,8 @@ export function OverviewTab({
 
       <Card>
         <CardHeader>
-          <CardTitle>Dòng xe hút khách</CardTitle>
-          <CardDescription>Top dòng xe theo số lead</CardDescription>
+          <CardTitle>{labels.product} hút khách</CardTitle>
+          <CardDescription>Top {labels.product.toLowerCase()} theo số lead</CardDescription>
         </CardHeader>
         <CardContent>
           <CarModelChart data={byModel} />

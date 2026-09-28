@@ -11,14 +11,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { estimateCostUsd, getModelId, getProvider, isAiConfigured, PROVIDERS } from "@/lib/ai/model";
 import { canManageSettings } from "@/lib/auth/roles";
-import { getViewer, listUnlinkedUsers } from "@/lib/auth/viewer";
-import { ASSIGNEES, SALES_ROOMS, SHOWROOMS, SOURCE_OPTIONS } from "@/lib/constants";
+import { getScopedViewer, listUnlinkedUsers } from "@/lib/auth/viewer";
+import { ASSIGNEES, SOURCE_OPTIONS } from "@/lib/constants";
 import { getDb, isDatabaseConfigured } from "@/lib/db/client";
 import {
   ensureFacebookPagesFromEnv,
   listFacebookPages,
 } from "@/lib/db/facebook-pages-repo";
 import { getReferenceData } from "@/lib/db/leads-repo";
+import { resolveActiveProject, toProjectViewer } from "@/lib/db/project-repo";
 import { metaSyncRuns } from "@/lib/db/schema";
 import { getFacebookConfig, isFacebookTokenConfigured } from "@/lib/facebook/env";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
@@ -81,11 +82,15 @@ export default async function Page() {
   const costPerCall = estimateCostUsd(modelId, TOKENS_PER_CALL.input, TOKENS_PER_CALL.output);
   const dbConfigured = isDatabaseConfigured();
   const authConfigured = isSupabaseConfigured();
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (viewer && !canManageSettings(viewer.role)) redirect("/leads");
 
+  const activeProject =
+    dbConfigured && viewer
+      ? await resolveActiveProject(toProjectViewer(viewer)).catch(() => null)
+      : null;
   const reference = dbConfigured
-    ? await getReferenceData().catch(() => null)
+    ? await getReferenceData(activeProject?.id).catch(() => null)
     : null;
   const unlinked = dbConfigured ? await listUnlinkedUsers().catch(() => []) : [];
   const facebookConfig = getFacebookConfig();
@@ -93,8 +98,8 @@ export default async function Page() {
   const insightsConfigured = Boolean(facebookConfig?.adAccountId);
   const facebookPages = dbConfigured
     ? await (async () => {
-        await ensureFacebookPagesFromEnv().catch(() => 0);
-        return listFacebookPages();
+        await ensureFacebookPagesFromEnv(undefined, activeProject?.id).catch(() => 0);
+        return listFacebookPages(activeProject ? { projectId: activeProject.id } : undefined);
       })()
     : [];
   const [leadSyncState, insightsSyncState] = dbConfigured
@@ -109,8 +114,17 @@ export default async function Page() {
     <div className="space-y-4 p-4">
       <div>
         <h1 className="text-xl font-bold">Cài đặt App</h1>
-        <p className="text-[13px] text-muted-foreground">Danh mục dùng chung và trạng thái tích hợp</p>
+        <p className="text-[13px] text-muted-foreground">Tích hợp toàn hệ thống và trợ lý AI</p>
       </div>
+
+      <Card className="border-primary/20 bg-primary/5">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4 text-[13px]">
+          <p>Quản lý dự án, catalog và field phụ tại menu <strong>Dự án</strong>.</p>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/projects">Mở Dự án</Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -203,20 +217,18 @@ export default async function Page() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Danh mục</CardTitle>
+            <CardTitle>Danh mục tham chiếu</CardTitle>
             <CardDescription>
-              {reference ? "Đọc từ database" : "Nguồn dự phòng từ constants.ts (chưa có DB)"}
+              {reference ? "Đọc từ database (project đang chọn)" : "Nguồn dự phòng từ constants.ts"}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-[13px]">
             <Group title="Nguồn lead" items={SOURCE_OPTIONS.map((o) => o.label)} />
-            <Group title="Showroom" items={reference?.showrooms ?? [...SHOWROOMS]} />
-            <Group title="Phòng bán hàng" items={reference?.salesRooms ?? [...SALES_ROOMS]} />
             <Group title="Nhân sự phụ trách" items={reference?.assignees ?? [...ASSIGNEES]} />
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Tích hợp</CardTitle>
             <CardDescription>Kết nối hệ thống ngoài</CardDescription>

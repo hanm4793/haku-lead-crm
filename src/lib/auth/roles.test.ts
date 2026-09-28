@@ -6,9 +6,15 @@ import {
   assertCanManageAccount,
   canEditLead,
   canEmailAccount,
+  canManageAttrFields,
+  canManageAttrFieldsInProject,
+  canManageCatalogs,
+  canManageCatalogsInProject,
+  canManageProjects,
   canManageSettings,
   canManageUsers,
   canSeeNav,
+  canViewProjects,
   canUseAi,
   canViewMarketing,
   canViewReports,
@@ -52,6 +58,29 @@ describe("menu", () => {
     expect(canManageSettings("PARTNER_ADMIN")).toBe(false);
     expect(canManageSettings("STAFF")).toBe(false);
   });
+
+  it("settings catalog CRUD remains super-admin-only", () => {
+    expect(canManageCatalogs("SUPER_ADMIN")).toBe(true);
+    expect(canManageCatalogs("PARTNER_ADMIN")).toBe(false);
+    expect(canManageCatalogs("STAFF")).toBe(false);
+  });
+
+  it("partner manages catalog on member projects only", () => {
+    const partner = { role: "PARTNER_ADMIN" as const, projectIds: ["proj-a"] };
+    expect(canManageCatalogsInProject(partner, "proj-a")).toBe(true);
+    expect(canManageCatalogsInProject(partner, "proj-b")).toBe(false);
+    expect(canManageAttrFieldsInProject(partner, "proj-a")).toBe(true);
+    expect(canManageAttrFields("PARTNER_ADMIN")).toBe(false);
+  });
+
+  it("projects menu and create gate", () => {
+    expect(canSeeNav("SUPER_ADMIN", "projects")).toBe(true);
+    expect(canSeeNav("PARTNER_ADMIN", "projects")).toBe(true);
+    expect(canSeeNav("STAFF", "projects")).toBe(false);
+    expect(canViewProjects("STAFF")).toBe(false);
+    expect(canManageProjects("SUPER_ADMIN")).toBe(true);
+    expect(canManageProjects("PARTNER_ADMIN")).toBe(false);
+  });
 });
 
 describe("lead data", () => {
@@ -60,6 +89,7 @@ describe("lead data", () => {
     expect(dataScope({ role: "SUPER_ADMIN", pageIds: ["p1"] })).toBe("all");
     expect(isPageVisible({ role: "SUPER_ADMIN", pageIds: [] }, null)).toBe(true);
     expect(scopeConditions({ role: "SUPER_ADMIN", pageIds: ["p1"] })).toEqual([]);
+    expect(scopeConditions({ role: "SUPER_ADMIN", pageIds: [], activeProjectId: "proj-1" })).toHaveLength(1);
   });
 
   it("partner admin and staff see only granted pages", () => {
@@ -127,17 +157,30 @@ describe("accounts", () => {
     expect(
       prepareCreateAccount(
         { role: "SUPER_ADMIN" },
-        { role: "PARTNER_ADMIN", aiEnabled: true, pageIds: ["p1", "p1"] },
+        { role: "PARTNER_ADMIN", projectId: "proj-1", aiEnabled: true, pageIds: ["p1", "p1"] },
       ),
-    ).toEqual({ role: "PARTNER_ADMIN", partnerId: null, aiEnabled: true, pageIds: ["p1", "p1"] });
+    ).toEqual({
+      role: "PARTNER_ADMIN",
+      partnerId: null,
+      projectId: "proj-1",
+      aiEnabled: true,
+      pageIds: ["p1", "p1"],
+    });
 
     expect(
       prepareCreateAccount({ role: "SUPER_ADMIN" }, { role: "STAFF", partnerId: "partner-1", pageIds: ["p1"] }),
-    ).toEqual({ role: "STAFF", partnerId: "partner-1", aiEnabled: false, pageIds: [] });
+    ).toEqual({
+      role: "STAFF",
+      partnerId: "partner-1",
+      projectId: null,
+      aiEnabled: false,
+      pageIds: [],
+    });
 
     expect(prepareCreateAccount(partner, { role: "STAFF", aiEnabled: true, pageIds: ["p1"] })).toEqual({
       role: "STAFF",
       partnerId: "partner-1",
+      projectId: null,
       aiEnabled: false,
       pageIds: [],
     });
@@ -145,6 +188,9 @@ describe("accounts", () => {
     expect(() => prepareCreateAccount(partner, { role: "PARTNER_ADMIN" })).toThrow(/chỉ tạo được nhân viên/);
     expect(() => prepareCreateAccount({ role: "SUPER_ADMIN" }, { role: "SUPER_ADMIN" })).toThrow(/super admin/);
     expect(() => prepareCreateAccount({ role: "SUPER_ADMIN" }, { role: "STAFF" })).toThrow(/partner admin/);
+    expect(() =>
+      prepareCreateAccount({ role: "SUPER_ADMIN" }, { role: "PARTNER_ADMIN", pageIds: [] }),
+    ).toThrow(/project/);
     expect(() => prepareCreateAccount({ role: "STAFF", appUserId: "staff" }, { role: "STAFF" })).toThrow(
       /không có quyền/,
     );

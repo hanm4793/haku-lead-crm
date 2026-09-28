@@ -6,19 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  ALL_CAR_MODELS,
-  ASSIGNEES,
-  BRAND_OPTIONS,
-  CATEGORY_OPTIONS,
-  FAIL_REASON_OPTIONS,
-  SALES_ROOMS,
-  SHOWROOMS,
-  SOURCE_OPTIONS,
-} from "@/lib/constants";
+import { allProducts, DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/lib/catalog";
+import { ASSIGNEES, CATEGORY_OPTIONS, FAIL_REASON_OPTIONS, SOURCE_OPTIONS } from "@/lib/constants";
 import { countActiveFilters } from "@/lib/filters";
-import type { Brand, FailReason, LeadCategory, LeadFilters, LeadSource } from "@/lib/types";
+import type { FailReason, LeadCategory, LeadFilters, LeadSource } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const toOptions = (values: readonly string[]) => values.map((v) => ({ value: v, label: v }));
@@ -31,14 +22,19 @@ export function LeadFilterPopover({
   onReset,
   fanpageOptions = [],
   assigneeOptions,
+  catalog = DEFAULT_LEAD_CATALOG,
 }: {
   filters: LeadFilters;
   onChange: (patch: Partial<LeadFilters>) => void;
   onReset: () => void;
   fanpageOptions?: FanpageFilterOption[];
   assigneeOptions?: string[];
+  /** Danh mục brand / sản phẩm / location và nhãn theo project. */
+  catalog?: LeadCatalogOptions;
 }) {
   const activeCount = countActiveFilters(filters);
+  const { labels } = catalog;
+  const products = allProducts(catalog);
 
   return (
     <Popover>
@@ -77,18 +73,19 @@ export function LeadFilterPopover({
               searchable={fanpageOptions.length > 6}
             />
           </Field>
-          <Field label="Thương hiệu">
+          <Field label={labels.brand}>
             <MultiSelect
-              options={BRAND_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              options={catalog.brands.map((b) => ({ value: b.code, label: b.name }))}
               selected={filters.brands}
-              onChange={(v) => onChange({ brands: v as Brand[] })}
+              onChange={(v) => onChange({ brands: v })}
             />
           </Field>
-          <Field label="Showroom">
-            <MultiSelect options={toOptions(SHOWROOMS)} selected={filters.showrooms} onChange={(v) => onChange({ showrooms: v })} />
-          </Field>
-          <Field label="Phòng bán hàng">
-            <MultiSelect options={toOptions(SALES_ROOMS)} selected={filters.salesRooms} onChange={(v) => onChange({ salesRooms: v })} />
+          <Field label={labels.location}>
+            <MultiSelect
+              options={toOptions(catalog.locations)}
+              selected={filters.locations}
+              onChange={(v) => onChange({ locations: v })}
+            />
           </Field>
           <Field label="Phụ trách">
             <MultiSelect
@@ -97,8 +94,8 @@ export function LeadFilterPopover({
               onChange={(v) => onChange({ assignees: v })}
             />
           </Field>
-          <Field label="Dòng xe">
-            <MultiSelect options={toOptions(ALL_CAR_MODELS)} selected={filters.carModels} onChange={(v) => onChange({ carModels: v })} />
+          <Field label={labels.product}>
+            <MultiSelect options={toOptions(products)} selected={filters.products} onChange={(v) => onChange({ products: v })} />
           </Field>
           <Field label="Phân loại">
             <MultiSelect

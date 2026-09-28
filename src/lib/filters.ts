@@ -8,10 +8,9 @@ export const EMPTY_FILTERS: LeadFilters = {
   dateTo: null,
   sources: [],
   brands: [],
-  showrooms: [],
-  salesRooms: [],
+  locations: [],
   assignees: [],
-  carModels: [],
+  products: [],
   categories: [],
   failReasons: [],
   facebookPageIds: [],
@@ -73,10 +72,9 @@ export function applyLeadFilters(leads: Lead[], filters: LeadFilters, now: Date 
 
     if (filters.sources.length && !filters.sources.includes(lead.source)) return false;
     if (filters.brands.length && (!lead.brand || !filters.brands.includes(lead.brand))) return false;
-    if (filters.showrooms.length && !filters.showrooms.includes(lead.showroom)) return false;
-    if (filters.salesRooms.length && !filters.salesRooms.includes(lead.salesRoom)) return false;
+    if (filters.locations.length && !filters.locations.includes(lead.location)) return false;
     if (filters.assignees.length && !filters.assignees.includes(lead.assignee ?? "")) return false;
-    if (filters.carModels.length && !filters.carModels.includes(lead.carModel ?? "")) return false;
+    if (filters.products.length && !filters.products.includes(lead.product ?? "")) return false;
     if (filters.categories.length && !filters.categories.includes(lead.category)) return false;
     if (filters.failReasons.length && !filters.failReasons.includes(lead.failReason!)) return false;
     if (
@@ -95,10 +93,9 @@ export function countActiveFilters(filters: LeadFilters) {
   let n = 0;
   n += filters.sources.length ? 1 : 0;
   n += filters.brands.length ? 1 : 0;
-  n += filters.showrooms.length ? 1 : 0;
-  n += filters.salesRooms.length ? 1 : 0;
+  n += filters.locations.length ? 1 : 0;
   n += filters.assignees.length ? 1 : 0;
-  n += filters.carModels.length ? 1 : 0;
+  n += filters.products.length ? 1 : 0;
   n += filters.categories.length ? 1 : 0;
   n += filters.failReasons.length ? 1 : 0;
   n += filters.facebookPageIds.length ? 1 : 0;

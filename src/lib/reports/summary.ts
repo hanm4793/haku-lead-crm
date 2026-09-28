@@ -1,6 +1,6 @@
 import type { ViewerScope } from "@/lib/db/leads-repo";
 import {
-  queryByCarModel,
+  queryByProduct,
   queryBySource,
   queryCallList,
   queryCategoryDistribution,
@@ -26,7 +26,7 @@ import type {
 import type { Lead, LeadFilters, LeadKpis } from "@/lib/types";
 
 /** Các chiều luôn được tính sẵn để nút xuất Excel của bảng chi tiết dùng ngay. */
-export const EXPORT_PIVOT_DIMENSIONS: PivotDimension[] = ["carModel", "source", "category"];
+export const EXPORT_PIVOT_DIMENSIONS: PivotDimension[] = ["product", "source", "category"];
 
 export interface ReportSummary {
   kpis: LeadKpis;
@@ -101,7 +101,7 @@ export async function buildReportSummary(
     queryFunnel(filters, viewer, now),
     queryCategoryDistribution(filters, viewer, now),
     queryBySource(filters, viewer, now),
-    queryByCarModel(filters, viewer, now, 12),
+    queryByProduct(filters, viewer, now, 12),
     queryCallList(filters, viewer, now, 12),
     queryFailReasons(filters, viewer, now),
     querySourceQuality(filters, previousFilters, viewer, now),

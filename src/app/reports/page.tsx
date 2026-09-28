@@ -3,9 +3,12 @@
 import { NowProvider } from "@/components/providers/now-provider";
 import { ReportsPage } from "@/components/reports/reports-page";
 import { canViewReports, isPageVisible } from "@/lib/auth/roles";
-import { getViewer } from "@/lib/auth/viewer";
+import { getScopedViewer } from "@/lib/auth/viewer";
+import { catalogOptionsFromReference, DEFAULT_LEAD_CATALOG } from "@/lib/catalog";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
+import { listAttrFields } from "@/lib/db/attr-fields-repo";
+import { getReferenceData } from "@/lib/db/leads-repo";
 import { resolvePreset } from "@/lib/date-range";
 import { EMPTY_FILTERS } from "@/lib/filters";
 import { buildReportSummary } from "@/lib/reports/summary";
@@ -28,25 +31,29 @@ export default async function Page() {
     );
   }
 
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (!viewer) redirect("/login");
   if (!canViewReports(viewer.role)) redirect("/leads");
 
+  const projectId = viewer.activeProjectId ?? undefined;
   const now = new Date();
   const range = resolvePreset("THIS_MONTH", now);
-  const [initialSummary, facebookPages, assignees] = await Promise.all([
+  const [initialSummary, facebookPages, assignees, reference, attrFields] = await Promise.all([
     buildReportSummary(
       {
         filters: { ...EMPTY_FILTERS, dateFrom: range.from, dateTo: range.to },
-        groupBy: "carModel",
+        groupBy: "product",
         splitBy: null,
         now,
       },
       viewer,
     ),
-    listFacebookPages(),
+    listFacebookPages(projectId ? { projectId } : undefined),
     listAssignableStaff(viewer),
+    getReferenceData(projectId).catch(() => null),
+    projectId ? listAttrFields(projectId, { activeOnly: true }).catch(() => []) : Promise.resolve([]),
   ]);
+  const catalog = reference ? catalogOptionsFromReference(reference) : DEFAULT_LEAD_CATALOG;
 
   const fanpageOptions = facebookPages
     .filter((page) => page.active && isPageVisible(viewer, page.facebookPageId))
@@ -57,7 +64,13 @@ export default async function Page() {
 
   return (
     <NowProvider value={now.toISOString()}>
-      <ReportsPage initialSummary={initialSummary} fanpageOptions={fanpageOptions} assignees={assignees} />
+      <ReportsPage
+        initialSummary={initialSummary}
+        fanpageOptions={fanpageOptions}
+        assignees={assignees}
+        catalog={catalog}
+        attrFields={attrFields}
+      />
     </NowProvider>
   );
 }

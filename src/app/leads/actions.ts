@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { getViewer } from "@/lib/auth/viewer";
+import { getScopedViewer } from "@/lib/auth/viewer";
 import { appendActivityLog, updateLead } from "@/lib/db/leads-repo";
 import type { ActivityLog } from "@/lib/types";
 import {
@@ -10,6 +10,7 @@ import {
   CHANNEL_DETAIL_OPTIONS,
   FAIL_REASON_OPTIONS,
   SOURCE_OPTIONS,
+  UNASSIGNED_ASSIGNMENT_LABEL,
 } from "@/lib/constants";
 import type { Lead } from "@/lib/types";
 
@@ -32,9 +33,24 @@ const patchSchema = z.object({
   source: enumOf(SOURCE_OPTIONS.map((o) => o.value)).optional(),
   channelDetail: enumOf(CHANNEL_DETAIL_OPTIONS.map((o) => o.value)).optional(),
   assignee: z.string().max(120).nullable().optional(),
-  carModel: z.string().max(80).nullable().optional(),
+  /** Mã brand trong danh mục. */
+  brand: z.string().max(40).nullable().optional(),
+  /** Tên sản phẩm trong danh mục. */
+  product: z.string().max(80).nullable().optional(),
+  /** Tên location; chuỗi rỗng hoặc nhãn "Chưa phân bổ" nghĩa là bỏ gán. */
+  location: z
+    .string()
+    .max(120)
+    .nullable()
+    .optional()
+    .transform((value) => {
+      if (value === undefined) return undefined;
+      const trimmed = value?.trim() ?? "";
+      return trimmed && trimmed !== UNASSIGNED_ASSIGNMENT_LABEL ? trimmed : null;
+    }),
   careNote: z.string().max(4000).nullable().optional(),
   callbackAt: z.string().nullable().optional(),
+  attrs: z.record(z.string().max(200), z.string().max(4000)).optional(),
 });
 
 const logSchema = z.object({
@@ -53,7 +69,7 @@ export type UpdateLeadResult = { ok: true; lead: Lead } | { ok: false; error: st
 export type AppendLogResult = { ok: true; logs: ActivityLog[] } | { ok: false; error: string };
 
 export async function updateLeadAction(input: unknown): Promise<UpdateLeadResult> {
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (!viewer) return { ok: false, error: "Phiên đăng nhập đã hết hạn." };
 
   const parsed = inputSchema.safeParse(input);
@@ -79,7 +95,7 @@ const appendLogSchema = z.object({
 });
 
 export async function appendActivityLogAction(input: unknown): Promise<AppendLogResult> {
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
   if (!viewer) return { ok: false, error: "Phiên đăng nhập đã hết hạn." };
 
   const parsed = appendLogSchema.safeParse(input);

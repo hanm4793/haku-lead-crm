@@ -19,19 +19,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/lib/catalog";
 import {
   ASSIGNEES,
-  CAR_MODELS_BY_BRAND,
   UNASSIGNED_ASSIGNMENT_LABEL,
   CATEGORY_LONG_LABEL,
   CHANNEL_DETAIL_OPTIONS,
   FAIL_REASON_OPTIONS,
   SOURCE_OPTIONS,
 } from "@/lib/constants";
-import type { ActivityKind, ActivityLog, ChannelDetail, FailReason, Lead, LeadCategory, LeadSource } from "@/lib/types";
+import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
+import type {
+  ActivityKind,
+  ActivityLog,
+  BrandCode,
+  ChannelDetail,
+  FailReason,
+  Lead,
+  LeadCategory,
+  LeadSource,
+} from "@/lib/types";
 import { cn, formatDateTime, toDateInputValue } from "@/lib/utils";
 
 const CATEGORY_VALUES: LeadCategory[] = ["CHUA_PHAN_LOAI", "KHQT", "GDTD", "KHD", "CHUA_LH_DUOC", "FAIL"];
+
+/** Sentinel cho "chưa chọn" — Radix Select không nhận value rỗng. */
+const NONE = "__NONE__";
 
 interface DraftState {
   source: LeadSource;
@@ -39,9 +52,17 @@ interface DraftState {
   assignee: string | null;
   category: LeadCategory;
   failReason: FailReason | null;
-  carModel: string | null;
+  brand: BrandCode | null;
+  product: string | null;
+  /** Tên location; null = chưa phân bổ. */
+  location: string | null;
   careNote: string;
   callbackAt: string;
+}
+
+function locationOf(lead: Lead): string | null {
+  const name = lead.location?.trim();
+  return name && name !== UNASSIGNED_ASSIGNMENT_LABEL ? name : null;
 }
 
 function toDraft(lead: Lead): DraftState {
@@ -51,7 +72,9 @@ function toDraft(lead: Lead): DraftState {
     assignee: lead.assignee,
     category: lead.category,
     failReason: lead.failReason,
-    carModel: lead.carModel,
+    brand: lead.brand,
+    product: lead.product,
+    location: locationOf(lead),
     careNote: lead.careNote ?? "",
     callbackAt: toDateInputValue(lead.callbackAt),
   };
@@ -65,6 +88,10 @@ interface LeadDetailDialogProps {
   onSave: (patch: Partial<Lead>, logs: { kind: ActivityKind; message: string }[]) => void;
   readOnly?: boolean;
   assignees?: readonly string[];
+  /** Danh mục brand / sản phẩm / location và nhãn theo project. */
+  catalog?: LeadCatalogOptions;
+  /** Định nghĩa field phụ (active) của project. */
+  attrFields?: AttrFieldRow[];
 }
 
 export function LeadDetailDialog({ lead, ...props }: LeadDetailDialogProps) {
@@ -81,9 +108,17 @@ function LeadDetailDialogBody({
   onSave,
   readOnly = false,
   assignees = ASSIGNEES,
+  catalog = DEFAULT_LEAD_CATALOG,
+  attrFields = [],
 }: LeadDetailDialogProps & { lead: Lead }) {
   const [draft, setDraft] = React.useState<DraftState>(() => toDraft(lead));
+  const [attrDraft, setAttrDraft] = React.useState<Record<string, string>>(() => ({ ...(lead.attrs ?? {}) }));
   const [justSaved, setJustSaved] = React.useState(false);
+  const { labels } = catalog;
+
+  React.useEffect(() => {
+    setAttrDraft({ ...(lead.attrs ?? {}) });
+  }, [lead.id, lead.attrs]);
 
   const patch = (next: Partial<DraftState>) => {
     setDraft((d) => ({ ...d, ...next }));
@@ -96,9 +131,12 @@ function LeadDetailDialogBody({
     draft.assignee !== lead.assignee ||
     draft.category !== lead.category ||
     draft.failReason !== lead.failReason ||
-    draft.carModel !== lead.carModel ||
+    draft.brand !== lead.brand ||
+    draft.product !== lead.product ||
+    draft.location !== locationOf(lead) ||
     draft.careNote !== (lead.careNote ?? "") ||
-    draft.callbackAt !== toDateInputValue(lead.callbackAt);
+    draft.callbackAt !== toDateInputValue(lead.callbackAt) ||
+    attrsDirty(attrFields, attrDraft, lead.attrs ?? {});
 
   const handleSave = () => {
     const entries: { kind: ActivityKind; message: string }[] = [];
@@ -118,24 +156,52 @@ function LeadDetailDialogBody({
       entries.push({ kind: "CALL", message: draft.careNote });
     }
 
-    onSave(
-      {
+    const savePatch: Partial<Lead> & { attrs?: Record<string, string> } = {
         source: draft.source,
         channelDetail: draft.channelDetail,
         assignee: draft.assignee,
         category: draft.category,
         failReason: draft.category === "FAIL" ? draft.failReason : null,
-        carModel: draft.carModel,
+        brand: draft.brand,
+        product: draft.product,
+        // Lead.location là chuỗi hiển thị; server đổi nhãn "Chưa phân bổ" về null.
+        location: draft.location ?? UNASSIGNED_ASSIGNMENT_LABEL,
         careNote: draft.careNote || null,
         callbackAt: draft.callbackAt ? new Date(draft.callbackAt).toISOString() : null,
         contactStatus: draft.careNote ? "DA_LIEN_HE" : lead.contactStatus,
-      },
-      entries,
-    );
+    };
+    if (attrFields.length > 0) {
+      const attrsPatch: Record<string, string> = {};
+      for (const field of attrFields) {
+        attrsPatch[field.key] = attrDraft[field.key] ?? "";
+      }
+      savePatch.attrs = attrsPatch;
+    }
+    onSave(savePatch, entries);
     setJustSaved(true);
   };
 
-  const models = (lead.brand ? CAR_MODELS_BY_BRAND[lead.brand] : undefined) ?? [];
+  const products = (draft.brand ? catalog.productsByBrand[draft.brand] : undefined) ?? [];
+  // Lead cũ có thể trỏ tới giá trị đã tắt / không còn trong danh mục — vẫn cho hiện để không mất dữ liệu.
+  const brandOptions = withCurrent(
+    catalog.brands.map((b) => ({ value: b.code, label: b.name })),
+    draft.brand,
+  );
+  const productOptions = withCurrent(
+    products.map((p) => ({ value: p, label: p })),
+    draft.product,
+  );
+  const locationOptions = withCurrent(
+    catalog.locations.map((l) => ({ value: l, label: l })),
+    draft.location,
+  );
+  const defKeys = new Set(attrFields.map((f) => f.key));
+  const leftoverAttrs = Object.entries(lead.attrs ?? {}).filter(([key]) => !defKeys.has(key));
+
+  const patchAttr = (key: string, value: string) => {
+    setAttrDraft((prev) => ({ ...prev, [key]: value }));
+    setJustSaved(false);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -176,11 +242,46 @@ function LeadDetailDialogBody({
           <div className="space-y-4">
             <div className="rounded-lg bg-[#f7f9fc] p-4">
               <dl className="space-y-2.5 text-sm">
-                <Row
-                  label="Showroom"
-                  value={lead.showroom?.trim() ? lead.showroom : UNASSIGNED_ASSIGNMENT_LABEL}
-                />
-                <Row label="Thương hiệu" value={lead.brand ?? UNASSIGNED_ASSIGNMENT_LABEL} />
+                <RowControl label={labels.location}>
+                  <Select
+                    value={draft.location ?? NONE}
+                    onValueChange={(v) => patch({ location: v === NONE ? null : v })}
+                  >
+                    <SelectTrigger size="sm" className="w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>{UNASSIGNED_ASSIGNMENT_LABEL}</SelectItem>
+                      {locationOptions.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </RowControl>
+                <RowControl label={labels.brand}>
+                  <Select
+                    value={draft.brand ?? NONE}
+                    onValueChange={(v) => {
+                      const brand = v === NONE ? null : v;
+                      // Đổi brand thì sản phẩm cũ (thuộc brand khác) không còn hợp lệ.
+                      patch({ brand, product: brand === draft.brand ? draft.product : null });
+                    }}
+                  >
+                    <SelectTrigger size="sm" className="w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>{UNASSIGNED_ASSIGNMENT_LABEL}</SelectItem>
+                      {brandOptions.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </RowControl>
                 <RowControl label="Nguồn">
                   <Select value={draft.source} onValueChange={(v) => patch({ source: v as LeadSource })}>
                     <SelectTrigger size="sm" className="w-36">
@@ -209,10 +310,6 @@ function LeadDetailDialogBody({
                     </SelectContent>
                   </Select>
                 </RowControl>
-                <Row
-                  label="Phòng bán hàng"
-                  value={lead.salesRoom?.trim() ? lead.salesRoom : UNASSIGNED_ASSIGNMENT_LABEL}
-                />
                 <RowControl label="Phụ trách">
                   <Select
                     value={draft.assignee ?? "__NONE__"}
@@ -235,6 +332,32 @@ function LeadDetailDialogBody({
                 <Row label="Số lần liên hệ" value={String(lead.contactCount)} />
               </dl>
             </div>
+
+            {(attrFields.length > 0 || leftoverAttrs.length > 0) && (
+              <div className="rounded-lg border border-dashed border-border p-4">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Thông tin thêm từ form
+                </div>
+                <div className="space-y-3 text-sm">
+                  {attrFields.map((field) => (
+                    <div key={field.id} className="space-y-1">
+                      <Label className="text-[13px] text-muted-foreground">
+                        {field.label}
+                        {field.required && <span className="text-rose-600"> *</span>}
+                      </Label>
+                      <AttrFieldInput field={field} value={attrDraft[field.key] ?? ""} onChange={(v) => patchAttr(field.key, v)} />
+                    </div>
+                  ))}
+                  {leftoverAttrs.length > 0 && (
+                    <dl className="space-y-2 border-t border-border pt-2">
+                      {leftoverAttrs.map(([key, value]) => (
+                        <Row key={key} label={key} value={value} />
+                      ))}
+                    </dl>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -282,23 +405,29 @@ function LeadDetailDialogBody({
                 )}
 
                 <div className="space-y-1.5">
-                  <Label className="text-[13px]">Dòng xe quan tâm</Label>
+                  <Label className="text-[13px]">{labels.product} quan tâm</Label>
                   <Select
-                    value={draft.carModel ?? "__NONE__"}
-                    onValueChange={(v) => patch({ carModel: v === "__NONE__" ? null : v })}
+                    value={draft.product ?? NONE}
+                    onValueChange={(v) => patch({ product: v === NONE ? null : v })}
+                    disabled={!draft.brand && productOptions.length === 0}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="— Chưa xác định —" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__NONE__">— Chưa xác định —</SelectItem>
-                      {models.map((m) => (
-                        <SelectItem key={m} value={m}>
-                          {m}
+                      <SelectItem value={NONE}>— Chưa xác định —</SelectItem>
+                      {productOptions.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {!draft.brand && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Chọn {labels.brand.toLowerCase()} trước để có danh sách {labels.product.toLowerCase()}.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -359,6 +488,71 @@ function LeadDetailDialogBody({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Thêm giá trị hiện tại vào đầu danh sách nếu nó không còn trong danh mục. */
+function attrsDirty(fields: AttrFieldRow[], draft: Record<string, string>, saved: Record<string, string>) {
+  for (const field of fields) {
+    const a = (draft[field.key] ?? "").trim();
+    const b = (saved[field.key] ?? "").trim();
+    if (a !== b) return true;
+  }
+  return false;
+}
+
+function AttrFieldInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: AttrFieldRow;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  if (field.fieldType === "select") {
+    const options = withCurrent(
+      field.options.map((o) => ({ value: o, label: o })),
+      value || null,
+    );
+    return (
+      <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? "" : v)}>
+        <SelectTrigger size="sm" className="w-full">
+          <SelectValue placeholder="— Chọn —" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NONE}>— Chưa chọn —</SelectItem>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+  if (field.fieldType === "date") {
+    return (
+      <Input
+        type="date"
+        value={value ? toDateInputValue(value) : ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-8"
+      />
+    );
+  }
+  return (
+    <Input
+      type={field.fieldType === "number" ? "number" : "text"}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-8"
+    />
+  );
+}
+
+function withCurrent(options: { value: string; label: string }[], current: string | null) {
+  if (!current || options.some((o) => o.value === current)) return options;
+  return [{ value: current, label: current }, ...options];
 }
 
 function Row({ label, value }: { label: string; value: string }) {

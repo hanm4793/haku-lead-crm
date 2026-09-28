@@ -38,7 +38,9 @@ export async function searchMentions(viewer: ViewerScope, type: MentionType, que
 
 async function searchPages(viewer: ViewerScope, q: string): Promise<MentionHit[]> {
   const allowed = viewer.role === "SUPER_ADMIN" ? null : new Set(viewer.pageIds);
-  const pages = await listFacebookPages();
+  const pages = await listFacebookPages(
+    viewer.activeProjectId ? { projectId: viewer.activeProjectId } : undefined,
+  );
   return pages
     .filter((page) => (allowed ? allowed.has(page.facebookPageId) : true))
     .filter((page) => !q || needle(page.name ?? page.facebookPageId).includes(q))

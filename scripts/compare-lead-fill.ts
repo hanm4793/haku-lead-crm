@@ -11,11 +11,10 @@ async function main() {
     total: number;
     has_name: number;
     has_phone: number;
-    has_showroom: number;
-    has_sales_room: number;
+    has_location: number;
     has_brand: number;
     has_assignee: number;
-    has_car_model: number;
+    has_product: number;
     has_campaign: number;
     has_ad_content: number;
     has_fb_page: number;
@@ -35,11 +34,10 @@ async function main() {
       count(*)::int as total,
       count(*) filter (where name is not null and name <> '')::int as has_name,
       count(*) filter (where phone is not null and phone <> '')::int as has_phone,
-      count(*) filter (where showroom_id is not null)::int as has_showroom,
-      count(*) filter (where sales_room_id is not null)::int as has_sales_room,
-      count(*) filter (where brand is not null)::int as has_brand,
+      count(*) filter (where location_id is not null)::int as has_location,
+      count(*) filter (where brand_id is not null)::int as has_brand,
       count(*) filter (where assignee_id is not null)::int as has_assignee,
-      count(*) filter (where car_model_id is not null)::int as has_car_model,
+      count(*) filter (where product_id is not null)::int as has_product,
       count(*) filter (where campaign is not null)::int as has_campaign,
       count(*) filter (where ad_content is not null)::int as has_ad_content,
       count(*) filter (where facebook_page_id is not null)::int as has_fb_page,
@@ -76,13 +74,13 @@ async function main() {
     select
       name,
       phone,
-      brand,
+      brand_id is not null as has_brand,
       campaign,
       ad_content,
       facebook_page_id,
       facebook_ad_id,
       facebook_campaign_id,
-      showroom_id is not null as has_showroom,
+      location_id is not null as has_location,
       assignee_id is not null as has_assignee,
       category,
       contact_status,

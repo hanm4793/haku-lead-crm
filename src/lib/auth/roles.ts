@@ -35,7 +35,43 @@ export function canManageSettings(role: UserRole): boolean {
   return role === "SUPER_ADMIN";
 }
 
-export type NavGate = "all" | "reports" | "marketing" | "users" | "settings";
+/** Thêm / sửa / tắt danh mục trên trang Cài đặt (legacy) — chỉ super admin. */
+export function canManageCatalogs(role: UserRole): boolean {
+  return canManageSettings(role);
+}
+
+/** Định nghĩa field phụ trên Cài đặt (legacy) — chỉ super admin. */
+export function canManageAttrFields(role: UserRole): boolean {
+  return canManageCatalogs(role);
+}
+
+/** Màn Dự án — danh sách và chi tiết project được phép. */
+export function canViewProjects(role: UserRole): boolean {
+  return role === "SUPER_ADMIN" || role === "PARTNER_ADMIN";
+}
+
+export function canManageCatalogsInProject(
+  viewer: { role: UserRole; projectIds?: readonly string[] },
+  projectId: string,
+): boolean {
+  if (viewer.role === "SUPER_ADMIN") return true;
+  if (viewer.role !== "PARTNER_ADMIN") return false;
+  return viewer.projectIds?.includes(projectId) ?? false;
+}
+
+export function canManageAttrFieldsInProject(
+  viewer: { role: UserRole; projectIds?: readonly string[] },
+  projectId: string,
+): boolean {
+  return canManageCatalogsInProject(viewer, projectId);
+}
+
+/** Tạo/sửa project, gán fanpage / partner / tài khoản ads. */
+export function canManageProjects(role: UserRole): boolean {
+  return role === "SUPER_ADMIN";
+}
+
+export type NavGate = "all" | "reports" | "marketing" | "users" | "projects" | "settings";
 
 export function canSeeNav(role: UserRole, gate: NavGate): boolean {
   switch (gate) {
@@ -47,6 +83,8 @@ export function canSeeNav(role: UserRole, gate: NavGate): boolean {
       return canViewMarketing(role);
     case "users":
       return canManageUsers(role);
+    case "projects":
+      return canViewProjects(role);
     case "settings":
       return canManageSettings(role);
   }
@@ -115,31 +153,52 @@ export function canEmailAccount(
 export interface PreparedAccount {
   role: UserRole;
   partnerId: string | null;
+  projectId: string | null;
   aiEnabled: boolean;
   pageIds: string[];
 }
 
-/** Quyết định role, partner, cờ AI và grant trước khi ghi database. */
+/** Quyết định role, partner, project, cờ AI và grant trước khi ghi database. */
 export function prepareCreateAccount(
-  actor: AccountActor,
-  input: { role: UserRole; partnerId?: string | null; aiEnabled?: boolean; pageIds?: string[] },
+  actor: AccountActor & { projectId?: string | null },
+  input: {
+    role: UserRole;
+    partnerId?: string | null;
+    projectId?: string | null;
+    aiEnabled?: boolean;
+    pageIds?: string[];
+  },
 ): PreparedAccount {
   if (!actor.appUserId && actor.role !== "SUPER_ADMIN") {
     throw new Error("Bạn không có quyền quản lý tài khoản.");
   }
   if (actor.role === "PARTNER_ADMIN") {
     if (input.role !== "STAFF") throw new Error("Partner admin chỉ tạo được nhân viên.");
-    return { role: "STAFF", partnerId: actor.appUserId ?? null, aiEnabled: false, pageIds: [] };
+    return {
+      role: "STAFF",
+      partnerId: actor.appUserId ?? null,
+      projectId: actor.projectId ?? null,
+      aiEnabled: false,
+      pageIds: [],
+    };
   }
   if (actor.role === "SUPER_ADMIN") {
     if (input.role === "SUPER_ADMIN") throw new Error("Không tạo super admin từ màn này.");
     if (input.role === "STAFF") {
       if (!input.partnerId) throw new Error("Nhân viên phải thuộc một partner admin.");
-      return { role: "STAFF", partnerId: input.partnerId, aiEnabled: false, pageIds: [] };
+      return {
+        role: "STAFF",
+        partnerId: input.partnerId,
+        projectId: input.projectId ?? null,
+        aiEnabled: false,
+        pageIds: [],
+      };
     }
+    if (!input.projectId) throw new Error("Partner admin phải thuộc một project.");
     return {
       role: "PARTNER_ADMIN",
       partnerId: null,
+      projectId: input.projectId,
       aiEnabled: Boolean(input.aiEnabled),
       pageIds: input.pageIds ?? [],
     };

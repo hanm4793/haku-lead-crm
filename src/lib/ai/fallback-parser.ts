@@ -1,12 +1,16 @@
-import {
-  ALL_CAR_MODELS,
-  ASSIGNEES,
-  SHOWROOMS,
-  SOURCE_OPTIONS,
-} from "@/lib/constants";
+import { SOURCE_OPTIONS } from "@/lib/constants";
 import { toDateInputValue } from "@/lib/utils";
 
+import { DEFAULT_AI_CATALOG, type AiCatalog } from "./catalog-context";
 import { DEFAULT_EXPORT_COLUMNS, type ExportSpec } from "./export-spec";
+
+function fold(text: string) {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .toLowerCase();
+}
 
 /**
  * Bộ phân tích theo luật, dùng khi chưa cấu hình GOOGLE_GENERATIVE_AI_API_KEY.
@@ -15,13 +19,11 @@ import { DEFAULT_EXPORT_COLUMNS, type ExportSpec } from "./export-spec";
 export function parseExportRequestLocally(
   text: string,
   now: Date = new Date(),
+  catalog: AiCatalog = DEFAULT_AI_CATALOG,
 ): { reply: string; spec: ExportSpec | null } {
   const raw = text.trim();
-  const q = raw
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .toLowerCase();
+  const q = fold(raw);
+  const { labels } = catalog;
 
   const wantsExport = /(xuat|export|tai ve|file|excel|csv|danh sach)/.test(q);
   if (!wantsExport) {
@@ -97,34 +99,33 @@ export function parseExportRequestLocally(
     described.push("đã liên hệ");
   }
 
-  const showrooms = SHOWROOMS.filter((s) =>
-    q.includes(s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").toLowerCase()),
-  );
-  if (showrooms.length) {
-    filters.showrooms = [...showrooms];
-    described.push(`showroom ${showrooms.join(", ")}`);
+  const locations = catalog.locations.filter((s) => q.includes(fold(s)));
+  if (locations.length) {
+    filters.locations = [...locations];
+    described.push(`${labels.location.toLowerCase()} ${locations.join(", ")}`);
   }
 
-  const assignees = ASSIGNEES.filter((s) =>
-    q.includes(s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").toLowerCase()),
-  );
+  const assignees = catalog.assignees.filter((s) => q.includes(fold(s)));
   if (assignees.length) {
     filters.assignees = [...assignees];
     described.push(`phụ trách ${assignees.join(", ")}`);
   }
 
-  const models = ALL_CAR_MODELS.filter((m) => q.includes(m.toLowerCase()));
-  if (models.length) {
-    filters.carModels = models;
-    described.push(`dòng xe ${models.join(", ")}`);
+  const products = catalog.products.filter((m) => q.includes(fold(m)));
+  if (products.length) {
+    filters.products = products;
+    described.push(`${labels.product.toLowerCase()} ${products.join(", ")}`);
   }
+
+  const productWord = fold(labels.product);
+  const locationWord = fold(labels.location);
 
   let splitSheetsBy: ExportSpec["splitSheetsBy"] = null;
   if (/tach.*(sheet|cot)|moi .* mot sheet/.test(q)) {
     if (/phu trach|nhan vien|sale/.test(q)) splitSheetsBy = "assignee";
-    else if (/dong xe/.test(q)) splitSheetsBy = "carModel";
+    else if (/dong xe|san pham/.test(q) || q.includes(productWord)) splitSheetsBy = "product";
     else if (/nguon|kenh/.test(q)) splitSheetsBy = "source";
-    else if (/showroom/.test(q)) splitSheetsBy = "showroom";
+    else if (/showroom|dia diem|chi nhanh/.test(q) || q.includes(locationWord)) splitSheetsBy = "location";
     else if (/trang thai|phan loai/.test(q)) splitSheetsBy = "category";
   }
 

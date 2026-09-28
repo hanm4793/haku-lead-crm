@@ -14,6 +14,8 @@ import { PivotTab } from "@/components/reports/pivot-tab";
 import { ReportKpiCards } from "@/components/reports/report-kpi-cards";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLeadLogs } from "@/hooks/use-lead-logs";
+import { DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/lib/catalog";
+import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import { EMPTY_FILTERS } from "@/lib/filters";
 import type { PivotDimension } from "@/lib/metrics";
 import type { ReportSummary } from "@/lib/reports/summary";
@@ -28,10 +30,14 @@ export function ReportsPage({
   initialSummary,
   fanpageOptions = [],
   assignees = [],
+  catalog = DEFAULT_LEAD_CATALOG,
+  attrFields = [],
 }: {
   initialSummary: ReportSummary;
   fanpageOptions?: FanpageFilterOption[];
   assignees?: string[];
+  catalog?: LeadCatalogOptions;
+  attrFields?: AttrFieldRow[];
 }) {
   const now = useNow();
 
@@ -42,7 +48,7 @@ export function ReportsPage({
     dateFrom: resolvePreset("THIS_MONTH", now).from,
     dateTo: resolvePreset("THIS_MONTH", now).to,
   }));
-  const [groupBy, setGroupBy] = React.useState<PivotDimension>("carModel");
+  const [groupBy, setGroupBy] = React.useState<PivotDimension>("product");
   const [splitBy, setSplitBy] = React.useState<PivotDimension | "NONE">("NONE");
   const [summary, setSummary] = React.useState(initialSummary);
   const [loading, setLoading] = React.useState(false);
@@ -129,6 +135,7 @@ export function ReportsPage({
             filters={filters}
             fanpageOptions={fanpageOptions}
             assigneeOptions={assignees}
+            catalog={catalog}
             onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
             onReset={() =>
               setFilters({
@@ -181,6 +188,7 @@ export function ReportsPage({
             data={{ ...summary.overview, callList }}
             totalLeads={summary.totalLeads}
             onSelectLead={setSelectedLead}
+            labels={catalog.labels}
           />
         </TabsContent>
         <TabsContent value="loss" className="pt-4">
@@ -194,6 +202,7 @@ export function ReportsPage({
             splitBy={splitBy}
             onGroupByChange={setGroupBy}
             onSplitByChange={setSplitBy}
+            labels={catalog.labels}
           />
         </TabsContent>
       </Tabs>
@@ -204,6 +213,8 @@ export function ReportsPage({
         open={Boolean(liveSelected)}
         onOpenChange={(open) => !open && setSelectedLead(null)}
         assignees={assignees}
+        catalog={catalog}
+        attrFields={attrFields}
         onSave={(patch, entries) => liveSelected && void save(liveSelected, patch, entries)}
       />
     </div>
