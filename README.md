@@ -1,106 +1,56 @@
 # SEMTOP Marketing CRM
 
-CRM quản lý lead đa kênh + Marketing Insights (Meta): danh sách lead, báo cáo, đồng bộ Facebook Lead Ads, trợ lý AI.
-Backend: **Supabase Postgres** (Drizzle) + **Supabase Auth**, RBAC server-side. Chi tiết quyền: [docs/permissions.md](docs/permissions.md).
+CRM lead đa kênh + Insights Meta. Auth: **Supabase**. Postgres: **Neon** (Drizzle). App: Next.js 16 trên Vercel.
 
-## Công nghệ
+Quyền: [docs/permissions.md](docs/permissions.md). Việc Báo cáo còn lại: [docs/reports-backlog.md](docs/reports-backlog.md). AI mới đọc docs theo thứ tự ở [docs/README.md](docs/README.md).
 
-| Lớp | Lựa chọn |
-| --- | --- |
-| Framework | Next.js 16 (App Router, Turbopack) |
-| UI | React 19, Tailwind CSS v4, Radix / shadcn-style, Plus Jakarta Sans |
-| Database | Supabase Postgres + Drizzle ORM |
-| Auth | Supabase Auth (`@supabase/ssr`) |
-| Ads | Meta Graph API (Lead Ads + Insights) |
-| Charts / Excel / AI | Recharts, ExcelJS, Vercel AI SDK |
-
-## Chạy dự án
+## Chạy local
 
 ```bash
 pnpm install
 cp .env.example .env.local
-# điền DATABASE_URL, DIRECT_URL, Supabase keys, (tuỳ chọn) Facebook token
+# DATABASE_URL, DIRECT_URL, Supabase keys, (tuỳ chọn) Facebook
 pnpm db:migrate
-pnpm db:seed          # chỉ danh mục — không xóa lead
-pnpm dev              # http://localhost:3000
+pnpm db:seed
+pnpm dev
 ```
-
-Nhánh feature đầy đủ (Facebook + Marketing + Semtop UI): worktree `.worktrees/facebook-sync` / branch `feature/facebook-sync`.
 
 | Lệnh | Việc |
 | --- | --- |
-| `pnpm db:migrate` | Chạy migration (gồm drop B10 nếu có `0006_drop_b10`) |
-| `pnpm db:seed` | Bổ sung danh mục; **giữ** lead hiện có |
-| `pnpm db:seed:demo` | **Xóa hết lead** + 704 lead demo — chỉ dùng khi chưa có data Meta |
+| `pnpm db:migrate` | Migration |
+| `pnpm db:seed` | Danh mục — **không** xóa lead |
+| `pnpm db:seed:demo` | **Xóa hết lead** rồi seed demo |
 | `pnpm typecheck` / `pnpm lint` | Kiểm tra |
 
-## Facebook Lead Ads & Marketing
+## Đã có
 
-Đồng bộ **theo nút** trên **Cài đặt** (ADMIN), không webhook.
+- Lead (SQL + RBAC), Báo cáo (Tổng quan + Pivot; **không** còn tab Loss), Marketing Insights
+- Đồng bộ Facebook Lead Ads / Insights **bấm nút** trên Cài đặt (Super admin), không webhook
+- Đa project: `/projects`, cookie `semtop_project_id`, catalog brand/product/location, attr fields
+- Marketing lọc theo **grant ∩ fanpage của project đang xem**
+- Trợ lý AI (Super luôn; Partner khi bật cờ)
+- Brand Semtop, gỡ B10
+
+Lead Meta không invent brand/product/assignee/phân loại. Thiếu SĐT vẫn import (`phone = ""`). `field_data` lạ merge vào `leads.attrs`; **không** lưu raw JSONB form.
+
+## Facebook
 
 | Biến | Mục đích |
 | --- | --- |
-| `FACEBOOK_ACCESS_TOKEN` | User token (server) — sync dùng Page token từ `/me/accounts` |
-| `FACEBOOK_PAGE_IDS` / `FACEBOOK_PAGE_ID` | Bootstrap Fanpage |
-| `FACEBOOK_AD_ACCOUNT_ID` | Insights (`act_…`) |
+| `FACEBOOK_ACCESS_TOKEN` | User token server |
+| `FACEBOOK_PAGE_IDS` / `FACEBOOK_PAGE_ID` | Fanpage |
+| `FACEBOOK_AD_ACCOUNT_ID` | Insights `act_…` |
 | `FACEBOOK_GRAPH_VERSION` | Mặc định `v21.0` |
 
-Quyền Meta: `pages_show_list`, `pages_read_engagement`, `leads_retrieval`, `ads_read` (+ Page access).
+## Role
 
-**Quy trình:** seed catalogs → đồng bộ lead (import cả lead thiếu SĐT, phone = `""`) → đồng bộ insights → xem `/leads` + `/marketing`. Filter **Fanpage** trên bộ lọc Lead.
+`SUPER_ADMIN` · `PARTNER_ADMIN` · `STAFF` — chi tiết `docs/permissions.md`. Không còn ADMIN / SHOWROOM_MANAGER / SALES.
 
-Lead Meta **không** có showroom / brand / assignee / phân loại CRM — để trống (**Chưa phân bổ** / chưa phân loại) để sale xử lý.
+## Deploy (team Vercel `haku-dev`)
 
-`field_data` custom (câu hỏi form) hiện **map** name/phone + lưu id campaign/ad; raw JSONB **chưa** lưu (xem lộ trình).
+Alias ổn định: https://haku-lead-crm-haku-dev.vercel.app  
+Mỗi `vercel deploy` Preview tạo URL hash mới; gắn alias này khi cần dùng một link cố định.
 
-## Đã xử lý / còn lại
+## Việc chưa làm
 
-### Đã có
-
-- [x] Lead list SQL + RBAC + báo cáo
-- [x] Facebook lead sync (multi-page) + Page Access Token
-- [x] Marketing Insights + trang `/marketing`
-- [x] Filter Fanpage
-- [x] Semtop brand (logo, tên, design tokens, font)
-- [x] Gỡ B10 khỏi sản phẩm (UI + schema)
-- [x] Date range picker + calendar (react-day-picker)
-
-### Còn làm (tương lai)
-
-- [ ] Lưu raw `field_data` (JSONB) + map theo `questions.type`
-- [ ] Webhook Leadgen realtime
-- [ ] AI hỏi đáp chỉ số / biểu đồ
-- [ ] AI chấm điểm / phân phối / cảnh báo nền
-- [ ] CPL dự đoán / funnel nâng cao
-
-## Cấu trúc chính
-
-```
-src/app/leads|reports|marketing|settings|users|login
-src/lib/db|facebook|ai|auth
-drizzle/          migrations
-docs/superpowers/ specs & plans
-```
-
-## Phân quyền
-
-| Vai trò | Phạm vi lead |
-| --- | --- |
-| ADMIN / SUPER_ADMIN | Toàn bộ |
-| SHOWROOM_MANAGER | Showroom của mình |
-| SALES | Lead được giao |
-| PARTNER (nếu bật) | Theo cấu hình partner |
-
-## AI
-
-```bash
-AI_PROVIDER=google
-GOOGLE_GENERATIVE_AI_API_KEY=...
-```
-
-Chi tiết model / free tier: xem lịch sử README hoặc `src/lib/ai/`.
-
-## Spec gần đây
-
-- [Semtop rebrand design](docs/superpowers/specs/2026-09-28-semtop-rebrand-design.md)
-- Facebook sync: `docs/superpowers/specs/` + `plans/2026-09-23-facebook-sync.md`
+Xem [docs/reports-backlog.md](docs/reports-backlog.md) và: webhook Leadgen, raw `field_data`, sync Google/TikTok/Zalo (chỉ lưu kết nối), filter/report theo attr.

@@ -3,7 +3,6 @@ import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
 import {
   CATEGORY_CHART_LABEL,
   CHANNEL_LABEL,
-  FAIL_REASON_LABEL,
   SOURCE_LABEL,
   UNASSIGNED_ASSIGNMENT_LABEL,
   UNASSIGNED_PRODUCT_LABEL,
@@ -19,18 +18,16 @@ import {
   type LeadCriteria,
   type ViewerScope,
 } from "@/lib/db/leads-repo";
-import { appUsers, brands, leads, locations, products } from "@/lib/db/schema";
+import { appUsers, brands, facebookPages, leads, locations, products } from "@/lib/db/schema";
 import type {
   CategoryShare,
   DailyPoint,
-  FailReasonRow,
   FunnelStep,
   ModelBar,
   PivotDimension,
   PivotResult,
   PivotRow,
   SourceBar,
-  SourceQualityRow,
 } from "@/lib/metrics";
 import type { Lead, LeadFilters, LeadKpis, LeadSource } from "@/lib/types";
 import { ratio } from "@/lib/utils";
@@ -73,14 +70,6 @@ const CHANNEL_CASE = caseMap(
   Object.fromEntries(Object.entries(CHANNEL_LABEL)) as Record<string, string>,
 );
 
-const FAIL_REASON_CASE = caseMap(
-  sql`coalesce(${leads.failReason}::text, ${"__NULL__"})`,
-  {
-    __NULL__: "Không ghi lý do",
-    ...(Object.fromEntries(Object.entries(FAIL_REASON_LABEL)) as Record<string, string>),
-  },
-);
-
 function dimensionExpr(dim: PivotDimension): SQL {
   switch (dim) {
     case "product":
@@ -99,6 +88,8 @@ function dimensionExpr(dim: PivotDimension): SQL {
       return CHANNEL_CASE;
     case "campaign":
       return sql`coalesce(${leads.campaign}, ${"Không gắn chiến dịch"})`;
+    case "facebookPage":
+      return sql`coalesce(nullif(trim(${facebookPages.name}), ''), ${leads.facebookPageId}, ${"Chưa gắn fanpage"})`;
   }
 }
 
@@ -162,6 +153,7 @@ async function selectKpiRow(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
+    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now, extra));
 
   return row;
@@ -177,6 +169,7 @@ export async function queryReportKpis(
   return {
     total: row.total,
     contacted: row.contacted,
+    uncontacted: row.total - row.contacted,
     contactRate: ratio(row.contacted, row.total),
     khqt: row.khqt,
     khqtRate: ratio(row.khqt, row.contacted),
@@ -225,6 +218,7 @@ export async function queryDailySeries(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
+    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now))
     .groupBy(sql`1`)
     .orderBy(asc(sql`1`));
@@ -255,6 +249,7 @@ export async function queryCategoryDistribution(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
+    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now))
     .groupBy(leads.category);
 
@@ -286,6 +281,7 @@ export async function queryBySource(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
+    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now))
     .groupBy(leads.source)
     .orderBy(desc(sql`count(*)`));
@@ -314,92 +310,13 @@ export async function queryByProduct(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
+    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now))
     .groupBy(sql`1`)
     .orderBy(desc(sql`count(*)`))
     .limit(limit);
 
   return rows.map((row) => ({ model: row.model, leads: row.leads, khqt: row.khqt }));
-}
-
-export async function queryFailReasons(
-  filters: LeadFilters,
-  viewer: ViewerScope,
-  now: Date,
-): Promise<FailReasonRow[]> {
-  const failFilters: LeadFilters = { ...filters, categories: ["FAIL"] };
-  const rows = await getDb()
-    .select({
-      reason: FAIL_REASON_CASE,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(leads)
-    .leftJoin(brands, eq(leads.brandId, brands.id))
-    .leftJoin(locations, eq(leads.locationId, locations.id))
-    .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-    .leftJoin(products, eq(leads.productId, products.id))
-    .where(whereClause(failFilters, viewer, now))
-    .groupBy(sql`1`)
-    .orderBy(desc(sql`count(*)`));
-
-  const total = rows.reduce((sum, row) => sum + row.count, 0);
-  return rows.map((row) => ({
-    reason: String(row.reason),
-    count: row.count,
-    share: ratio(row.count, total),
-  }));
-}
-
-export async function querySourceQuality(
-  filters: LeadFilters,
-  previousFilters: LeadFilters | null,
-  viewer: ViewerScope,
-  now: Date,
-): Promise<SourceQualityRow[]> {
-  const build = async (f: LeadFilters) => {
-    const rows = await getDb()
-      .select({
-        source: leads.source,
-        leads: sql<number>`count(*)::int`,
-        khqt: sql<number>`count(*) filter (where ${leads.category} in ('KHQT', 'GDTD', 'KHD'))::int`,
-        signed: sql<number>`count(*) filter (where ${leads.category} = 'KHD')::int`,
-        failed: sql<number>`count(*) filter (where ${leads.category} = 'FAIL')::int`,
-      })
-      .from(leads)
-      .leftJoin(brands, eq(leads.brandId, brands.id))
-      .leftJoin(locations, eq(leads.locationId, locations.id))
-      .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
-      .leftJoin(products, eq(leads.productId, products.id))
-      .where(whereClause(f, viewer, now))
-      .groupBy(leads.source);
-
-    return new Map(
-      rows.map((row) => [
-        SOURCE_LABEL[row.source as LeadSource],
-        { leads: row.leads, khqt: row.khqt, signed: row.signed, failed: row.failed },
-      ]),
-    );
-  };
-
-  const current = await build(filters);
-  const previous = previousFilters ? await build(previousFilters) : new Map();
-
-  return [...current.entries()]
-    .map(([source, row]) => {
-      const prev = previous.get(source);
-      const closeRate = ratio(row.signed, row.leads);
-      const prevCloseRate = prev ? ratio(prev.signed, prev.leads) : 0;
-      return {
-        source,
-        leads: row.leads,
-        khqt: row.khqt,
-        signed: row.signed,
-        closeRate,
-        lossRate: ratio(row.failed, row.leads),
-        closeRateDelta: closeRate - prevCloseRate,
-      };
-    })
-    .sort((a, b) => b.leads - a.leads);
 }
 
 async function queryPivotGrouped(
@@ -429,6 +346,7 @@ async function queryPivotGrouped(
       .leftJoin(locations, eq(leads.locationId, locations.id))
       .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
       .leftJoin(products, eq(leads.productId, products.id))
+    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
       .where(whereClause(filters, viewer, now, extra))
       .groupBy(sql`1`)
       .orderBy(desc(sql`count(*)`));
@@ -470,6 +388,7 @@ async function queryPivotGrouped(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
+    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now, extra))
     .groupBy(sql`1`, sql`2`);
 
@@ -499,9 +418,11 @@ async function queryPivotGrouped(
 
   const split: Record<string, Record<string, PivotRow>> = {};
   for (const [key, cells] of grouped) {
+    const parentLeads = aggregateKey(cells).leads;
     split[key] = {};
     for (const cell of cells) {
-      split[key][cell.splitKey] = finalizePivotRow(cell.splitKey, cell, grandTotal);
+      // Tỷ trọng dòng con so với hàng cha.
+      split[key][cell.splitKey] = finalizePivotRow(cell.splitKey, cell, parentLeads);
     }
   }
 
@@ -531,9 +452,14 @@ export async function queryCallList(
   filters: LeadFilters,
   viewer: ViewerScope,
   now: Date,
-  limit = 12,
+  limit = 25,
 ): Promise<Lead[]> {
-  const criteria = criteriaFromLeadFilters(filters);
+  // Việc hôm nay không phụ thuộc kỳ "ngày tạo" của báo cáo — giữ filter phạm vi khác.
+  const criteria = criteriaFromLeadFilters({
+    ...filters,
+    dateFrom: null,
+    dateTo: null,
+  });
   const parts = [
     ...criteriaConditions(criteria, viewer, now),
     sql`(${overdueSql(now)} or ${dueTodaySql(now)})`,
@@ -546,6 +472,7 @@ export async function queryCallList(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
+    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(and(...parts))
     .orderBy(asc(leads.callbackAt))
     .limit(limit);
@@ -571,6 +498,7 @@ export async function querySheetCounts(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
+    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now))
     .groupBy(sql`1`)
     .orderBy(desc(sql`count(*)`));

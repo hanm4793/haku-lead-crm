@@ -47,7 +47,10 @@ export function OverviewTab({
         <Card>
           <CardHeader>
             <CardTitle>Phễu chuyển đổi</CardTitle>
-            <CardDescription>% bên phải là tỷ lệ chuyển đổi qua các bậc</CardDescription>
+            <CardDescription>
+              Bậc 2 theo trạng thái liên hệ; bậc sau theo phân loại (KHQT+ gồm GDTD/KHĐ). Có thể không giảm dần nếu
+              gắn phân loại trước khi đánh đã LH.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <ConversionFunnel steps={funnel} />
@@ -89,11 +92,16 @@ export function OverviewTab({
       <Card>
         <CardHeader>
           <CardTitle>Danh sách gọi hôm nay</CardTitle>
-          <CardDescription>Các lead quá hạn hoặc đến hạn cần liên hệ</CardDescription>
+          <CardDescription>
+            Lead quá hạn hoặc hẹn gọi trong ngày — không phụ thuộc kỳ lọc ngày tạo ở trên
+            {callList.length > 0 ? ` · tối đa ${callList.length} dòng` : ""}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {callList.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">Không có lead quá hạn.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Không có lead quá hạn hoặc hẹn gọi trong hôm nay.
+            </p>
           ) : (
             <div className="overflow-hidden rounded-lg border border-border">
               <table className="w-full text-[13px]">

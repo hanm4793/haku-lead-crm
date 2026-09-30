@@ -13,7 +13,7 @@ const DIMENSION_IDS = Object.keys(PIVOT_DIMENSIONS) as [PivotDimension, ...Pivot
 
 const requestSchema = z.object({
   filters: leadFiltersSchema,
-  groupBy: z.enum(DIMENSION_IDS).default("product"),
+  groupBy: z.enum(DIMENSION_IDS).default("source"),
   splitBy: z.enum(DIMENSION_IDS).nullable().default(null),
 });
 

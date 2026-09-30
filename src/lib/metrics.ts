@@ -1,7 +1,6 @@
 import {
   CATEGORY_CHART_LABEL,
   DEFAULT_CATALOG_LABELS,
-  FAIL_REASON_LABEL,
   SOURCE_LABEL,
   UNASSIGNED_ASSIGNMENT_LABEL,
   UNASSIGNED_PRODUCT_LABEL,
@@ -25,6 +24,7 @@ export function computeKpis(leads: Lead[], now: Date = new Date()): LeadKpis {
   return {
     total,
     contacted,
+    uncontacted: total - contacted,
     contactRate: ratio(contacted, total),
     khqt,
     khqtRate: ratio(khqt, contacted),
@@ -149,83 +149,19 @@ export function computeByProduct(leads: Lead[], limit = 10): ModelBar[] {
   return [...map.values()].sort((a, b) => b.leads - a.leads).slice(0, limit);
 }
 
-export interface FailReasonRow {
-  reason: string;
-  count: number;
-  share: number;
-}
-
-export function computeFailReasons(leads: Lead[]): FailReasonRow[] {
-  const failed = leads.filter((l) => l.category === "FAIL");
-  const map = new Map<string, number>();
-  for (const lead of failed) {
-    const label = lead.failReason ? FAIL_REASON_LABEL[lead.failReason] : "Không ghi lý do";
-    map.set(label, (map.get(label) ?? 0) + 1);
-  }
-  return [...map.entries()]
-    .map(([reason, count]) => ({ reason, count, share: ratio(count, failed.length) }))
-    .sort((a, b) => b.count - a.count);
-}
-
-export interface SourceQualityRow {
-  source: string;
-  leads: number;
-  khqt: number;
-  signed: number;
-  closeRate: number;
-  lossRate: number;
-  /** Chênh lệch tỷ lệ chốt so với kỳ trước (điểm %). */
-  closeRateDelta: number;
-}
-
-export function computeSourceQuality(leads: Lead[], previousLeads: Lead[] = []): SourceQualityRow[] {
-  const build = (input: Lead[]) => {
-    const map = new Map<string, { leads: number; khqt: number; signed: number; failed: number }>();
-    for (const lead of input) {
-      const label = SOURCE_LABEL[lead.source];
-      const row = map.get(label) ?? { leads: 0, khqt: 0, signed: 0, failed: 0 };
-      row.leads += 1;
-      if (INTERESTED.includes(lead.category)) row.khqt += 1;
-      if (lead.category === "KHD") row.signed += 1;
-      if (lead.category === "FAIL") row.failed += 1;
-      map.set(label, row);
-    }
-    return map;
-  };
-
-  const current = build(leads);
-  const previous = build(previousLeads);
-
-  return [...current.entries()]
-    .map(([source, row]) => {
-      const prev = previous.get(source);
-      const closeRate = ratio(row.signed, row.leads);
-      const prevCloseRate = prev ? ratio(prev.signed, prev.leads) : 0;
-      return {
-        source,
-        leads: row.leads,
-        khqt: row.khqt,
-        signed: row.signed,
-        closeRate,
-        lossRate: ratio(row.failed, row.leads),
-        closeRateDelta: closeRate - prevCloseRate,
-      };
-    })
-    .sort((a, b) => b.leads - a.leads);
-}
-
 /**
  * Các chiều có thể chọn ở tab "Bảng chi tiết". Nhãn của product / brand /
  * location là fallback cho project mặc định — UI có project thì dùng
  * `pivotDimensionLabels(labels)`.
  */
 export const PIVOT_DIMENSIONS = {
-  product: DEFAULT_CATALOG_LABELS.product,
   source: "Nguồn",
+  facebookPage: "Fanpage",
   category: "Trạng thái",
+  assignee: "Phụ trách",
+  product: DEFAULT_CATALOG_LABELS.product,
   brand: DEFAULT_CATALOG_LABELS.brand,
   location: DEFAULT_CATALOG_LABELS.location,
-  assignee: "Phụ trách",
   channelDetail: "Chi tiết kênh",
   campaign: "Chiến dịch",
 } as const;
@@ -260,6 +196,8 @@ export function dimensionValue(lead: Lead, dim: PivotDimension): string {
       return lead.channelDetail;
     case "campaign":
       return lead.campaign ?? "Không gắn chiến dịch";
+    case "facebookPage":
+      return lead.facebookPageId ?? "Chưa gắn fanpage";
   }
 }
 
@@ -355,9 +293,11 @@ export function computePivot(
   const list = [...rows.values()].map((row) => finalize(row, grandTotal)).sort((a, b) => b.leads - a.leads);
   const split: Record<string, Record<string, PivotRow>> = {};
   for (const [key, inner] of splitAcc) {
+    const parentLeads = rows.get(key)?.leads ?? grandTotal;
     split[key] = {};
     for (const [sKey, cell] of inner) {
-      split[key][sKey] = finalize(cell, grandTotal);
+      // Tỷ trọng dòng con so với hàng cha, không phải tổng toàn bảng.
+      split[key][sKey] = finalize(cell, parentLeads);
     }
   }
 

@@ -21,6 +21,8 @@ import {
   dataScope,
   guardAccountUpdate,
   isPageVisible,
+  isPageInProjectScope,
+  isMarketingRowVisible,
   pageGrantUserId,
   prepareCreateAccount,
   rejectNewSuperAdmin,
@@ -108,6 +110,26 @@ describe("lead data", () => {
       expect(isPageVisible({ role, pageIds: [] }, "p1")).toBe(false);
       expect(scopeConditions({ role, pageIds: [] })).toHaveLength(1);
     }
+  });
+
+  it("marketing rows respect grant and active project page list", () => {
+    expect(isPageInProjectScope("p1", null)).toBe(true);
+    expect(isPageInProjectScope(null, null)).toBe(true);
+    expect(isPageInProjectScope("p1", ["p1", "p2"])).toBe(true);
+    expect(isPageInProjectScope("other", ["p1"])).toBe(false);
+    expect(isPageInProjectScope(null, ["p1"])).toBe(false);
+
+    const superAdmin = { role: "SUPER_ADMIN" as const, pageIds: [] as string[] };
+    expect(isMarketingRowVisible(superAdmin, "p1", null)).toBe(true);
+    expect(isMarketingRowVisible(superAdmin, null, null)).toBe(true);
+    expect(isMarketingRowVisible(superAdmin, "p1", ["p1"])).toBe(true);
+    expect(isMarketingRowVisible(superAdmin, "other", ["p1"])).toBe(false);
+    expect(isMarketingRowVisible(superAdmin, null, ["p1"])).toBe(false);
+
+    const partner = { role: "PARTNER_ADMIN" as const, pageIds: ["p1"] };
+    expect(isMarketingRowVisible(partner, "p1", ["p1", "p2"])).toBe(true);
+    expect(isMarketingRowVisible(partner, "p2", ["p1", "p2"])).toBe(false);
+    expect(isMarketingRowVisible(partner, "p1", ["p2"])).toBe(false);
   });
 
   it("staff inherit the partner grant and partners hold their own", () => {

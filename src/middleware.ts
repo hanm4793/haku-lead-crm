@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/env";
 
 const PUBLIC_PATHS = ["/login", "/auth"];
 
@@ -9,8 +10,8 @@ const PUBLIC_PATHS = ["/login", "/auth"];
  * cookie mới trả về cho trình duyệt.
  */
 export async function middleware(request: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = supabaseUrl();
+  const anonKey = supabaseAnonKey();
 
   // Chưa cấu hình Supabase Auth thì app chạy chế độ demo, không chặn gì.
   if (!url || !anonKey) return NextResponse.next();

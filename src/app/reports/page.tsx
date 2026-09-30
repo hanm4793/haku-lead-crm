@@ -42,7 +42,7 @@ export default async function Page() {
     buildReportSummary(
       {
         filters: { ...EMPTY_FILTERS, dateFrom: range.from, dateTo: range.to },
-        groupBy: "product",
+        groupBy: "source",
         splitBy: null,
         now,
       },

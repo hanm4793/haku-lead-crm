@@ -1,11 +1,12 @@
 ﻿import { redirect } from "next/navigation";
 
 import { MarketingPage } from "@/components/marketing/marketing-page";
-import { canViewMarketing, dataScope, isPageVisible } from "@/lib/auth/roles";
+import { canViewMarketing, isMarketingRowVisible, isPageVisible } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { hasSyncedInsights, latestInsightSync, listAdInsights, listCampaignInsights } from "@/lib/db/insights-repo";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
+import { listFacebookPageIdsForProject } from "@/lib/db/project-repo";
 import { getFacebookConfig } from "@/lib/facebook/env";
 
 export const metadata = { title: "Marketing — SEMTOP Marketing CRM" };
@@ -28,20 +29,25 @@ export default async function Page() {
     );
   }
 
-  const [campaignRows, adInsightRows, pages, hasSynced, latestSync] = await Promise.all([
+  const [campaignRows, adInsightRows, pages, hasSynced, latestSync, projectPageIds] = await Promise.all([
     listCampaignInsights(),
     listAdInsights(),
     listFacebookPages(projectId ? { projectId } : undefined),
     hasSyncedInsights(),
     latestInsightSync(),
+    projectId ? listFacebookPageIdsForProject(projectId) : Promise.resolve(null),
   ]);
-  const seesAllPages = dataScope(viewer) === "all";
-  const adRows = adInsightRows.filter((row) => isPageVisible(viewer, row.pageId));
-  const campaignIds = seesAllPages ? null : new Set(adRows.map((row) => row.campaignId).filter(Boolean));
+
+  const adRows = adInsightRows.filter((row) => isMarketingRowVisible(viewer, row.pageId, projectPageIds));
+  // Khi có project (hoặc không phải super-all): campaign chỉ lấy từ ad còn lại trong phạm vi.
+  const campaignIds =
+    projectPageIds !== null || viewer.role !== "SUPER_ADMIN"
+      ? new Set(adRows.map((row) => row.campaignId).filter(Boolean))
+      : null;
   const rows = campaignIds ? campaignRows.filter((row) => campaignIds.has(row.objectId)) : campaignRows;
-  const visiblePages = pages.filter((page) => isPageVisible(viewer, page.facebookPageId)).map(
-    (page) => ({ id: page.facebookPageId, name: page.name }),
-  );
+  const visiblePages = pages
+    .filter((page) => isPageVisible(viewer, page.facebookPageId))
+    .map((page) => ({ id: page.facebookPageId, name: page.name }));
   const config = getFacebookConfig();
 
   return (

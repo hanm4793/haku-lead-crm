@@ -154,7 +154,9 @@ export function PivotTab({
         </div>
 
         <div className="space-y-1">
-          <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Tách cột</Label>
+          <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Chi tiết theo
+          </Label>
           <Select value={splitBy} onValueChange={(v) => onSplitByChange(v as PivotDimension | "NONE")}>
             <SelectTrigger size="sm" className="w-44">
               <SelectValue />
@@ -190,7 +192,8 @@ export function PivotTab({
         <div className="px-5 pt-4">
           <div className="text-[15px] font-semibold">Bảng chỉ số theo {PIVOT_DIMENSIONS[groupBy].toLowerCase()}</div>
           <p className="text-xs text-muted-foreground">
-            Bấm tiêu đề cột để sắp xếp — chọn cột ở nút Cột hiển thị
+            Bấm tiêu đề cột để sắp xếp. “Chi tiết theo” mở dòng con dưới mỗi hàng (pivot 2 chiều). Tỷ trọng dòng con
+            tính trên hàng cha.
           </p>
         </div>
 
@@ -277,7 +280,8 @@ export function PivotTab({
         </div>
 
         <p className="px-5 py-3 text-[11px] text-muted-foreground">
-          Nút Xuất Excel tạo file .xlsx gồm bảng đang xem + 1 sheet cho mỗi chiều ({labels.product}, Nguồn, Trạng thái).
+          Xuất Excel gồm bảng đang xem + sheet cho từng chiều đã chuẩn bị (nguồn, fanpage, trạng thái, sản phẩm, và
+          chiều đang nhóm nếu khác).
         </p>
       </div>
     </div>

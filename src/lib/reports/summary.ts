@@ -5,28 +5,24 @@ import {
   queryCallList,
   queryCategoryDistribution,
   queryDailySeries,
-  queryFailReasons,
   queryFunnel,
   queryPivot,
   queryReportKpis,
-  querySourceQuality,
 } from "@/lib/db/report-queries";
 import { previousCalendarRange } from "@/lib/date-range";
 import type {
   CategoryShare,
   DailyPoint,
-  FailReasonRow,
   FunnelStep,
   ModelBar,
   PivotDimension,
   PivotResult,
   SourceBar,
-  SourceQualityRow,
 } from "@/lib/metrics";
 import type { Lead, LeadFilters, LeadKpis } from "@/lib/types";
 
 /** Các chiều luôn được tính sẵn để nút xuất Excel của bảng chi tiết dùng ngay. */
-export const EXPORT_PIVOT_DIMENSIONS: PivotDimension[] = ["product", "source", "category"];
+export const EXPORT_PIVOT_DIMENSIONS: PivotDimension[] = ["source", "facebookPage", "category", "product"];
 
 export interface ReportSummary {
   kpis: LeadKpis;
@@ -40,10 +36,6 @@ export interface ReportSummary {
     byModel: ModelBar[];
     /** Danh sách cần gọi hôm nay — dữ liệu lead duy nhất được gửi ra client. */
     callList: Lead[];
-  };
-  loss: {
-    reasons: FailReasonRow[];
-    sourceQuality: SourceQualityRow[];
   };
   pivot: {
     current: PivotResult;
@@ -90,8 +82,6 @@ export async function buildReportSummary(
     bySource,
     byModel,
     callList,
-    reasons,
-    sourceQuality,
     currentPivot,
     ...exportPivots
   ] = await Promise.all([
@@ -102,15 +92,16 @@ export async function buildReportSummary(
     queryCategoryDistribution(filters, viewer, now),
     queryBySource(filters, viewer, now),
     queryByProduct(filters, viewer, now, 12),
-    queryCallList(filters, viewer, now, 12),
-    queryFailReasons(filters, viewer, now),
-    querySourceQuality(filters, previousFilters, viewer, now),
+    queryCallList(filters, viewer, now, 25),
     queryPivot(filters, viewer, now, groupBy, splitBy),
-    ...EXPORT_PIVOT_DIMENSIONS.map((dim) => queryPivot(filters, viewer, now, dim, null)),
+    ...Array.from(new Set<PivotDimension>([groupBy, ...EXPORT_PIVOT_DIMENSIONS])).map((dim) =>
+      queryPivot(filters, viewer, now, dim, null),
+    ),
   ]);
 
+  const exportDims = Array.from(new Set<PivotDimension>([groupBy, ...EXPORT_PIVOT_DIMENSIONS]));
   const byDimension: Record<string, PivotResult> = {};
-  EXPORT_PIVOT_DIMENSIONS.forEach((dim, index) => {
+  exportDims.forEach((dim, index) => {
     byDimension[dim] = exportPivots[index];
   });
 
@@ -125,10 +116,6 @@ export async function buildReportSummary(
       bySource,
       byModel,
       callList,
-    },
-    loss: {
-      reasons,
-      sourceQuality,
     },
     pivot: {
       current: currentPivot,

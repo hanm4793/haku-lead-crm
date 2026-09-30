@@ -17,7 +17,7 @@ import {
 
 import { CATEGORY_COLOR } from "@/lib/constants";
 import type { CategoryShare, DailyPoint, FunnelStep, ModelBar, SourceBar } from "@/lib/metrics";
-import { cn, formatNumber, formatPercent } from "@/lib/utils";
+import { formatNumber, formatPercent } from "@/lib/utils";
 
 const AXIS_STYLE = { fontSize: 11, fill: "#94a3b8" } as const;
 const GRID_COLOR = "#e2e8f0";
@@ -55,6 +55,11 @@ export function ConversionFunnel({ steps }: { steps: FunnelStep[] }) {
 
   return (
     <div className="space-y-1.5">
+      <div className="flex items-center gap-3 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+        <div className="w-44 shrink-0">Bậc</div>
+        <div className="flex-1 text-center">Số lượng · % tổng lead</div>
+        <div className="w-14 shrink-0 text-right">Vs bậc trước</div>
+      </div>
       {steps.map((step, index) => {
         const width = Math.max(12, (step.value / max) * 100);
         const nextWidth =
@@ -142,32 +147,5 @@ export function CarModelChart({ data }: { data: ModelBar[] }) {
         <Bar dataKey="khqt" name="KHQT" fill="#0f9d8f" radius={[0, 3, 3, 0]} barSize={10} />
       </BarChart>
     </ResponsiveContainer>
-  );
-}
-
-/** Thanh ngang xếp hạng lý do mất khách — kiểu bảng, không dùng recharts. */
-export function LossReasonBars({ data }: { data: { reason: string; count: number; share: number }[] }) {
-  const max = Math.max(...data.map((d) => d.count), 1);
-
-  return (
-    <div className="space-y-3">
-      {data.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Không có khách bị loại trong kỳ.</p>}
-      {data.map((row) => (
-        <div key={row.reason}>
-          <div className="flex items-baseline justify-between gap-3 text-[13px]">
-            <span className="truncate text-slate-700">{row.reason}</span>
-            <span className="shrink-0 tabular-nums text-slate-500">
-              <span className="font-semibold text-slate-800">{formatNumber(row.count)}</span> · {formatPercent(row.share)}
-            </span>
-          </div>
-          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-rose-50">
-            <div
-              className={cn("h-full rounded-full bg-rose-500")}
-              style={{ width: `${Math.max(2, (row.count / max) * 100)}%` }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }

@@ -275,6 +275,7 @@ function emptyKpis() {
   return {
     total: 0,
     contacted: 0,
+    uncontacted: 0,
     contactRate: 0,
     khqt: 0,
     khqtRate: 0,

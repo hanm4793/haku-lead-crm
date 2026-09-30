@@ -114,8 +114,11 @@ export interface LeadFilters {
 export interface LeadKpis {
   total: number;
   contacted: number;
+  /** total - contacted */
+  uncontacted: number;
   contactRate: number;
   khqt: number;
+  /** KHQT trở lên / đã liên hệ */
   khqtRate: number;
   gdtd: number;
   khd: number;

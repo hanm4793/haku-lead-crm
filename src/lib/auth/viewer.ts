@@ -72,7 +72,7 @@ export async function getViewer(): Promise<Viewer | null> {
   return viewer;
 }
 
-/** Gắn `activeProjectId` để lọc lead, báo cáo và catalog. */
+/** Gắn `activeProjectId` để lọc lead, báo cáo, marketing và catalog. */
 export async function getScopedViewer(): Promise<Viewer | null> {
   const viewer = await getViewer();
   if (!viewer) return null;

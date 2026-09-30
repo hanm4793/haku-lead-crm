@@ -108,6 +108,27 @@ export function isPageVisible(
   return Boolean(pageId && viewer.pageIds.includes(pageId));
 }
 
+/**
+ * Khi đang xem một project (`projectPageIds` từ fanpage gắn project): chỉ page thuộc list đó.
+ * `null` = không lọc thêm theo project.
+ */
+export function isPageInProjectScope(
+  pageId: string | null | undefined,
+  projectPageIds: readonly string[] | null,
+): boolean {
+  if (projectPageIds === null) return true;
+  return Boolean(pageId && projectPageIds.includes(pageId));
+}
+
+/** Marketing / ads: grant fanpage ∩ fanpage của project đang xem. */
+export function isMarketingRowVisible(
+  viewer: { role: UserRole; pageIds: readonly string[] },
+  pageId: string | null | undefined,
+  projectPageIds: readonly string[] | null,
+): boolean {
+  return isPageVisible(viewer, pageId) && isPageInProjectScope(pageId, projectPageIds);
+}
+
 /** Ai đang giữ grant fanpage. Staff dùng grant của partner. Super admin không cần grant. */
 export function pageGrantUserId(row: {
   role: UserRole;

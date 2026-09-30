@@ -1,14 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { BarChart3, Loader2, Table2, TriangleAlert, UserMinus } from "lucide-react";
+import { BarChart3, Loader2, Table2, TriangleAlert } from "lucide-react";
 
 import { updateLeadAction } from "@/app/leads/actions";
 import { DateRangePicker, resolvePreset, type DateRange, type PresetId } from "@/components/common/date-range-picker";
 import { LeadDetailDialog } from "@/components/leads/lead-detail-dialog";
 import { LeadFilterPopover, type FanpageFilterOption } from "@/components/leads/filter-popover";
 import { useNow } from "@/components/providers/now-provider";
-import { LossTab } from "@/components/reports/loss-tab";
 import { OverviewTab } from "@/components/reports/overview-tab";
 import { PivotTab } from "@/components/reports/pivot-tab";
 import { ReportKpiCards } from "@/components/reports/report-kpi-cards";
@@ -48,7 +47,7 @@ export function ReportsPage({
     dateFrom: resolvePreset("THIS_MONTH", now).from,
     dateTo: resolvePreset("THIS_MONTH", now).to,
   }));
-  const [groupBy, setGroupBy] = React.useState<PivotDimension>("product");
+  const [groupBy, setGroupBy] = React.useState<PivotDimension>("source");
   const [splitBy, setSplitBy] = React.useState<PivotDimension | "NONE">("NONE");
   const [summary, setSummary] = React.useState(initialSummary);
   const [loading, setLoading] = React.useState(false);
@@ -173,10 +172,6 @@ export function ReportsPage({
             <BarChart3 className="size-3.5" />
             Tổng quan
           </TabsTrigger>
-          <TabsTrigger value="loss" className="gap-1.5">
-            <UserMinus className="size-3.5" />
-            Vì sao mất khách
-          </TabsTrigger>
           <TabsTrigger value="pivot" className="gap-1.5">
             <Table2 className="size-3.5" />
             Bảng chi tiết
@@ -190,9 +185,6 @@ export function ReportsPage({
             onSelectLead={setSelectedLead}
             labels={catalog.labels}
           />
-        </TabsContent>
-        <TabsContent value="loss" className="pt-4">
-          <LossTab kpis={summary.kpis} data={summary.loss} />
         </TabsContent>
         <TabsContent value="pivot" className="pt-4">
           <PivotTab

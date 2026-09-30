@@ -381,6 +381,7 @@ export async function queryLeadPage(options: LeadPageOptions, viewer: ViewerScop
     kpis: {
       total: kpi.total,
       contacted: kpi.contacted,
+      uncontacted: kpi.total - kpi.contacted,
       contactRate: ratio(kpi.contacted, kpi.total),
       khqt: kpi.khqt,
       khqtRate: ratio(kpi.khqt, kpi.contacted),

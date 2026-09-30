@@ -164,6 +164,7 @@ describe("formatStatsReply", () => {
       kpis: {
         total: 99,
         contacted: 1,
+        uncontacted: 98,
         contactRate: 1,
         khqt: 1,
         khqtRate: 1,
@@ -188,6 +189,7 @@ describe("formatStatsReply", () => {
       kpis: {
         total: 26,
         contacted: 10,
+        uncontacted: 16,
         contactRate: 38.4615,
         khqt: 4,
         khqtRate: 40,
@@ -200,6 +202,7 @@ describe("formatStatsReply", () => {
       previous: {
         total: 20,
         contacted: 8,
+        uncontacted: 12,
         contactRate: 40,
         khqt: 3,
         khqtRate: 37.5,

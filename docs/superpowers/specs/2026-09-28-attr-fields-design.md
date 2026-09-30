@@ -1,25 +1,18 @@
 # Project attr field definitions
 
-## Goal
-
-Admin định nghĩa field phụ theo **project**. Lead lưu giá trị trong `leads.attrs` (JSONB). Lead detail render form theo định nghĩa (không còn chỉ read-only dump).
+**Status: đã ship.** CRUD trên **Dự án → chi tiết** (`canManageAttrFieldsInProject`), không trên Cài đặt app.
 
 ## Model
 
-`project_attr_fields`:
-- project_id, key (slug), label, field_type ∈ text | number | select | date
-- options jsonb (mảng string cho select)
-- required, sort_order, active
-
-Unique (project_id, key).
+`project_attr_fields`: `project_id`, `key`, `label`, `field_type` ∈ text | number | select | date, `options` jsonb, `required`, `sort_order`, `active`. Unique `(project_id, key)`.
 
 ## Runtime
 
-- Settings → trong project đang chọn: CRUD field defs (super admin).
-- Lead detail: input theo type; lưu patch `attrs` qua updateLead.
-- FB sync: vẫn merge field_data thừa vào attrs; nếu key trùng field def thì giữ.
+- Lead lưu giá trị trong `leads.attrs` (JSONB)
+- Lead detail: form theo định nghĩa; patch `attrs` qua update lead
+- FB sync: merge field Meta thừa vào attrs; trùng `key` với field def thì giữ
 
-## Out of scope
+## Chưa làm
 
-- Filter/report theo từng attr
+- Filter / báo cáo theo từng attr
 - Conditional logic / sections

@@ -32,7 +32,7 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 | Lead chưa giao | Sửa được | Sửa được | Chỉ xem |
 | Bộ lọc fanpage trên Lead và Báo cáo | Mọi fanpage đang bật | Fanpage được gán | Fanpage của partner |
 | Số liệu báo cáo | Mọi fanpage | Cùng phạm vi lead | Không vào màn |
-| Ads và chiến dịch marketing | Mọi dòng, kể cả dòng chưa gắn page | Chỉ ad có page được gán. Chiến dịch lấy từ các ad đó | Không vào màn |
+| Ads và chiến dịch marketing | Mọi dòng thuộc fanpage của **project đang xem** (switcher). Không gắn page → ẩn khi đã chọn project | Chỉ ad có page được gán **và** thuộc project đang xem. Chiến dịch lấy từ các ad đó | Không vào màn |
 | Người được giao lead | Mọi nhân viên đang hoạt động | Nhân viên cùng partner | Nhân viên cùng partner |
 
 ## Tài khoản

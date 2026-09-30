@@ -66,18 +66,25 @@ export function AppShell({
       >
         <div
           className={cn(
-            "flex items-center border-b border-white/10 px-4 py-4",
-            collapsed ? "justify-center px-2" : "px-4",
+            "flex items-center border-b border-white/10 px-3 py-3",
+            collapsed ? "justify-center px-2" : "px-3",
           )}
         >
-          <Image
-            src="/brand/logo-white.png"
-            alt="SEMTOP"
-            width={collapsed ? 36 : 140}
-            height={collapsed ? 36 : 36}
-            className={cn("object-contain", collapsed ? "h-8 w-8" : "h-9 w-auto")}
-            priority
-          />
+          <div
+            className={cn(
+              "flex items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-black/5",
+              collapsed ? "p-1.5" : "px-2.5 py-1.5",
+            )}
+          >
+            <Image
+              src="/brand/logo-white.png"
+              alt="SEMTOP"
+              width={collapsed ? 36 : 140}
+              height={collapsed ? 36 : 36}
+              className={cn("object-contain", collapsed ? "h-7 w-7" : "h-8 w-auto")}
+              priority
+            />
+          </div>
         </div>
 
         <nav className="mt-3 flex flex-1 flex-col gap-1 px-2.5">
