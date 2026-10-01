@@ -106,10 +106,11 @@ export async function createBrand(
 export async function updateBrand(
   projectId: string,
   id: string,
-  patch: { name?: string; active?: boolean; sortOrder?: number },
+  patch: { name?: string; code?: string; active?: boolean; sortOrder?: number },
 ): Promise<BrandRow> {
   const values: Partial<typeof brands.$inferInsert> = {};
   if (patch.name !== undefined) values.name = cleanName(patch.name, "Tên thương hiệu");
+  if (patch.code !== undefined) values.code = normalizeBrandCode(patch.code);
   if (patch.active !== undefined) values.active = patch.active;
   if (patch.sortOrder !== undefined) values.sortOrder = patch.sortOrder;
   if (!Object.keys(values).length) throw new Error("Không có gì để cập nhật.");
@@ -170,10 +171,19 @@ export async function createProduct(
 export async function updateProduct(
   projectId: string,
   id: string,
-  patch: { name?: string; active?: boolean },
+  patch: { name?: string; brandId?: string; active?: boolean },
 ): Promise<ProductRow> {
   const values: Partial<typeof products.$inferInsert> = {};
   if (patch.name !== undefined) values.name = cleanName(patch.name, "Tên sản phẩm", 80);
+  if (patch.brandId !== undefined) {
+    const [brand] = await getDb()
+      .select({ id: brands.id })
+      .from(brands)
+      .where(and(eq(brands.id, patch.brandId), eq(brands.projectId, projectId)))
+      .limit(1);
+    if (!brand) throw new Error("Thương hiệu không thuộc project này.");
+    values.brandId = brand.id;
+  }
   if (patch.active !== undefined) values.active = patch.active;
   if (!Object.keys(values).length) throw new Error("Không có gì để cập nhật.");
 

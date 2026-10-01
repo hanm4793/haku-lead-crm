@@ -104,6 +104,20 @@ export async function setBrandActiveAction(input: unknown): Promise<CatalogActio
   );
 }
 
+const updateBrandSchema = scopedSchema.extend({
+  id: idSchema,
+  name: z.string().min(1).max(120).optional(),
+  code: z.string().max(40).optional(),
+  active: z.boolean().optional(),
+});
+
+export async function updateBrandAction(input: unknown): Promise<CatalogActionResult> {
+  const parsed = updateBrandSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Dữ liệu thương hiệu không hợp lệ." };
+  const { projectId, id, ...patch } = parsed.data;
+  return run((pid) => updateBrand(pid, id, patch), "Cập nhật thương hiệu thất bại.", projectId);
+}
+
 const idScopedSchema = z.object({ id: idSchema, projectId: z.string().uuid().optional() });
 
 export async function deleteBrandAction(input: unknown): Promise<CatalogActionResult> {
@@ -136,6 +150,20 @@ export async function setProductActiveAction(input: unknown): Promise<CatalogAct
   );
 }
 
+const updateProductSchema = scopedSchema.extend({
+  id: idSchema,
+  name: z.string().min(1).max(80).optional(),
+  brandId: idSchema.optional(),
+  active: z.boolean().optional(),
+});
+
+export async function updateProductAction(input: unknown): Promise<CatalogActionResult> {
+  const parsed = updateProductSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Dữ liệu sản phẩm không hợp lệ." };
+  const { projectId, id, ...patch } = parsed.data;
+  return run((pid) => updateProduct(pid, id, patch), "Cập nhật sản phẩm thất bại.", projectId);
+}
+
 export async function deleteProductAction(input: unknown): Promise<CatalogActionResult> {
   const parsed = idScopedSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Dữ liệu không hợp lệ." };
@@ -161,6 +189,19 @@ export async function setLocationActiveAction(input: unknown): Promise<CatalogAc
     "Cập nhật địa điểm thất bại.",
     parsed.data.projectId,
   );
+}
+
+const updateLocationSchema = scopedSchema.extend({
+  id: idSchema,
+  name: z.string().min(1).max(120).optional(),
+  active: z.boolean().optional(),
+});
+
+export async function updateLocationAction(input: unknown): Promise<CatalogActionResult> {
+  const parsed = updateLocationSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Dữ liệu địa điểm không hợp lệ." };
+  const { projectId, id, ...patch } = parsed.data;
+  return run((pid) => updateLocation(pid, id, patch), "Cập nhật địa điểm thất bại.", projectId);
 }
 
 export async function deleteLocationAction(input: unknown): Promise<CatalogActionResult> {
