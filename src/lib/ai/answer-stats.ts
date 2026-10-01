@@ -27,6 +27,7 @@ import {
   previousRangeFor,
   type StatsBreakdownRow,
   type StatsQuery,
+  type ChatMention,
   statsToFilters,
 } from "./stats-query";
 
@@ -65,24 +66,139 @@ async function queryByFanpage(
   });
 }
 
+export interface ChatSuggestion {
+  label: string;
+  prompt: string;
+  mentions: ChatMention[];
+}
+
 export interface AnswerStatsOutput {
   reply: string;
   leadBreakdown?: StatsBreakdownRow[] | null;
   marketingRows?: MarketingBreakdownRow[] | null;
-  suggestions: string[];
+  suggestions: ChatSuggestion[];
 }
 
-function generateSuggestions(query: StatsQuery): string[] {
-  const suggestions: string[] = [];
+function generateSuggestions(query: StatsQuery, mentions: ChatMention[] = []): ChatSuggestion[] {
+  const suggestions: ChatSuggestion[] = [];
+  const primaryMention = mentions[0];
+
+  if (primaryMention) {
+    const name = primaryMention.label;
+    if (primaryMention.type === "campaign") {
+      suggestions.push(
+        {
+          label: `Quảng cáo nhiều lead nhất của ${name}`,
+          prompt: `Quảng cáo nào nhiều lead nhất của`,
+          mentions: [primaryMention],
+        },
+        {
+          label: `So sánh ${name} với kỳ trước`,
+          prompt: `So sánh với kỳ trước`,
+          mentions: [primaryMention],
+        },
+        {
+          label: `Đối chiếu lead CRM và lead ads của ${name}`,
+          prompt: `Đối chiếu lead CRM và lead quảng cáo của`,
+          mentions: [primaryMention],
+        },
+      );
+    } else if (primaryMention.type === "fanpage") {
+      suggestions.push(
+        {
+          label: `Xem chi tiết theo nhân viên của ${name}`,
+          prompt: `Xem chi tiết theo nhân viên của`,
+          mentions: [primaryMention],
+        },
+        {
+          label: `So sánh ${name} với kỳ trước`,
+          prompt: `So sánh với kỳ trước của`,
+          mentions: [primaryMention],
+        },
+        {
+          label: `Xuất danh sách lead của ${name} ra Excel`,
+          prompt: `Xuất danh sách lead của`,
+          mentions: [primaryMention],
+        },
+      );
+    } else if (primaryMention.type === "assignee") {
+      suggestions.push(
+        {
+          label: `Phân loại trạng thái lead của ${name}`,
+          prompt: `Xem chi tiết theo phân loại của`,
+          mentions: [primaryMention],
+        },
+        {
+          label: `So sánh ${name} với kỳ trước`,
+          prompt: `So sánh với kỳ trước của`,
+          mentions: [primaryMention],
+        },
+        {
+          label: `Xuất danh sách lead của ${name} ra Excel`,
+          prompt: `Xuất danh sách lead của`,
+          mentions: [primaryMention],
+        },
+      );
+    } else if (primaryMention.type === "product" || primaryMention.type === "brand") {
+      suggestions.push(
+        {
+          label: `Xem chi tiết theo nguồn của ${name}`,
+          prompt: `Xem chi tiết theo nguồn của`,
+          mentions: [primaryMention],
+        },
+        {
+          label: `Xem chi tiết theo nhân viên phụ trách ${name}`,
+          prompt: `Xem chi tiết theo nhân viên của`,
+          mentions: [primaryMention],
+        },
+        {
+          label: `Xuất danh sách lead ${name} ra Excel`,
+          prompt: `Xuất danh sách lead của`,
+          mentions: [primaryMention],
+        },
+      );
+    } else {
+      suggestions.push(
+        {
+          label: `Chi tiết theo nhân viên của ${name}`,
+          prompt: `Chi tiết theo nhân viên của`,
+          mentions: [primaryMention],
+        },
+        {
+          label: `So sánh ${name} với kỳ trước`,
+          prompt: `So sánh với kỳ trước`,
+          mentions: [primaryMention],
+        },
+      );
+    }
+    return suggestions.slice(0, 3);
+  }
+
   if (query.dataset === "marketing") {
-    suggestions.push("Quảng cáo nào CPL rẻ nhất?", "Chi tiêu theo từng chiến dịch", "Đối chiếu lead CRM và lead quảng cáo");
+    suggestions.push(
+      { label: "Quảng cáo nào CPL rẻ nhất?", prompt: "Quảng cáo nào có CPL thấp nhất?", mentions: [] },
+      { label: "Chi tiêu theo từng chiến dịch", prompt: "Chi tiêu theo từng chiến dịch tháng này", mentions: [] },
+      { label: "Đối chiếu lead CRM và lead quảng cáo", prompt: "Đối chiếu lead CRM và lead quảng cáo", mentions: [] },
+    );
   } else if (query.dataset === "both") {
-    suggestions.push("Quảng cáo nào mang lại nhiều lead nhất?", "Xem chi tiết lead theo nhân viên", "Xuất file Excel tháng này");
+    suggestions.push(
+      { label: "Quảng cáo nào mang lại nhiều lead nhất?", prompt: "Quảng cáo nào mang lại nhiều lead nhất?", mentions: [] },
+      { label: "Xem chi tiết lead theo nhân viên", prompt: "Xem chi tiết lead theo nhân viên tháng này", mentions: [] },
+      { label: "Xuất file Excel tháng này", prompt: "Xuất lead tháng này ra excel", mentions: [] },
+    );
   } else {
     if (!query.groupBy) {
-      suggestions.push("Xem chi tiết theo nhân viên", "Chi tiết theo fanpage", "So sánh với kỳ trước");
+      suggestions.push(
+        { label: "Xem chi tiết theo nhân viên", prompt: "Xem chi tiết lead theo nhân viên", mentions: [] },
+        { label: "Chi tiết theo fanpage", prompt: "Xem chi tiết theo fanpage", mentions: [] },
+        { label: "So sánh với kỳ trước", prompt: "So sánh với kỳ trước", mentions: [] },
+      );
     } else {
-      suggestions.push("Xuất danh sách này ra Excel", "So sánh với kỳ trước", "Xem chi tiêu quảng cáo tương ứng");
+      suggestions.push(
+        { label: "Xuất danh sách này ra Excel", prompt: "Xuất danh sách này ra excel", mentions: [] },
+        { label: "So sánh với kỳ trước", prompt: "So sánh với kỳ trước", mentions: [] },
+        { label: "Xem chi tiêu quảng cáo tương ứng", prompt: "Chi tiêu quảng cáo tương ứng", mentions: [] },
+      );
     }
   }
   return suggestions.slice(0, 3);
@@ -98,8 +214,9 @@ export async function answerFromStats(
   now: Date,
   question = "",
   catalog?: AiCatalog,
+  mentions: ChatMention[] = [],
 ): Promise<AnswerStatsOutput> {
-  const suggestions = generateSuggestions(query);
+  const suggestions = generateSuggestions(query, mentions);
   const dataset = query.dataset ?? "leads";
   if (viewer.role !== "SUPER_ADMIN" && viewer.pageIds.length === 0) {
     if (dataset === "marketing") {

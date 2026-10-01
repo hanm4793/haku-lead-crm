@@ -32,6 +32,7 @@ const requestSchema = z.object({
   mentions: z.array(mentionSchema).max(8).optional(),
   lastSpec: exportSpecSchema.nullable().optional(),
   lastStats: statsQuerySchema.nullable().optional(),
+  lastMentions: z.array(mentionSchema).max(8).optional(),
 });
 
 const responseSchema = z.object({
@@ -86,7 +87,7 @@ async function fallbackResponse(
   const base = parsedQuestion ?? (mentions.length ? blankStats() : null);
   if (base && (parsedQuestion || mentions.length)) {
     const stats = applyMentions(base, mentions);
-    const statsRes = await answerFromStats(stats, viewer, now, text, catalog);
+    const statsRes = await answerFromStats(stats, viewer, now, text, catalog, mentions);
     return NextResponse.json({
       mode: "fallback",
       action: "STATS",
@@ -96,6 +97,7 @@ async function fallbackResponse(
       breakdown: statsRes.leadBreakdown ?? null,
       marketingRows: statsRes.marketingRows ?? null,
       suggestions: statsRes.suggestions,
+      activeMentions: mentions,
     });
   }
 
@@ -108,8 +110,17 @@ async function fallbackResponse(
     spec,
     preview: spec ? await buildPreview(spec, viewer, now) : null,
     suggestions: spec
-      ? ["Tải file Excel (.xlsx)", "Tải file CSV", "Áp dụng vào bộ lọc danh sách lead"]
-      : ["Tháng này có bao nhiêu lead?", "Chi tiêu và CPL theo fanpage", "Xuất file Excel tháng này"],
+      ? [
+          { label: "Tải file Excel (.xlsx)", prompt: "Xuất file Excel", mentions },
+          { label: "Tải file CSV", prompt: "Xuất file CSV", mentions },
+          { label: "Áp dụng vào bộ lọc danh sách lead", prompt: "Xem trên danh sách lead", mentions },
+        ]
+      : [
+          { label: "Tháng này có bao nhiêu lead?", prompt: "Tháng này có bao nhiêu lead?", mentions: [] },
+          { label: "Chi tiêu và CPL theo fanpage", prompt: "Chi tiêu và CPL theo fanpage tháng này", mentions: [] },
+          { label: "Xuất file Excel tháng này", prompt: "Xuất lead tháng này ra excel", mentions: [] },
+        ],
+    activeMentions: mentions,
   });
 }
 
@@ -125,13 +136,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Yêu cầu không hợp lệ" }, { status: 400 });
   }
 
-  const { messages, mentions = [], lastSpec, lastStats } = parsed.data;
+  const { messages, mentions = [], lastSpec, lastStats, lastMentions = [] } = parsed.data;
   const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const now = new Date();
   const catalog = await loadCatalog(viewer.activeProjectId ?? undefined);
 
+  // Kế thừa mentions của lượt trước nếu người dùng hỏi tiếp mà không gắn tag mới
+  const effectiveMentions =
+    mentions.length > 0
+      ? mentions
+      : lastMentions.length > 0
+        ? lastMentions
+        : [];
+
   const resolved = resolveModel();
-  if (!resolved) return fallbackResponse(lastUserMessage, viewer, now, catalog, mentions);
+  if (!resolved) return fallbackResponse(lastUserMessage, viewer, now, catalog, effectiveMentions);
 
   // Thử lại một lần: lỗi thoáng qua và lỗi schema đều thường qua ở lần hai.
   let lastError: unknown = null;
@@ -159,12 +178,14 @@ export async function POST(request: Request) {
 
       const modelStats = statsFromModel(object.stats);
       const localStats = parseStatsQuestion(lastUserMessage, now);
-      const asksForNumbers = object.action === "STATS" || (object.action !== "EXPORT" && (localStats !== null || mentions.length > 0));
+      const asksForNumbers =
+        object.action === "STATS" ||
+        (object.action !== "EXPORT" && (localStats !== null || effectiveMentions.length > 0));
 
       if (asksForNumbers) {
-        const stats = applyMentions(mergeStats(modelStats, localStats) ?? blankStats(), mentions);
+        const stats = applyMentions(mergeStats(modelStats, localStats) ?? blankStats(), effectiveMentions);
         if (stats) {
-          const statsRes = await answerFromStats(stats, viewer, now, lastUserMessage, catalog);
+          const statsRes = await answerFromStats(stats, viewer, now, lastUserMessage, catalog, effectiveMentions);
           return NextResponse.json({
             mode: "ai",
             action: "STATS",
@@ -174,6 +195,7 @@ export async function POST(request: Request) {
             breakdown: statsRes.leadBreakdown ?? null,
             marketingRows: statsRes.marketingRows ?? null,
             suggestions: statsRes.suggestions,
+            activeMentions: effectiveMentions,
             usage,
           });
         }
@@ -189,7 +211,12 @@ export async function POST(request: Request) {
           reply: object.reply,
           spec,
           preview: await buildPreview(spec, viewer, now),
-          suggestions: ["Tải file Excel (.xlsx)", "Tải file CSV", "Áp dụng vào bộ lọc danh sách lead"],
+          suggestions: [
+            { label: "Tải file Excel (.xlsx)", prompt: "Xuất file Excel", mentions: effectiveMentions },
+            { label: "Tải file CSV", prompt: "Xuất file CSV", mentions: effectiveMentions },
+            { label: "Áp dụng vào bộ lọc danh sách lead", prompt: "Xem trên danh sách lead", mentions: effectiveMentions },
+          ],
+          activeMentions: effectiveMentions,
           usage,
         });
       }
@@ -208,7 +235,12 @@ export async function POST(request: Request) {
             : object.reply,
         spec: null,
         preview: null,
-        suggestions: ["Tháng này có bao nhiêu lead?", "Chi tiêu và CPL theo fanpage", "Xuất file Excel tháng này"],
+        suggestions: [
+          { label: "Tháng này có bao nhiêu lead?", prompt: "Tháng này có bao nhiêu lead?", mentions: [] },
+          { label: "Chi tiêu và CPL theo fanpage", prompt: "Chi tiêu và CPL theo fanpage tháng này", mentions: [] },
+          { label: "Xuất file Excel tháng này", prompt: "Xuất lead tháng này ra excel", mentions: [] },
+        ],
+        activeMentions: effectiveMentions,
         usage,
       });
     } catch (error) {

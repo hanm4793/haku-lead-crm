@@ -12,6 +12,12 @@ import type { ExportSpec } from "@/lib/ai/export-spec";
 import { MENTION_TYPES, type ChatMention, type MentionType, type StatsBreakdownRow } from "@/lib/ai/stats-query";
 import { cn } from "@/lib/utils";
 
+export interface ChatSuggestion {
+  label: string;
+  prompt: string;
+  mentions?: ChatMention[];
+}
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -19,7 +25,7 @@ interface ChatMessage {
   spec?: ExportSpec | null;
   preview?: ExportPreview | null;
   breakdown?: StatsBreakdownRow[] | null;
-  suggestions?: string[];
+  suggestions?: (string | ChatSuggestion)[];
 }
 
 interface MentionItem {
@@ -69,6 +75,7 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
   const [loading, setLoading] = React.useState(false);
   const [mode, setMode] = React.useState<"ai" | "fallback" | null>(null);
   const [lastSpec, setLastSpec] = React.useState<ExportSpec | null>(null);
+  const [lastMentions, setLastMentions] = React.useState<ChatMention[]>([]);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -138,12 +145,18 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
             .map((m) => ({ role: m.role, content: m.content })),
           mentions: tagged,
           lastSpec,
+          lastMentions,
         }),
       });
       const data = await response.json();
       setMode(data.mode ?? null);
       if (data.spec) {
         setLastSpec(data.spec);
+      }
+      if (data.activeMentions && data.activeMentions.length > 0) {
+        setLastMentions(data.activeMentions);
+      } else if (tagged.length > 0) {
+        setLastMentions(tagged);
       }
       setMessages((prev) => [
         ...prev,
@@ -228,16 +241,30 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
                 {/* Gợi ý các câu hỏi / hành động tiếp theo */}
                 {message.role === "assistant" && message.suggestions && message.suggestions.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 pt-1">
-                    {message.suggestions.map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        type="button"
-                        onClick={() => send(suggestion)}
-                        className="rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-left text-[11px] text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
-                      >
-                        {suggestion} →
-                      </button>
-                    ))}
+                    {message.suggestions.map((suggestion, idx) => {
+                      const item: ChatSuggestion =
+                        typeof suggestion === "string"
+                          ? { label: suggestion, prompt: suggestion, mentions: lastMentions }
+                          : suggestion;
+                      const effectiveTagged =
+                        item.mentions && item.mentions.length > 0 ? item.mentions : lastMentions;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => send(item.prompt, effectiveTagged)}
+                          className="rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-left text-[11px] text-primary transition-colors hover:bg-primary hover:text-primary-foreground flex items-center gap-1.5"
+                        >
+                          {effectiveTagged.length > 0 && (
+                            <span className="rounded bg-primary/10 px-1 py-0.2 text-[9.5px] font-semibold text-primary">
+                              @{effectiveTagged[0]?.label}
+                            </span>
+                          )}
+                          <span>{item.label}</span>
+                          <span>→</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
