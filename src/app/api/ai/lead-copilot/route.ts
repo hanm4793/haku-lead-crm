@@ -5,8 +5,9 @@ import { z } from "zod";
 import { resolveModel } from "@/lib/ai/model";
 import { canUseAi } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
-import { getActivityLogs, getLeadById } from "@/lib/db/leads-repo";
-import type { ActivityLog, Lead } from "@/lib/types";
+import { getActivityLogs, getLeadById, getReferenceData } from "@/lib/db/leads-repo";
+import { DEFAULT_CATALOG_LABELS } from "@/lib/constants";
+import type { ActivityLog, CatalogLabels, Lead } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -21,6 +22,7 @@ function fallbackCopilot(
   action: "summarize" | "suggest_action" | "polish_note",
   lead: Lead,
   logs: ActivityLog[],
+  labels: CatalogLabels = DEFAULT_CATALOG_LABELS,
   draftNote?: string,
 ) {
   if (action === "summarize") {
@@ -33,18 +35,20 @@ function fallbackCopilot(
   }
 
   if (action === "suggest_action") {
+    const itemLabel = lead.product || lead.brand || labels.product.toLowerCase();
+    const locationLabel = lead.location || labels.location.toLowerCase();
     if (lead.contactStatus === "CHUA_LIEN_HE") {
       return `Gợi ý: Khách hàng mới chưa liên hệ. Hãy gọi điện ngay trong khung giờ vàng để tăng tỷ lệ kết nối.
 Mẫu tin nhắn Zalo gửi trước:
-"Chào anh/chị ${lead.name || ""}, em là tư vấn viên từ SEMTOP. Em thấy anh/chị đang quan tâm đến dòng xe ${lead.product || lead.brand || "bên em"}. Em xin phép liên hệ hỗ trợ gửi báo giá chi tiết ạ."`;
+"Chào anh/chị ${lead.name || ""}, em là tư vấn viên từ SEMTOP. Em thấy anh/chị đang quan tâm đến ${itemLabel} bên em. Em xin phép liên hệ hỗ trợ gửi thông tin và báo giá chi tiết ạ."`;
     }
     if (lead.category === "CHUA_LH_DUOC") {
       return `Gợi ý: Đã thử liên hệ nhưng chưa gặp khách. Hãy gửi tin nhắn Zalo/SMS hẹn khung giờ thuận tiện:
-"Chào anh/chị ${lead.name || ""}, em gọi hỗ trợ thông tin xe ${lead.product || ""} nhưng chưa gặp được anh/chị. Em xin phép gửi thông số và ưu đãi qua Zalo, anh/chị tiện vào khung giờ nào nhắn lại giúp em nhé!"`;
+"Chào anh/chị ${lead.name || ""}, em gọi hỗ trợ thông tin về ${itemLabel} nhưng chưa gặp được anh/chị. Em xin phép gửi thông tin ưu đãi qua Zalo, anh/chị tiện vào khung giờ nào nhắn lại giúp em nhé!"`;
     }
     if (lead.category === "KHQT" || lead.category === "GDTD") {
-      return `Gợi ý: Khách hàng đang có nhu cầu cao. Hãy mời lái thử hoặc gửi bảng tính dự toán chi phí lăn bánh:
-"Chào anh/chị ${lead.name || ""}, bên em đang có chính sách giá đặc biệt và lịch lái thử xe ${lead.product || ""} trong tuần này. Anh/chị có thể ghé showroom vào sáng hay chiều để em sắp xếp xe sẵn cho mình ạ?"`;
+      return `Gợi ý: Khách hàng đang có nhu cầu cao. Hãy gửi bảng chi phí chi tiết hoặc mời trải nghiệm trực tiếp:
+"Chào anh/chị ${lead.name || ""}, bên em đang có chính sách ưu đãi đặc biệt cho ${itemLabel} trong tuần này. Anh/chị có thể ghé ${locationLabel} vào sáng hay chiều để em hỗ trợ tư vấn trực tiếp cho mình ạ?"`;
     }
     return `Gợi ý: Cập nhật nhu cầu và hẹn lịch chăm sóc định kỳ hoặc gửi thông tin ưu đãi mới.`;
   }
@@ -73,11 +77,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Không tìm thấy lead hoặc bạn không có quyền xem." }, { status: 404 });
   }
 
-  const logs = await getActivityLogs(leadId);
+  const [logs, reference] = await Promise.all([
+    getActivityLogs(leadId),
+    getReferenceData(viewer.activeProjectId ?? undefined).catch(() => null),
+  ]);
+  const labels = reference?.labels ?? DEFAULT_CATALOG_LABELS;
   const resolved = resolveModel();
 
   if (!resolved) {
-    const text = fallbackCopilot(action, lead, logs, draftNote);
+    const text = fallbackCopilot(action, lead, logs, labels, draftNote);
     return NextResponse.json({ result: text, mode: "fallback" });
   }
 
@@ -90,8 +98,8 @@ export async function POST(request: Request) {
 Hồ sơ Lead:
 - Tên: ${lead.name || "Chưa có"} | SĐT: ${lead.phone}
 - Phân loại: ${lead.category} | Trạng thái: ${lead.contactStatus}
-- Thương hiệu / Sản phẩm: ${lead.brand || ""} - ${lead.product || "Chưa chọn"}
-- Showroom / Cơ sở: ${lead.location || "Chưa chọn"}
+- ${labels.brand} / ${labels.product}: ${lead.brand || ""} - ${lead.product || "Chưa chọn"}
+- ${labels.location}: ${lead.location || "Chưa chọn"}
 - Người phụ trách: ${lead.assignee || "Chưa giao"}
 - Ghi chú hiện tại: ${lead.careNote || "Không có"}
 - Số lần liên hệ: ${lead.contactCount} | Lần liên hệ gần nhất: ${lead.lastContactAt || "Chưa có"}
@@ -129,7 +137,7 @@ Chỉ trả lời nội dung ghi chú đã được chuẩn hóa, không thêm l
     });
     return NextResponse.json({ result: result.text.trim(), mode: "ai" });
   } catch {
-    const text = fallbackCopilot(action, lead, logs, draftNote);
+    const text = fallbackCopilot(action, lead, logs, labels, draftNote);
     return NextResponse.json({
       result: `${text}\n\n(Lưu ý: Không gọi được mô hình AI thật, đây là phản hồi tự động dự phòng.)`,
       mode: "fallback",

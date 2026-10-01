@@ -530,7 +530,7 @@ function LeadDetailDialogBody({
                   <Textarea
                     value={draft.careNote}
                     onChange={(e) => patch({ careNote: e.target.value })}
-                    placeholder="VD: Đã tư vấn giá lăn bánh, khách hẹn cuối tuần ghé xem xe..."
+                    placeholder={`VD: Đã tư vấn thông tin ${labels.product.toLowerCase()}, hẹn khách trao đổi thêm...`}
                     className="min-h-24"
                   />
 
