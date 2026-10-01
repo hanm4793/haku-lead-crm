@@ -9,6 +9,8 @@ import { appUsers, brands, leads, locations, metaAdInsights, products } from "@/
 export interface MentionHit {
   id: string;
   label: string;
+  type: MentionType;
+  categoryLabel: string;
   hint: string | null;
 }
 
@@ -27,27 +29,75 @@ async function getProjectPageScope(viewer: ViewerScope): Promise<string[] | null
     const projectPages = await listFacebookPages({ projectId: viewer.activeProjectId });
     const projectPageIds = projectPages.map((p) => p.facebookPageId);
     if (viewer.role === "SUPER_ADMIN") {
-      return projectPageIds;
+      return projectPageIds.length > 0 ? projectPageIds : null;
     }
-    return viewer.pageIds.filter((id) => projectPageIds.includes(id));
+    const allowed = viewer.pageIds.filter((id) => projectPageIds.includes(id));
+    return allowed;
   }
   if (viewer.role === "SUPER_ADMIN") return null;
   return viewer.pageIds;
 }
 
-export async function searchMentions(viewer: ViewerScope, type: MentionType, query: string): Promise<MentionHit[]> {
+export async function searchMentions(
+  viewer: ViewerScope,
+  type: MentionType | "all" | undefined,
+  query: string,
+): Promise<MentionHit[]> {
   const q = needle(query);
-  if (type === "fanpage") return searchPages(viewer, q);
-  if (type === "lead") return searchLeads(viewer, q);
-  if (type === "assignee") return searchStaff(viewer, q);
-  if (type === "product") return searchProducts(viewer, q);
-  if (type === "brand") return searchBrands(viewer, q);
-  if (type === "location") return searchLocations(viewer, q);
-
   const scopedPages = await getProjectPageScope(viewer);
-  if (type === "campaign") return searchCampaigns(scopedPages, q);
-  if (type === "ad") return searchAds(scopedPages, q);
-  return [];
+
+  if (type && type !== "all") {
+    switch (type) {
+      case "fanpage":
+        return searchPages(viewer, q);
+      case "lead":
+        return searchLeads(viewer, q);
+      case "assignee":
+        return searchStaff(viewer, q);
+      case "product":
+        return searchProducts(viewer, q);
+      case "brand":
+        return searchBrands(viewer, q);
+      case "location":
+        return searchLocations(viewer, q);
+      case "campaign":
+        return searchCampaigns(scopedPages, q);
+      case "ad":
+        return searchAds(scopedPages, q);
+    }
+  }
+
+  // Khi type là "all" hoặc không truyền: tìm kiếm song song trên tất cả các danh mục
+  const [brandsRes, productsRes, fanpagesRes, staffRes, campaignsRes, locationsRes] = await Promise.all([
+    searchBrands(viewer, q),
+    searchProducts(viewer, q),
+    searchPages(viewer, q),
+    searchStaff(viewer, q),
+    searchCampaigns(scopedPages, q),
+    searchLocations(viewer, q),
+  ]);
+
+  if (!q) {
+    // Chưa gõ từ khóa: gợi ý các mục tiêu biểu từ mỗi loại
+    return [
+      ...brandsRes.slice(0, 3),
+      ...productsRes.slice(0, 4),
+      ...fanpagesRes.slice(0, 4),
+      ...staffRes.slice(0, 3),
+      ...campaignsRes.slice(0, 3),
+      ...locationsRes.slice(0, 3),
+    ];
+  }
+
+  // Đã gõ từ khóa: gộp và trả về tối đa 30 kết quả
+  return [
+    ...brandsRes,
+    ...productsRes,
+    ...fanpagesRes,
+    ...staffRes,
+    ...campaignsRes,
+    ...locationsRes,
+  ].slice(0, 30);
 }
 
 async function searchPages(viewer: ViewerScope, q: string): Promise<MentionHit[]> {
@@ -59,7 +109,13 @@ async function searchPages(viewer: ViewerScope, q: string): Promise<MentionHit[]
     .filter((page) => (allowed ? allowed.has(page.facebookPageId) : true))
     .filter((page) => !q || needle(page.name ?? page.facebookPageId).includes(q))
     .slice(0, 20)
-    .map((page) => ({ id: page.facebookPageId, label: page.name ?? page.facebookPageId, hint: null }));
+    .map((page) => ({
+      id: page.facebookPageId,
+      label: page.name ?? page.facebookPageId,
+      type: "fanpage" as const,
+      categoryLabel: "Fanpage",
+      hint: null,
+    }));
 }
 
 async function searchCampaigns(pageIds: string[] | null, q: string): Promise<MentionHit[]> {
@@ -78,7 +134,19 @@ async function searchCampaigns(pageIds: string[] | null, q: string): Promise<Men
     .groupBy(metaAdInsights.campaignId)
     .orderBy(desc(sql`coalesce(sum(${metaAdInsights.leads}), 0)`))
     .limit(20);
-  return rows.flatMap((row) => (row.id && row.label ? [{ id: row.id, label: row.label, hint: `${row.leads} lead quảng cáo` }] : []));
+  return rows.flatMap((row) =>
+    row.id && row.label
+      ? [
+          {
+            id: row.id,
+            label: row.label,
+            type: "campaign" as const,
+            categoryLabel: "Chiến dịch",
+            hint: `${row.leads} lead quảng cáo`,
+          },
+        ]
+      : [],
+  );
 }
 
 async function searchAds(pageIds: string[] | null, q: string): Promise<MentionHit[]> {
@@ -102,7 +170,13 @@ async function searchAds(pageIds: string[] | null, q: string): Promise<MentionHi
     .groupBy(metaAdInsights.objectId)
     .orderBy(desc(sql`coalesce(sum(${metaAdInsights.leads}), 0)`))
     .limit(20);
-  return rows.map((row) => ({ id: row.id, label: row.label ?? row.id, hint: row.hint }));
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.label ?? row.id,
+    type: "ad" as const,
+    categoryLabel: "Quảng cáo",
+    hint: row.hint,
+  }));
 }
 
 async function searchLeads(viewer: ViewerScope, q: string): Promise<MentionHit[]> {
@@ -116,7 +190,13 @@ async function searchLeads(viewer: ViewerScope, q: string): Promise<MentionHit[]
     .where(parts.length ? and(...parts) : undefined)
     .orderBy(desc(leads.createdAt))
     .limit(15);
-  return rows.map((row) => ({ id: row.id, label: row.name ?? "Không tên", hint: row.phone }));
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.name ?? "Không tên",
+    type: "lead" as const,
+    categoryLabel: "Lead",
+    hint: row.phone,
+  }));
 }
 
 async function searchStaff(viewer: ViewerScope, q: string): Promise<MentionHit[]> {
@@ -138,7 +218,13 @@ async function searchStaff(viewer: ViewerScope, q: string): Promise<MentionHit[]
     .where(and(...parts))
     .orderBy(asc(appUsers.fullName))
     .limit(20);
-  return rows.map((row) => ({ id: row.id, label: row.label, hint: null }));
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.label,
+    type: "assignee" as const,
+    categoryLabel: "Nhân viên",
+    hint: null,
+  }));
 }
 
 async function searchProducts(viewer: ViewerScope, q: string): Promise<MentionHit[]> {
@@ -153,7 +239,13 @@ async function searchProducts(viewer: ViewerScope, q: string): Promise<MentionHi
     .where(and(...parts))
     .orderBy(asc(products.name))
     .limit(20);
-  return rows.map((row) => ({ id: row.id, label: row.label, hint: null }));
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.label,
+    type: "product" as const,
+    categoryLabel: "Sản phẩm",
+    hint: null,
+  }));
 }
 
 async function searchBrands(viewer: ViewerScope, q: string): Promise<MentionHit[]> {
@@ -168,7 +260,13 @@ async function searchBrands(viewer: ViewerScope, q: string): Promise<MentionHit[
     .where(and(...parts))
     .orderBy(asc(brands.sortOrder), asc(brands.name))
     .limit(20);
-  return rows.map((row) => ({ id: row.id, label: row.label, hint: row.hint }));
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.label,
+    type: "brand" as const,
+    categoryLabel: "Thương hiệu",
+    hint: row.hint,
+  }));
 }
 
 async function searchLocations(viewer: ViewerScope, q: string): Promise<MentionHit[]> {
@@ -183,5 +281,11 @@ async function searchLocations(viewer: ViewerScope, q: string): Promise<MentionH
     .where(and(...parts))
     .orderBy(asc(locations.sortOrder), asc(locations.name))
     .limit(20);
-  return rows.map((row) => ({ id: row.id, label: row.label, hint: null }));
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.label,
+    type: "location" as const,
+    categoryLabel: "Địa điểm",
+    hint: null,
+  }));
 }

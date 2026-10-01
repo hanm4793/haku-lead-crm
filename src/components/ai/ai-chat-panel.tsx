@@ -22,6 +22,25 @@ interface ChatMessage {
   suggestions?: string[];
 }
 
+interface MentionItem {
+  id: string;
+  label: string;
+  type: MentionType;
+  categoryLabel?: string;
+  hint: string | null;
+}
+
+const CATEGORY_COLORS: Record<MentionType, string> = {
+  brand: "bg-purple-50 text-purple-700 border-purple-200",
+  product: "bg-sky-50 text-sky-700 border-sky-200",
+  fanpage: "bg-blue-50 text-blue-700 border-blue-200",
+  campaign: "bg-amber-50 text-amber-700 border-amber-200",
+  assignee: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  location: "bg-orange-50 text-orange-700 border-orange-200",
+  ad: "bg-rose-50 text-rose-700 border-rose-200",
+  lead: "bg-slate-100 text-slate-700 border-slate-200",
+};
+
 const INITIAL_SUGGESTIONS = [
   "Tháng này có bao nhiêu lead? So với kỳ trước.",
   "Chi tiêu và CPL theo fanpage tháng này",
@@ -42,10 +61,11 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
   const [input, setInput] = React.useState("");
   const [mentions, setMentions] = React.useState<ChatMention[]>([]);
   const [mentionOpen, setMentionOpen] = React.useState(false);
-  const [mentionType, setMentionType] = React.useState<MentionType | null>(null);
+  const [mentionCategory, setMentionCategory] = React.useState<MentionType | "all">("all");
   const [mentionQuery, setMentionQuery] = React.useState("");
-  const [mentionItems, setMentionItems] = React.useState<{ id: string; label: string; hint: string | null }[]>([]);
+  const [mentionItems, setMentionItems] = React.useState<MentionItem[]>([]);
   const [mentionIndex, setMentionIndex] = React.useState(0);
+  const [mentionLoading, setMentionLoading] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [mode, setMode] = React.useState<"ai" | "fallback" | null>(null);
   const [lastSpec, setLastSpec] = React.useState<ExportSpec | null>(null);
@@ -63,26 +83,35 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
   }, [open, onOpenChange]);
 
   React.useEffect(() => {
-    if (!mentionOpen || !mentionType) return;
+    if (!mentionOpen) return;
+    setMentionLoading(true);
     const handle = window.setTimeout(async () => {
-      const response = await fetch(`/api/ai/mentions?type=${mentionType}&q=${encodeURIComponent(mentionQuery)}`);
-      const data = await response.json();
-      setMentionItems(Array.isArray(data.items) ? data.items : []);
-      setMentionIndex(0);
-    }, 150);
+      try {
+        const response = await fetch(
+          `/api/ai/mentions?type=${mentionCategory}&q=${encodeURIComponent(mentionQuery)}`,
+        );
+        const data = await response.json();
+        setMentionItems(Array.isArray(data.items) ? data.items : []);
+        setMentionIndex(0);
+      } catch {
+        setMentionItems([]);
+      } finally {
+        setMentionLoading(false);
+      }
+    }, 120);
     return () => window.clearTimeout(handle);
-  }, [mentionOpen, mentionType, mentionQuery]);
+  }, [mentionOpen, mentionCategory, mentionQuery]);
 
   const closeMentions = () => {
     setMentionOpen(false);
-    setMentionType(null);
+    setMentionCategory("all");
+    setMentionQuery("");
     setMentionItems([]);
   };
 
-  const chooseMention = (item: { id: string; label: string }) => {
-    if (!mentionType) return;
-    setMentions((current) => [...current, { type: mentionType, id: item.id, label: item.label }]);
-    setInput((current) => current.replace(/(?:^|\s)@[^\s@]*$/, "").trimEnd());
+  const chooseMention = (item: MentionItem) => {
+    setMentions((current) => [...current, { type: item.type, id: item.id, label: item.label }]);
+    setInput((current) => current.replace(/(?:^|\s)@[^\n@]*$/, "").trimEnd());
     closeMentions();
   };
 
@@ -225,37 +254,84 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
 
         <div className="relative border-t border-border p-3">
           {mentionOpen && (
-            <div className="absolute bottom-full left-3 right-3 z-10 mb-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-card py-1 shadow-lg">
-              <div className="px-3 py-1 text-[11px] font-medium text-muted-foreground">
-                {mentionType ? "Chọn mục" : "Chọn loại"}
-              </div>
-              {(mentionType ? mentionItems : MENTION_TYPES).map((item, index) => (
+            <div className="absolute bottom-full left-3 right-3 z-10 mb-1 max-h-72 overflow-hidden rounded-lg border border-border bg-card shadow-xl flex flex-col">
+              {/* Thanh lọc danh mục ngang */}
+              <div className="flex items-center gap-1 overflow-x-auto border-b border-border bg-slate-50/80 px-2 py-1.5 text-[11px] thin-scrollbar shrink-0">
                 <button
-                  key={item.id}
                   type="button"
+                  onClick={() => setMentionCategory("all")}
                   className={cn(
-                    "flex w-full flex-col px-3 py-1.5 text-left text-[13px]",
-                    index === mentionIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
+                    "rounded-md px-2 py-0.5 font-medium whitespace-nowrap transition-colors",
+                    mentionCategory === "all"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                   )}
-                  onMouseEnter={() => setMentionIndex(index)}
-                  onClick={() => {
-                    if (!mentionType) {
-                      setMentionType(item.id as MentionType);
-                      setMentionIndex(0);
-                      return;
-                    }
-                    chooseMention(item);
-                  }}
                 >
-                  <span>{item.label}</span>
-                  {"hint" in item && item.hint ? <span className="text-[11px] text-muted-foreground">{item.hint}</span> : null}
+                  Tất cả
                 </button>
-              ))}
-              {mentionType && mentionItems.length === 0 && (
-                <div className="px-3 py-2 text-[12px] text-muted-foreground">Không có mục khớp.</div>
-              )}
+                {MENTION_TYPES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setMentionCategory(cat.id)}
+                    className={cn(
+                      "rounded-md px-2 py-0.5 font-medium whitespace-nowrap transition-colors",
+                      mentionCategory === cat.id
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    )}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Danh sách kết quả */}
+              <div className="max-h-60 overflow-y-auto py-1">
+                {mentionLoading ? (
+                  <div className="flex items-center gap-2 px-3 py-3 text-[12px] text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin" />
+                    Đang tìm kiếm…
+                  </div>
+                ) : mentionItems.length === 0 ? (
+                  <div className="px-3 py-3 text-[12px] text-muted-foreground">
+                    {mentionQuery.trim()
+                      ? `Không có mục nào khớp «${mentionQuery}».`
+                      : "Không có mục nào trong danh mục này."}
+                  </div>
+                ) : (
+                  mentionItems.map((item, index) => (
+                    <button
+                      key={`${item.type}-${item.id}`}
+                      type="button"
+                      className={cn(
+                        "flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-[12.5px] transition-colors",
+                        index === mentionIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
+                      )}
+                      onMouseEnter={() => setMentionIndex(index)}
+                      onClick={() => chooseMention(item)}
+                    >
+                      <div className="min-w-0 flex-1 flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "rounded border px-1.5 py-0.2 text-[10px] font-medium shrink-0",
+                            CATEGORY_COLORS[item.type] ?? "bg-slate-100 text-slate-700 border-slate-200",
+                          )}
+                        >
+                          {item.categoryLabel ?? item.type}
+                        </span>
+                        <span className="truncate font-medium text-slate-800">{item.label}</span>
+                      </div>
+                      {item.hint && (
+                        <span className="text-[11px] text-muted-foreground shrink-0">{item.hint}</span>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           )}
+
           <div className="flex items-end gap-2">
             <div className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1.5">
               {mentions.length > 0 && (
@@ -277,16 +353,15 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
                 onChange={(e) => {
                   const next = e.target.value;
                   setInput(next);
-                  const match = /(?:^|\s)@([^\s@]*)$/.exec(next);
+                  const match = /(?:^|\s)@([^\n@]{0,40})$/.exec(next);
                   if (match) {
                     setMentionOpen(true);
-                    setMentionQuery(match[1] ?? "");
+                    setMentionQuery(match[1]?.trim() ?? "");
                   } else {
                     closeMentions();
                   }
                 }}
                 onKeyDown={(e) => {
-                  const options = mentionType ? mentionItems : MENTION_TYPES;
                   if (mentionOpen && e.key === "Escape") {
                     e.preventDefault();
                     e.stopPropagation();
@@ -296,21 +371,19 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
                   if (mentionOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
                     e.preventDefault();
                     setMentionIndex((current) => {
-                      if (options.length === 0) return 0;
-                      return e.key === "ArrowDown" ? (current + 1) % options.length : (current - 1 + options.length) % options.length;
+                      if (mentionItems.length === 0) return 0;
+                      return e.key === "ArrowDown"
+                        ? (current + 1) % mentionItems.length
+                        : (current - 1 + mentionItems.length) % mentionItems.length;
                     });
                     return;
                   }
                   if (mentionOpen && e.key === "Enter") {
                     e.preventDefault();
-                    const option = options[mentionIndex];
-                    if (!option) return;
-                    if (!mentionType) {
-                      setMentionType(option.id as MentionType);
-                      setMentionIndex(0);
-                      return;
+                    const option = mentionItems[mentionIndex];
+                    if (option) {
+                      chooseMention(option);
                     }
-                    chooseMention(option);
                     return;
                   }
                   if (e.key === "Backspace" && input === "" && mentions.length > 0) {
@@ -323,7 +396,7 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
                     send(input);
                   }
                 }}
-                placeholder="Hỏi số liệu, gõ @ để chọn chiến dịch, quảng cáo, lead, sản phẩm…"
+                placeholder="Hỏi số liệu, gõ @ để tìm nhanh sản phẩm, chiến dịch, fanpage, nhân viên…"
                 className="min-h-11 resize-none border-0 p-0 text-[13px] shadow-none focus-visible:ring-0"
                 rows={2}
               />
@@ -333,7 +406,7 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
             </Button>
           </div>
           <p className="mt-1.5 text-[11px] text-muted-foreground">
-            Gõ @ để gắn đúng mục. Số liệu lấy theo quyền tài khoản, không do AI bịa.
+            Gõ @ để gắn nhanh mục cần hỏi. Dữ liệu lấy đúng theo phân quyền tài khoản.
           </p>
         </div>
       </aside>
