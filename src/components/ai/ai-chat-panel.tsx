@@ -23,12 +23,14 @@ import {
 } from "lucide-react";
 
 import { ExportPreviewCard } from "@/components/ai/export-preview-card";
+import { MarketingDataCard } from "@/components/ai/marketing-data-card";
 import { MiniBreakdownCard } from "@/components/ai/mini-breakdown-card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { ExportPreview } from "@/lib/ai/export-preview";
 import type { ExportSpec } from "@/lib/ai/export-spec";
 import { MENTION_TYPES, type ChatMention, type MentionType, type StatsBreakdownRow } from "@/lib/ai/stats-query";
+import type { MarketingBreakdownRow } from "@/lib/db/insights-repo";
 import { cn } from "@/lib/utils";
 
 export interface ChatSuggestion {
@@ -44,6 +46,7 @@ interface ChatMessage {
   spec?: ExportSpec | null;
   preview?: ExportPreview | null;
   breakdown?: StatsBreakdownRow[] | null;
+  marketingRows?: MarketingBreakdownRow[] | null;
   suggestions?: (string | ChatSuggestion)[];
 }
 
@@ -311,6 +314,7 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
           spec: data.spec ?? null,
           preview: data.preview ?? null,
           breakdown: data.breakdown ?? null,
+          marketingRows: data.marketingRows ?? null,
           suggestions: data.suggestions ?? [],
         },
       ]);
@@ -400,6 +404,11 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
                 {/* Card biểu đồ breakdown */}
                 {message.breakdown && message.breakdown.length > 0 && (
                   <MiniBreakdownCard rows={message.breakdown} />
+                )}
+
+                {/* Card chi tiết marketing & link bài quảng cáo */}
+                {message.marketingRows && message.marketingRows.length > 0 && (
+                  <MarketingDataCard rows={message.marketingRows} />
                 )}
 
                 {/* Card xem trước export */}

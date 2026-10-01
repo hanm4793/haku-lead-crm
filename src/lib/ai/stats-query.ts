@@ -241,12 +241,12 @@ export function formatStatsReply(input: {
     if (input.breakdown.length === 0) {
       lines.push("• Không có lead trong kỳ này.");
     } else {
-      for (const row of input.breakdown) {
+      for (const row of input.breakdown.slice(0, 8)) {
         const contactRate = row.contactRate ?? (row.leads > 0 ? row.contacted / row.leads : 0);
         const khqtRate = row.khqtRate ?? (row.contacted > 0 ? row.khqt / row.contacted : (row.leads > 0 ? row.khqt / row.leads : 0));
         const failRate = row.failRate ?? (row.leads > 0 ? row.failed / row.leads : 0);
         lines.push(
-          `• ${row.key}: ${formatNumber(row.leads)} lead | LH: ${formatPercent(contactRate)} | KHQT: ${formatPercent(khqtRate)} | Loại: ${formatPercent(failRate)}`,
+          `• ${row.key}: ${formatNumber(row.leads)} lead | Đã LH: ${formatPercent(contactRate)} | KHQT: ${formatPercent(khqtRate)} | Loại: ${formatPercent(failRate)}`,
         );
       }
     }
@@ -367,7 +367,7 @@ export function formatMarketingReply(input: {
     lines.push(
       "",
       `${noun[0]?.toUpperCase()}${noun.slice(1)} ${metric}: ${winner.key}.`,
-      `${formatNumber(winner.leads)} lượt lead quảng cáo, chi tiêu ${formatCurrency(winner.spend)}, CPL ${rates.cpl === null ? "—" : formatCurrency(rates.cpl)}.`,
+      `• ${formatNumber(winner.leads)} lượt lead quảng cáo, chi tiêu ${formatCurrency(winner.spend)}, CPL ${rates.cpl === null ? "—" : formatCurrency(rates.cpl)}.`,
     );
   } else {
     lines.push("", ...marketingLines(input.totals));
@@ -385,11 +385,11 @@ export function formatMarketingReply(input: {
   }
 
   if (input.breakdown && group) {
-    lines.push("", input.query.rankBy ? "Top:" : `Theo ${MARKETING_GROUP_LABEL[group]}:`);
+    lines.push("", input.query.rankBy ? "Bảng xếp hạng:" : `Theo ${MARKETING_GROUP_LABEL[group]}:`);
     if (input.breakdown.length === 0) {
       lines.push("• Không có số quảng cáo trong kỳ này.");
     } else {
-      for (const row of input.breakdown) {
+      for (const row of input.breakdown.slice(0, 8)) {
         const rates = marketingRates(row);
         lines.push(
           input.query.rankBy === "leads"

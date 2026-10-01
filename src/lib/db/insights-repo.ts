@@ -172,7 +172,15 @@ export type MarketingTotals = {
   leads: number;
 };
 
-export type MarketingBreakdownRow = MarketingTotals & { key: string };
+export type MarketingBreakdownRow = MarketingTotals & {
+  key: string;
+  id?: string;
+  campaignId?: string | null;
+  campaignName?: string | null;
+  pageId?: string | null;
+  adUrl?: string | null;
+  crmUrl?: string | null;
+};
 
 function insightDay(value: string) {
   return new Date(`${value}T00:00:00.000Z`);
@@ -280,7 +288,11 @@ export async function queryMarketingSnapshot(input: {
   if (input.groupBy === "ad") {
     const grouped = await getDb()
       .select({
-        key: sql<string>`coalesce(max(${metaAdInsights.objectName}), ${metaAdInsights.objectId}) || coalesce(' — ' || max(${metaAdInsights.campaignName}), '')`,
+        id: metaAdInsights.objectId,
+        adName: sql<string>`coalesce(max(${metaAdInsights.objectName}), ${metaAdInsights.objectId})`,
+        campaignName: sql<string | null>`max(${metaAdInsights.campaignName})`,
+        campaignId: sql<string | null>`max(${metaAdInsights.campaignId})`,
+        pageId: sql<string | null>`max(${metaAdInsights.pageId})`,
         ...metrics,
       })
       .from(metaAdInsights)
@@ -289,22 +301,75 @@ export async function queryMarketingSnapshot(input: {
       .orderBy(rankOrder)
       .limit(limit);
     rows = grouped.map((row) => ({
-      key: row.key,
+      id: row.id,
+      key: row.campaignName ? `${row.adName} — ${row.campaignName}` : row.adName,
+      campaignId: row.campaignId,
+      campaignName: row.campaignName,
+      pageId: row.pageId,
+      adUrl: `https://facebook.com/${row.id}`,
+      crmUrl: row.campaignName ? `/marketing?search=${encodeURIComponent(row.campaignName)}` : `/marketing`,
+      spend: asNumber(row.spend),
+      impressions: asNumber(row.impressions),
+      clicks: asNumber(row.clicks),
+      leads: asNumber(row.leads),
+    }));
+  } else if (input.groupBy === "campaign") {
+    const grouped = await getDb()
+      .select({
+        campaignId: sql<string>`coalesce(${metaAdInsights.campaignId}, '')`,
+        campaignName: sql<string>`coalesce(${metaAdInsights.campaignName}, ${metaAdInsights.campaignId}, 'Không gắn chiến dịch')`,
+        pageId: sql<string | null>`max(${metaAdInsights.pageId})`,
+        ...metrics,
+      })
+      .from(metaAdInsights)
+      .where(where)
+      .groupBy(metaAdInsights.campaignId, metaAdInsights.campaignName)
+      .orderBy(rankOrder)
+      .limit(limit);
+    rows = grouped.map((row) => ({
+      id: row.campaignId,
+      key: row.campaignName,
+      campaignId: row.campaignId,
+      campaignName: row.campaignName,
+      pageId: row.pageId,
+      crmUrl: `/marketing?search=${encodeURIComponent(row.campaignName)}`,
+      spend: asNumber(row.spend),
+      impressions: asNumber(row.impressions),
+      clicks: asNumber(row.clicks),
+      leads: asNumber(row.leads),
+    }));
+  } else if (input.groupBy === "fanpage") {
+    const grouped = await getDb()
+      .select({
+        pageId: metaAdInsights.pageId,
+        pageName: sql<string>`coalesce(max(${facebookPages.name}), ${metaAdInsights.pageId}, 'Không gắn fanpage')`,
+        ...metrics,
+      })
+      .from(metaAdInsights)
+      .leftJoin(facebookPages, eq(metaAdInsights.pageId, facebookPages.facebookPageId))
+      .where(where)
+      .groupBy(metaAdInsights.pageId)
+      .orderBy(rankOrder)
+      .limit(limit);
+    rows = grouped.map((row) => ({
+      id: row.pageId ?? undefined,
+      key: row.pageName,
+      pageId: row.pageId,
+      adUrl: row.pageId ? `https://facebook.com/${row.pageId}` : null,
+      crmUrl: row.pageId ? `/leads?page=${encodeURIComponent(row.pageId)}` : `/leads`,
       spend: asNumber(row.spend),
       impressions: asNumber(row.impressions),
       clicks: asNumber(row.clicks),
       leads: asNumber(row.leads),
     }));
   } else if (groupExpr) {
-    const base = getDb()
+    const grouped = await getDb()
       .select({ key: groupExpr, ...metrics })
       .from(metaAdInsights)
-      .$dynamic();
-    const joined =
-      input.groupBy === "fanpage"
-        ? base.leftJoin(facebookPages, eq(metaAdInsights.pageId, facebookPages.facebookPageId))
-        : base;
-    const grouped = await joined.where(where).groupBy(sql`1`).orderBy(rankOrder).limit(limit);
+      .where(where)
+      .groupBy(sql`1`)
+      .orderBy(rankOrder)
+      .limit(limit);
     rows = grouped.map((row) => ({
       key: row.key,
       spend: asNumber(row.spend),
