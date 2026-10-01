@@ -11,7 +11,8 @@ const HEADER_FILL = "FF12479E";
 function writeSheet(sheet: ExcelJS.Worksheet, leads: Lead[], columnIds: string[]) {
   sheet.columns = columnIds.map((id) => {
     const column = COLUMN_BY_ID.get(id);
-    return { header: column?.header ?? id, key: id, width: Math.max(12, Math.round((column?.width ?? 140) / 8)) };
+    const header = id.startsWith("attr:") ? `Trường: ${id.slice(5)}` : (column?.header ?? id);
+    return { header, key: id, width: Math.max(12, Math.round((column?.width ?? 140) / 8)) };
   });
 
   for (const lead of leads) {

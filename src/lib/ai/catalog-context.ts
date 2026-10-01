@@ -8,6 +8,13 @@ import {
 import type { ReferenceData } from "@/lib/db/leads-repo";
 import type { CatalogLabels } from "@/lib/types";
 
+export interface AiAttrField {
+  key: string;
+  label: string;
+  fieldType: string;
+  options: string[];
+}
+
 /**
  * Danh mục giá trị hợp lệ mà prompt / bộ dò từ khóa của AI dùng. Runtime lấy
  * từ DB qua `catalogFromReference`; bản mặc định từ constants là fallback khi
@@ -20,6 +27,7 @@ export interface AiCatalog {
   products: string[];
   locations: string[];
   assignees: string[];
+  attrFields?: AiAttrField[];
 }
 
 export const DEFAULT_AI_CATALOG: AiCatalog = {
@@ -28,6 +36,7 @@ export const DEFAULT_AI_CATALOG: AiCatalog = {
   products: ALL_PRODUCTS,
   locations: [...LOCATIONS],
   assignees: [...ASSIGNEES],
+  attrFields: [],
 };
 
 export function catalogFromReference(reference: ReferenceData): AiCatalog {
@@ -37,5 +46,11 @@ export function catalogFromReference(reference: ReferenceData): AiCatalog {
     products: [...new Set(Object.values(reference.productsByBrand).flat())],
     locations: reference.locations,
     assignees: reference.assignees,
+    attrFields: (reference.attrFields ?? []).map((f) => ({
+      key: f.key,
+      label: f.label,
+      fieldType: f.fieldType,
+      options: f.options,
+    })),
   };
 }

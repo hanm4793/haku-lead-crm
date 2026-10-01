@@ -127,6 +127,17 @@ describe("parseStatsQuestion", () => {
     expect(query.campaignQuery).toBeNull();
   });
 
+  it("handles @ product, brand and location mentions", () => {
+    const query = applyMentions(emptyQuery, [
+      { type: "product", id: "p-1", label: "Kia Seltos" },
+      { type: "brand", id: "KIA", label: "Kia" },
+      { type: "location", id: "l-1", label: "Hà Nam" },
+    ]);
+    expect(query.filters.products).toEqual(["Kia Seltos"]);
+    expect(query.filters.brands).toEqual(["KIA"]);
+    expect(query.filters.locations).toEqual(["Hà Nam"]);
+  });
+
   it("groups by fanpage without treating the word fanpage as a page name", () => {
     const query = parseStatsQuestion("Lead theo từng fanpage tháng này", now);
     expect(query?.groupBy).toBe("fanpage");

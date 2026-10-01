@@ -4,11 +4,12 @@ import * as React from "react";
 import { Loader2, Send, Sparkles, X } from "lucide-react";
 
 import { ExportPreviewCard } from "@/components/ai/export-preview-card";
+import { MiniBreakdownCard } from "@/components/ai/mini-breakdown-card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { ExportPreview } from "@/lib/ai/export-preview";
 import type { ExportSpec } from "@/lib/ai/export-spec";
-import { MENTION_TYPES, type ChatMention, type MentionType } from "@/lib/ai/stats-query";
+import { MENTION_TYPES, type ChatMention, type MentionType, type StatsBreakdownRow } from "@/lib/ai/stats-query";
 import { cn } from "@/lib/utils";
 
 interface ChatMessage {
@@ -17,9 +18,11 @@ interface ChatMessage {
   content: string;
   spec?: ExportSpec | null;
   preview?: ExportPreview | null;
+  breakdown?: StatsBreakdownRow[] | null;
+  suggestions?: string[];
 }
 
-const SUGGESTIONS = [
+const INITIAL_SUGGESTIONS = [
   "Tháng này có bao nhiêu lead? So với kỳ trước.",
   "Chi tiêu và CPL theo fanpage tháng này",
   "Lead CRM và lead quảng cáo theo từng fanpage",
@@ -31,6 +34,7 @@ const WELCOME: ChatMessage = {
   role: "assistant",
   content:
     "Chào bạn. Mình đọc lead CRM và số quảng cáo trong đúng phạm vi fanpage của tài khoản. Hai loại số được trả riêng, không trộn với nhau.",
+  suggestions: INITIAL_SUGGESTIONS,
 };
 
 export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -44,6 +48,7 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
   const [mentionIndex, setMentionIndex] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
   const [mode, setMode] = React.useState<"ai" | "fallback" | null>(null);
+  const [lastSpec, setLastSpec] = React.useState<ExportSpec | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -80,6 +85,7 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
     setInput((current) => current.replace(/(?:^|\s)@[^\s@]*$/, "").trimEnd());
     closeMentions();
   };
+
   const send = async (text: string, tagged: ChatMention[] = mentions) => {
     const trimmed = text.trim();
     if ((!trimmed && tagged.length === 0) || loading) return;
@@ -102,10 +108,14 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
             .filter((m) => m.id !== "welcome")
             .map((m) => ({ role: m.role, content: m.content })),
           mentions: tagged,
+          lastSpec,
         }),
       });
       const data = await response.json();
       setMode(data.mode ?? null);
+      if (data.spec) {
+        setLastSpec(data.spec);
+      }
       setMessages((prev) => [
         ...prev,
         {
@@ -114,6 +124,8 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
           content: data.reply ?? data.error ?? "Mình chưa xử lý được yêu cầu này.",
           spec: data.spec ?? null,
           preview: data.preview ?? null,
+          breakdown: data.breakdown ?? null,
+          suggestions: data.suggestions ?? [],
         },
       ]);
     } catch (error) {
@@ -147,11 +159,11 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold">Trợ lý AI</div>
             <div className="text-[11px] text-muted-foreground">
-            {mode === "fallback"
-              ? "Đang trả lời từ số liệu CRM — chưa cấu hình API key"
-              : mode === "ai"
-                ? "Số liệu lấy từ CRM theo quyền tài khoản"
-                : "Hỏi số liệu hoặc nhờ xuất file"}
+              {mode === "fallback"
+                ? "Đang trả lời từ số liệu CRM — chưa cấu hình API key"
+                : mode === "ai"
+                  ? "Số liệu lấy từ CRM theo quyền tài khoản"
+                  : "Hỏi số liệu hoặc nhờ xuất file"}
             </div>
           </div>
           <Button variant="ghost" size="iconSm" onClick={() => onOpenChange(false)}>
@@ -173,8 +185,31 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
                 >
                   {message.content}
                 </div>
+
+                {/* Card biểu đồ tỷ lệ phân bổ khi có dữ liệu breakdown */}
+                {message.breakdown && message.breakdown.length > 0 && (
+                  <MiniBreakdownCard rows={message.breakdown} />
+                )}
+
+                {/* Card xem trước file export */}
                 {message.spec && message.preview && (
                   <ExportPreviewCard spec={message.spec} preview={message.preview} />
+                )}
+
+                {/* Gợi ý các câu hỏi / hành động tiếp theo */}
+                {message.role === "assistant" && message.suggestions && message.suggestions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {message.suggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => send(suggestion)}
+                        className="rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-left text-[11px] text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                      >
+                        {suggestion} →
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
@@ -184,22 +219,6 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
             <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
               Đang đọc số liệu…
-            </div>
-          )}
-
-          {messages.length === 1 && (
-            <div className="space-y-1.5 pt-2">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Thử hỏi</div>
-              {SUGGESTIONS.map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => send(suggestion)}
-                  className="w-full rounded-lg border border-dashed border-border px-3 py-2 text-left text-[12px] text-slate-600 transition-colors hover:border-primary hover:bg-accent hover:text-primary"
-                >
-                  {suggestion}
-                </button>
-              ))}
             </div>
           )}
         </div>
@@ -304,7 +323,7 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
                     send(input);
                   }
                 }}
-                placeholder="Hỏi số liệu, gõ @ để chọn chiến dịch, quảng cáo, lead…"
+                placeholder="Hỏi số liệu, gõ @ để chọn chiến dịch, quảng cáo, lead, sản phẩm…"
                 className="min-h-11 resize-none border-0 p-0 text-[13px] shadow-none focus-visible:ring-0"
                 rows={2}
               />

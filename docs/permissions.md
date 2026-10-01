@@ -51,7 +51,7 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 
 | Hạng mục | Super admin | Partner admin | Nhân viên |
 | --- | --- | --- | --- |
-| Mở trợ lý và gọi `/api/ai/chat`, `/api/ai/mentions` | Luôn bật | Chỉ khi super admin bật cờ AI | Không. API trả 403 |
+| Mở trợ lý và gọi `/api/ai/chat`, `/api/ai/mentions`, `/api/ai/lead-copilot` | Luôn bật | Chỉ khi super admin bật cờ AI | Không. API trả 403 |
 | Số liệu AI đọc | Mọi fanpage | Fanpage được gán. Hết grant thì không có số | Không gọi được |
 
 Lead CRM và số lead trên ads là hai tập khác nhau. Câu trả lời AI phải giữ đúng phạm vi fanpage của người hỏi.

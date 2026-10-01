@@ -78,17 +78,32 @@ export const DEFAULT_VISIBLE_COLUMNS = [
 export const COLUMN_BY_ID = new Map(LEAD_COLUMNS.map((c) => [c.id, c]));
 
 /** Tiêu đề cột theo nhãn catalog của project — ba cột dimension đổi tên theo ngành. */
-export function columnHeader(columnId: string, labels: CatalogLabels = DEFAULT_CATALOG_LABELS): string {
+export function columnHeader(
+  columnId: string,
+  labels: CatalogLabels = DEFAULT_CATALOG_LABELS,
+  attrLabels?: Record<string, string>,
+): string {
   if (columnId === "brand") return labels.brand;
   if (columnId === "product") return labels.product;
   if (columnId === "location") return labels.location;
+  if (columnId.startsWith("attr:")) {
+    const key = columnId.slice(5);
+    return attrLabels?.[key] ?? key;
+  }
   return COLUMN_BY_ID.get(columnId)?.header ?? columnId;
 }
 
 /** Chuỗi hiển thị trong ô — cũng dùng làm giá trị ô Excel. */
 export function displayValue(lead: Lead, columnId: string): string {
+  if (columnId.startsWith("attr:")) {
+    const key = columnId.slice(5);
+    return lead.attrs?.[key] ?? "";
+  }
   const column = COLUMN_BY_ID.get(columnId);
-  if (!column) return "";
+  if (!column) {
+    if (lead.attrs && columnId in lead.attrs) return lead.attrs[columnId] ?? "";
+    return "";
+  }
   const raw = column.value(lead);
   if (raw === null || raw === undefined || raw === "") return "";
   if (columnId === "createdAt" || columnId === "lastContactAt") return formatDateTime(String(raw));

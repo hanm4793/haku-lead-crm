@@ -4,7 +4,7 @@ import type { MentionType } from "@/lib/ai/stats-query";
 import { getDb } from "@/lib/db/client";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
 import { scopeConditions, type ViewerScope } from "@/lib/db/leads-repo";
-import { appUsers, leads, metaAdInsights } from "@/lib/db/schema";
+import { appUsers, brands, leads, locations, metaAdInsights, products } from "@/lib/db/schema";
 
 export interface MentionHit {
   id: string;
@@ -22,7 +22,15 @@ function needle(query: string) {
     .trim();
 }
 
-function pageScope(viewer: ViewerScope): string[] | null {
+async function getProjectPageScope(viewer: ViewerScope): Promise<string[] | null> {
+  if (viewer.activeProjectId) {
+    const projectPages = await listFacebookPages({ projectId: viewer.activeProjectId });
+    const projectPageIds = projectPages.map((p) => p.facebookPageId);
+    if (viewer.role === "SUPER_ADMIN") {
+      return projectPageIds;
+    }
+    return viewer.pageIds.filter((id) => projectPageIds.includes(id));
+  }
   if (viewer.role === "SUPER_ADMIN") return null;
   return viewer.pageIds;
 }
@@ -30,10 +38,16 @@ function pageScope(viewer: ViewerScope): string[] | null {
 export async function searchMentions(viewer: ViewerScope, type: MentionType, query: string): Promise<MentionHit[]> {
   const q = needle(query);
   if (type === "fanpage") return searchPages(viewer, q);
-  if (type === "campaign") return searchCampaigns(pageScope(viewer), q);
-  if (type === "ad") return searchAds(pageScope(viewer), q);
   if (type === "lead") return searchLeads(viewer, q);
-  return searchStaff(viewer, q);
+  if (type === "assignee") return searchStaff(viewer, q);
+  if (type === "product") return searchProducts(viewer, q);
+  if (type === "brand") return searchBrands(viewer, q);
+  if (type === "location") return searchLocations(viewer, q);
+
+  const scopedPages = await getProjectPageScope(viewer);
+  if (type === "campaign") return searchCampaigns(scopedPages, q);
+  if (type === "ad") return searchAds(scopedPages, q);
+  return [];
 }
 
 async function searchPages(viewer: ViewerScope, q: string): Promise<MentionHit[]> {
@@ -112,12 +126,62 @@ async function searchStaff(viewer: ViewerScope, q: string): Promise<MentionHit[]
     if (!partnerId) return [];
     parts.push(eq(appUsers.partnerId, partnerId));
   }
+  if (viewer.activeProjectId) {
+    parts.push(
+      sql`(${appUsers.projectId} = ${viewer.activeProjectId} or ${appUsers.id} in (select user_id from project_members where project_id = ${viewer.activeProjectId}))`,
+    );
+  }
   if (q) parts.push(sql`lower(unaccent(${appUsers.fullName})) like ${`%${q}%`}`);
   const rows = await getDb()
     .select({ id: appUsers.id, label: appUsers.fullName })
     .from(appUsers)
     .where(and(...parts))
     .orderBy(asc(appUsers.fullName))
+    .limit(20);
+  return rows.map((row) => ({ id: row.id, label: row.label, hint: null }));
+}
+
+async function searchProducts(viewer: ViewerScope, q: string): Promise<MentionHit[]> {
+  const parts = [eq(products.active, true)];
+  if (viewer.activeProjectId) {
+    parts.push(eq(products.projectId, viewer.activeProjectId));
+  }
+  if (q) parts.push(sql`lower(unaccent(${products.name})) like ${`%${q}%`}`);
+  const rows = await getDb()
+    .select({ id: products.id, label: products.name })
+    .from(products)
+    .where(and(...parts))
+    .orderBy(asc(products.name))
+    .limit(20);
+  return rows.map((row) => ({ id: row.id, label: row.label, hint: null }));
+}
+
+async function searchBrands(viewer: ViewerScope, q: string): Promise<MentionHit[]> {
+  const parts = [eq(brands.active, true)];
+  if (viewer.activeProjectId) {
+    parts.push(eq(brands.projectId, viewer.activeProjectId));
+  }
+  if (q) parts.push(sql`lower(unaccent(${brands.name} || ' ' || ${brands.code})) like ${`%${q}%`}`);
+  const rows = await getDb()
+    .select({ id: brands.code, label: brands.name, hint: brands.code })
+    .from(brands)
+    .where(and(...parts))
+    .orderBy(asc(brands.sortOrder), asc(brands.name))
+    .limit(20);
+  return rows.map((row) => ({ id: row.id, label: row.label, hint: row.hint }));
+}
+
+async function searchLocations(viewer: ViewerScope, q: string): Promise<MentionHit[]> {
+  const parts = [eq(locations.active, true)];
+  if (viewer.activeProjectId) {
+    parts.push(eq(locations.projectId, viewer.activeProjectId));
+  }
+  if (q) parts.push(sql`lower(unaccent(${locations.name})) like ${`%${q}%`}`);
+  const rows = await getDb()
+    .select({ id: locations.id, label: locations.name })
+    .from(locations)
+    .where(and(...parts))
+    .orderBy(asc(locations.sortOrder), asc(locations.name))
     .limit(20);
   return rows.map((row) => ({ id: row.id, label: row.label, hint: null }));
 }

@@ -3,14 +3,20 @@
 import * as React from "react";
 import {
   ArrowRightLeft,
+  Check,
   Copy,
+  Lightbulb,
+  Loader2,
   MessageSquare,
   Pencil,
   Phone,
   PhoneMissed,
   Save,
+  Sparkles,
   StickyNote,
   UserCog,
+  Wand2,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -85,7 +91,7 @@ interface LeadDetailDialogProps {
   logs: ActivityLog[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (patch: Partial<Lead>, logs: { kind: ActivityKind; message: string }[]) => void;
+  onSave: (patch: Partial<Lead>, logs: { kind: ActivityKind; message: string; byAi?: boolean }[]) => void;
   readOnly?: boolean;
   assignees?: readonly string[];
   /** Danh mục brand / sản phẩm / location và nhãn theo project. */
@@ -113,16 +119,47 @@ function LeadDetailDialogBody({
 }: LeadDetailDialogProps & { lead: Lead }) {
   const [draft, setDraft] = React.useState<DraftState>(() => toDraft(lead));
   const [attrDraft, setAttrDraft] = React.useState<Record<string, string>>(() => ({ ...(lead.attrs ?? {}) }));
-  const [justSaved, setJustSaved] = React.useState(false);
-  const { labels } = catalog;
-
-  React.useEffect(() => {
+  const [prevAttrs, setPrevAttrs] = React.useState(lead.attrs);
+  if (lead.attrs !== prevAttrs) {
+    setPrevAttrs(lead.attrs);
     setAttrDraft({ ...(lead.attrs ?? {}) });
-  }, [lead.id, lead.attrs]);
+  }
+  const [justSaved, setJustSaved] = React.useState(false);
+  const [aiLoading, setAiLoading] = React.useState<"summarize" | "suggest_action" | "polish_note" | null>(null);
+  const [aiResult, setAiResult] = React.useState<{ type: "summarize" | "suggest_action" | "polish_note"; text: string } | null>(null);
+  const [copied, setCopied] = React.useState(false);
+  const [aiPolishedNoteUsed, setAiPolishedNoteUsed] = React.useState(false);
+  const { labels } = catalog;
 
   const patch = (next: Partial<DraftState>) => {
     setDraft((d) => ({ ...d, ...next }));
     setJustSaved(false);
+  };
+
+  const callCopilot = async (action: "summarize" | "suggest_action" | "polish_note") => {
+    setAiLoading(action);
+    setCopied(false);
+    try {
+      const res = await fetch("/api/ai/lead-copilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId: lead.id,
+          action,
+          draftNote: draft.careNote,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setAiResult({ type: action, text: data.error ?? "Không thể xử lý lúc này." });
+      } else {
+        setAiResult({ type: action, text: data.result });
+      }
+    } catch {
+      setAiResult({ type: action, text: "Lỗi kết nối tới trợ lý AI." });
+    } finally {
+      setAiLoading(null);
+    }
   };
 
   const dirty =
@@ -139,7 +176,7 @@ function LeadDetailDialogBody({
     attrsDirty(attrFields, attrDraft, lead.attrs ?? {});
 
   const handleSave = () => {
-    const entries: { kind: ActivityKind; message: string }[] = [];
+    const entries: { kind: ActivityKind; message: string; byAi?: boolean }[] = [];
     if (draft.category !== lead.category) {
       entries.push({
         kind: "CATEGORY_CHANGE",
@@ -153,7 +190,11 @@ function LeadDetailDialogBody({
       });
     }
     if (draft.careNote && draft.careNote !== (lead.careNote ?? "")) {
-      entries.push({ kind: "CALL", message: draft.careNote });
+      entries.push({
+        kind: "NOTE",
+        message: draft.careNote,
+        byAi: aiPolishedNoteUsed,
+      });
     }
 
     const savePatch: Partial<Lead> & { attrs?: Record<string, string> } = {
@@ -431,13 +472,124 @@ function LeadDetailDialogBody({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-[13px]">Nội dung đã liên hệ</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[13px]">Nội dung đã liên hệ</Label>
+                    {!readOnly && (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 gap-1 px-1.5 text-[11px] text-violet-600 hover:bg-violet-50 hover:text-violet-700"
+                          disabled={Boolean(aiLoading)}
+                          onClick={() => callCopilot("summarize")}
+                        >
+                          {aiLoading === "summarize" ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <Sparkles className="size-3" />
+                          )}
+                          Tóm tắt
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 gap-1 px-1.5 text-[11px] text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                          disabled={Boolean(aiLoading)}
+                          onClick={() => callCopilot("suggest_action")}
+                        >
+                          {aiLoading === "suggest_action" ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <Lightbulb className="size-3" />
+                          )}
+                          Gợi ý kịch bản
+                        </Button>
+                        {draft.careNote.trim() && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 gap-1 px-1.5 text-[11px] text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                            disabled={Boolean(aiLoading)}
+                            onClick={() => callCopilot("polish_note")}
+                          >
+                            {aiLoading === "polish_note" ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              <Wand2 className="size-3" />
+                            )}
+                            Chuẩn hóa
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <Textarea
                     value={draft.careNote}
                     onChange={(e) => patch({ careNote: e.target.value })}
                     placeholder="VD: Đã tư vấn giá lăn bánh, khách hẹn cuối tuần ghé xem xe..."
                     className="min-h-24"
                   />
+
+                  {aiResult && (
+                    <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-2.5 text-[12px] shadow-xs">
+                      <div className="flex items-center justify-between font-medium text-violet-800">
+                        <span className="flex items-center gap-1.5">
+                          <Sparkles className="size-3.5 text-violet-600" />
+                          {aiResult.type === "summarize"
+                            ? "Tóm tắt hồ sơ khách hàng"
+                            : aiResult.type === "suggest_action"
+                              ? "Gợi ý kịch bản tư vấn"
+                              : "Ghi chú đã chuẩn hóa"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setAiResult(null)}
+                          className="text-violet-400 hover:text-violet-700"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="mt-1.5 whitespace-pre-wrap rounded bg-white p-2 text-slate-700 border border-violet-100 leading-relaxed text-[11.5px]">
+                        {aiResult.text}
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-end gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-6 gap-1 px-2 text-[11px]"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(aiResult.text);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                          }}
+                        >
+                          {copied ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                          {copied ? "Đã chép" : "Sao chép"}
+                        </Button>
+                        {!readOnly && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-6 gap-1 px-2 text-[11px] bg-violet-600 hover:bg-violet-700 text-white"
+                            onClick={() => {
+                              patch({ careNote: aiResult.text });
+                              setAiPolishedNoteUsed(true);
+                              setAiResult(null);
+                            }}
+                          >
+                            Áp dụng vào ghi chú
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">

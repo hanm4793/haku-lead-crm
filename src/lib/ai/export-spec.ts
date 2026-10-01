@@ -4,7 +4,7 @@ import { LEAD_COLUMNS } from "@/components/leads/columns";
 import { CATEGORY_OPTIONS, FAIL_REASON_OPTIONS, SOURCE_OPTIONS } from "@/lib/constants";
 import { PIVOT_DIMENSIONS } from "@/lib/metrics";
 
-const COLUMN_IDS = LEAD_COLUMNS.map((c) => c.id) as [string, ...string[]];
+export const COLUMN_IDS = LEAD_COLUMNS.map((c) => c.id) as [string, ...string[]];
 const SPLIT_DIMENSIONS = Object.keys(PIVOT_DIMENSIONS) as [string, ...string[]];
 
 /**
@@ -42,9 +42,9 @@ export const exportSpecSchema = z.object({
   title: z.string().describe("Tên file gợi ý, không kèm phần mở rộng"),
   summary: z.string().describe("Một câu tiếng Việt mô tả nội dung sẽ xuất, để người dùng xác nhận"),
   filters: exportFiltersSchema,
-  columns: z.array(z.enum(COLUMN_IDS)).min(1).describe("Danh sách cột theo đúng thứ tự muốn xuất"),
+  columns: z.array(z.string().min(1).max(100)).min(1).describe("Danh sách cột theo đúng thứ tự muốn xuất"),
   splitSheetsBy: z.enum(SPLIT_DIMENSIONS).nullable().optional().describe("Tách mỗi giá trị của chiều này thành một sheet riêng"),
-  sortBy: z.enum(COLUMN_IDS).optional(),
+  sortBy: z.string().optional(),
   sortOrder: z.enum(["asc", "desc"]).optional(),
   includeSummarySheet: z.boolean().optional().describe("Thêm một sheet tổng hợp chỉ số ở đầu file"),
   format: z.enum(["xlsx", "csv"]).default("xlsx"),

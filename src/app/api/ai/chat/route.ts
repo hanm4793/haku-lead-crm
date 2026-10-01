@@ -22,7 +22,7 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const mentionSchema = z.object({
-  type: z.enum(["fanpage", "campaign", "ad", "lead", "assignee"]),
+  type: z.enum(["fanpage", "campaign", "ad", "lead", "assignee", "product", "brand", "location"]),
   id: z.string().min(1).max(80),
   label: z.string().min(1).max(160),
 });
@@ -30,6 +30,8 @@ const mentionSchema = z.object({
 const requestSchema = z.object({
   messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() })).min(1),
   mentions: z.array(mentionSchema).max(8).optional(),
+  lastSpec: exportSpecSchema.nullable().optional(),
+  lastStats: statsQuerySchema.nullable().optional(),
 });
 
 const responseSchema = z.object({
@@ -84,13 +86,16 @@ async function fallbackResponse(
   const base = parsedQuestion ?? (mentions.length ? blankStats() : null);
   if (base && (parsedQuestion || mentions.length)) {
     const stats = applyMentions(base, mentions);
-    const reply = await answerFromStats(stats, viewer, now, text);
+    const statsRes = await answerFromStats(stats, viewer, now, text, catalog);
     return NextResponse.json({
       mode: "fallback",
       action: "STATS",
-      reply: note ? `${note}\n\n${reply}` : reply,
+      reply: note ? `${note}\n\n${statsRes.reply}` : statsRes.reply,
       spec: null,
       preview: null,
+      breakdown: statsRes.leadBreakdown ?? null,
+      marketingRows: statsRes.marketingRows ?? null,
+      suggestions: statsRes.suggestions,
     });
   }
 
@@ -102,6 +107,9 @@ async function fallbackResponse(
     reply: note ? `${note}\n\n${local.reply}` : local.reply,
     spec,
     preview: spec ? await buildPreview(spec, viewer, now) : null,
+    suggestions: spec
+      ? ["Tải file Excel (.xlsx)", "Tải file CSV", "Áp dụng vào bộ lọc danh sách lead"]
+      : ["Tháng này có bao nhiêu lead?", "Chi tiêu và CPL theo fanpage", "Xuất file Excel tháng này"],
   });
 }
 
@@ -117,7 +125,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Yêu cầu không hợp lệ" }, { status: 400 });
   }
 
-  const { messages, mentions = [] } = parsed.data;
+  const { messages, mentions = [], lastSpec, lastStats } = parsed.data;
   const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const now = new Date();
   const catalog = await loadCatalog(viewer.activeProjectId ?? undefined);
@@ -132,7 +140,7 @@ export async function POST(request: Request) {
       const result = await generateObject({
         model: resolved.model,
         schema: responseSchema,
-        system: buildSystemPrompt(now, catalog),
+        system: buildSystemPrompt(now, catalog, { lastSpec, lastStats }),
         messages,
         temperature: 0,
       });
@@ -156,13 +164,16 @@ export async function POST(request: Request) {
       if (asksForNumbers) {
         const stats = applyMentions(mergeStats(modelStats, localStats) ?? blankStats(), mentions);
         if (stats) {
-          const reply = await answerFromStats(stats, viewer, now, lastUserMessage);
+          const statsRes = await answerFromStats(stats, viewer, now, lastUserMessage, catalog);
           return NextResponse.json({
             mode: "ai",
             action: "STATS",
-            reply,
+            reply: statsRes.reply,
             spec: null,
             preview: null,
+            breakdown: statsRes.leadBreakdown ?? null,
+            marketingRows: statsRes.marketingRows ?? null,
+            suggestions: statsRes.suggestions,
             usage,
           });
         }
@@ -178,6 +189,7 @@ export async function POST(request: Request) {
           reply: object.reply,
           spec,
           preview: await buildPreview(spec, viewer, now),
+          suggestions: ["Tải file Excel (.xlsx)", "Tải file CSV", "Áp dụng vào bộ lọc danh sách lead"],
           usage,
         });
       }
@@ -196,6 +208,7 @@ export async function POST(request: Request) {
             : object.reply,
         spec: null,
         preview: null,
+        suggestions: ["Tháng này có bao nhiêu lead?", "Chi tiêu và CPL theo fanpage", "Xuất file Excel tháng này"],
         usage,
       });
     } catch (error) {

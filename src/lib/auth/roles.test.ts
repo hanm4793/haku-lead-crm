@@ -273,7 +273,7 @@ describe("accounts", () => {
 });
 
 describe("AI", () => {
-  it("is always on for super admin, flagged for partner admin, and off for staff", () => {
+  it("is always on for super admin, flagged for partner admin, and off for staff (/api/ai/chat, /api/ai/mentions, /api/ai/lead-copilot)", () => {
     expect(canUseAi({ role: "SUPER_ADMIN", aiEnabled: false })).toBe(true);
     expect(canUseAi({ role: "PARTNER_ADMIN", aiEnabled: true })).toBe(true);
     expect(canUseAi({ role: "PARTNER_ADMIN", aiEnabled: false })).toBe(false);

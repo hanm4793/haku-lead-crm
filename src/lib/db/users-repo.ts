@@ -209,7 +209,8 @@ export async function createManagedUser(input: CreateUserInput, actor: ViewerSco
       pageIds: input.pageIds,
     },
   );
-  let { role, partnerId, projectId, aiEnabled, pageIds } = prepared;
+  const { role, partnerId, aiEnabled, pageIds } = prepared;
+  let { projectId } = prepared;
   if (actor.role === "SUPER_ADMIN" && role === "STAFF" && partnerId) {
     await assertPartner(partnerId);
   }

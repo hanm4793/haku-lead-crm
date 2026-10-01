@@ -699,6 +699,7 @@ export interface ReferenceData {
   assignees: string[];
   /** brand code → tên sản phẩm đang bật. */
   productsByBrand: Record<string, string[]>;
+  attrFields?: AttrFieldRow[];
 }
 
 /** Danh mục cho các dropdown — đọc từ DB theo project (mặc định nếu không truyền). */
@@ -738,6 +739,8 @@ export async function getReferenceData(projectId?: string): Promise<ReferenceDat
     (productsByBrand[row.brand] ??= []).push(row.name);
   }
 
+  const attrFields = resolvedProjectId ? await listAttrFields(resolvedProjectId, { activeOnly: true }) : [];
+
   return {
     project: project ? toProjectInfo(project) : null,
     labels: getCatalogLabels(project),
@@ -745,5 +748,6 @@ export async function getReferenceData(projectId?: string): Promise<ReferenceDat
     locations: locationRows.map((r) => r.name),
     assignees: userRows.map((r) => r.name),
     productsByBrand,
+    attrFields,
   };
 }

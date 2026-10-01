@@ -194,7 +194,8 @@ export async function queryMarketingSnapshot(input: {
   campaignContains?: string | null;
   campaignIds?: string[] | null;
   adIds?: string[] | null;
-  brands?: Array<"KIA" | "MAZDA" | "PEUGEOT" | "BMW">;
+  brands?: string[];
+  brandOptions?: Array<{ code: string; name: string }>;
   groupBy: "fanpage" | "campaign" | "brand" | "ad" | null;
   rankBy?: "leads" | "spend" | "clicks" | "cpl" | null;
   limit?: number;
@@ -221,10 +222,8 @@ export async function queryMarketingSnapshot(input: {
   }
   if (input.brands?.length) {
     const brandSql = input.brands.map((brand) => {
-      if (brand === "BMW") return sql`${metaAdInsights.campaignName} ~* 'bmw'`;
-      if (brand === "MAZDA") return sql`${metaAdInsights.campaignName} ~* 'mazda'`;
-      if (brand === "KIA") return sql`${metaAdInsights.campaignName} ~* 'kia'`;
-      return sql`${metaAdInsights.campaignName} ~* 'peugeot|\\mpeu\\M'`;
+      const escaped = brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return sql`${metaAdInsights.campaignName} ~* ${`\\m${escaped}\\M`}`;
     });
     parts.push(sql`(${sql.join(brandSql, sql` or `)})`);
   }
@@ -238,19 +237,31 @@ export async function queryMarketingSnapshot(input: {
   };
 
   const [totals] = await getDb().select(metrics).from(metaAdInsights).where(where);
+
+  const brandGroupExpr = input.brandOptions?.length
+    ? sql<string>`case ${sql.join(
+        input.brandOptions.map((b) => {
+          const escCode = b.code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const escName = b.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          return sql`when ${metaAdInsights.campaignName} ~* ${`\\m${escCode}\\M|\\m${escName}\\M`} then ${b.name}`;
+        }),
+        sql` `,
+      )} else 'Khác' end`
+    : sql<string>`case
+        when ${metaAdInsights.campaignName} ~* 'bmw' then 'BMW'
+        when ${metaAdInsights.campaignName} ~* 'mazda' then 'Mazda'
+        when ${metaAdInsights.campaignName} ~* 'kia' then 'Kia'
+        when ${metaAdInsights.campaignName} ~* 'peugeot|\\mpeu\\M' then 'Peugeot'
+        else 'Khác'
+      end`;
+
   const groupExpr =
     input.groupBy === "fanpage"
       ? sql<string>`coalesce(${facebookPages.name}, ${metaAdInsights.pageId}, 'Không gắn fanpage')`
       : input.groupBy === "campaign"
         ? sql<string>`coalesce(${metaAdInsights.campaignName}, ${metaAdInsights.campaignId}, 'Không gắn chiến dịch')`
         : input.groupBy === "brand"
-          ? sql<string>`case
-              when ${metaAdInsights.campaignName} ~* 'bmw' then 'BMW'
-              when ${metaAdInsights.campaignName} ~* 'mazda' then 'Mazda'
-              when ${metaAdInsights.campaignName} ~* 'kia' then 'Kia'
-              when ${metaAdInsights.campaignName} ~* 'peugeot|\\mpeu\\M' then 'Peugeot'
-              else 'Khác'
-            end`
+          ? brandGroupExpr
           : null;
 
   const rankSql =

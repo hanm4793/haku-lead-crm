@@ -96,6 +96,9 @@ export interface StatsBreakdownRow {
   contacted: number;
   khqt: number;
   failed: number;
+  contactRate?: number;
+  khqtRate?: number;
+  failRate?: number;
 }
 
 export function fold(text: string) {
@@ -239,8 +242,11 @@ export function formatStatsReply(input: {
       lines.push("• Không có lead trong kỳ này.");
     } else {
       for (const row of input.breakdown) {
+        const contactRate = row.contactRate ?? (row.leads > 0 ? row.contacted / row.leads : 0);
+        const khqtRate = row.khqtRate ?? (row.contacted > 0 ? row.khqt / row.contacted : (row.leads > 0 ? row.khqt / row.leads : 0));
+        const failRate = row.failRate ?? (row.leads > 0 ? row.failed / row.leads : 0);
         lines.push(
-          `• ${row.key}: ${formatNumber(row.leads)} lead, đã liên hệ ${formatNumber(row.contacted)}, KHQT ${formatNumber(row.khqt)}, loại ${formatNumber(row.failed)}`,
+          `• ${row.key}: ${formatNumber(row.leads)} lead | LH: ${formatPercent(contactRate)} | KHQT: ${formatPercent(khqtRate)} | Loại: ${formatPercent(failRate)}`,
         );
       }
     }
@@ -449,6 +455,9 @@ export const MENTION_TYPES = [
   { id: "ad", label: "Quảng cáo" },
   { id: "lead", label: "Lead" },
   { id: "assignee", label: "Nhân viên" },
+  { id: "product", label: "Sản phẩm" },
+  { id: "brand", label: "Thương hiệu" },
+  { id: "location", label: "Địa điểm" },
 ] as const;
 
 export type MentionType = (typeof MENTION_TYPES)[number]["id"];
@@ -485,6 +494,9 @@ export function applyMentions(query: StatsQuery, mentions: ChatMention[]): Stats
   const campaigns = ids("campaign");
   const ads = ids("ad");
   const leads = ids("lead");
+  const products = mentions.filter((m) => m.type === "product").map((m) => m.label);
+  const brands = mentions.filter((m) => m.type === "brand").map((m) => m.id);
+  const locations = mentions.filter((m) => m.type === "location").map((m) => m.label);
   const assignee = mentions.find((mention) => mention.type === "assignee");
   return {
     ...query,
@@ -495,6 +507,12 @@ export function applyMentions(query: StatsQuery, mentions: ChatMention[]): Stats
     assigneeQuery: assignee?.label ?? query.assigneeQuery,
     pageQuery: pages.length ? null : query.pageQuery,
     campaignQuery: campaigns.length ? null : query.campaignQuery,
+    filters: {
+      ...query.filters,
+      products: products.length ? products : query.filters?.products,
+      brands: brands.length ? brands : query.filters?.brands,
+      locations: locations.length ? locations : query.filters?.locations,
+    },
   };
 }
 

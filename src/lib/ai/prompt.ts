@@ -3,12 +3,17 @@ import { CATEGORY_OPTIONS, FAIL_REASON_OPTIONS, SOURCE_OPTIONS } from "@/lib/con
 import { pivotDimensionLabels } from "@/lib/metrics";
 
 import { DEFAULT_AI_CATALOG, type AiCatalog } from "./catalog-context";
+import type { ExportSpec } from "./export-spec";
 
 /**
  * System prompt chỉ chứa MÔ TẢ SCHEMA — không chứa bất kỳ dòng dữ liệu khách
  * hàng nào. Nhờ vậy có thể dùng LLM free tier mà không đẩy PII ra ngoài.
  */
-export function buildSystemPrompt(now: Date = new Date(), catalog: AiCatalog = DEFAULT_AI_CATALOG) {
+export function buildSystemPrompt(
+  now: Date = new Date(),
+  catalog: AiCatalog = DEFAULT_AI_CATALOG,
+  context?: { lastSpec?: ExportSpec | null; lastStats?: unknown | null },
+) {
   const { labels } = catalog;
   const columns = LEAD_COLUMNS.map((c) => `- ${c.id}: ${columnHeader(c.id, labels)}`).join("\n");
   const categories = CATEGORY_OPTIONS.map((c) => `${c.value} (${c.hint})`).join(", ");
@@ -19,8 +24,27 @@ export function buildSystemPrompt(now: Date = new Date(), catalog: AiCatalog = D
     .map(([k, v]) => `${k} (${v})`)
     .join(", ");
   const productExamples = catalog.products.slice(0, 3).map((p) => `"${p}"`).join(", ");
+  const attrColumns = catalog.attrFields?.length
+    ? "\nTRƯỜNG MỞ RỘNG CỦA DỰ ÁN (dùng id dạng attr:<key> khi xuất cột):\n" +
+      catalog.attrFields
+        .map(
+          (f) =>
+            `- attr:${f.key}: ${f.label} (kiểu ${f.fieldType}${f.options.length ? `, lựa chọn: ${f.options.join(", ")}` : ""})`,
+        )
+        .join("\n")
+    : "";
+
+  const contextPrompt = context?.lastSpec
+    ? `\nNGỮ CẢNH CẤU HÌNH EXPORT GẦN NHẤT:
+- Cột: ${context.lastSpec.columns.join(", ")}
+- Bộ lọc: ${JSON.stringify(context.lastSpec.filters)}
+- Tách sheet: ${context.lastSpec.splitSheetsBy ?? "Không"}
+Nếu người dùng muốn bổ sung, bỏ bớt cột hoặc sửa bộ lọc, hãy kế thừa cấu hình này và chỉ chỉnh sửa phần được yêu cầu.\n`
+    : "";
 
   return `Bạn là trợ lý AI của hệ thống SEMTOP Marketing CRM. Bạn giúp nhân viên kinh doanh và quản lý lấy đúng dữ liệu họ cần.
+${contextPrompt}
+HÔM NAY là ${new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10)} (giờ Việt Nam).
 
 HÔM NAY là ${new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10)} (giờ Việt Nam).
 
@@ -42,6 +66,7 @@ CÂU HỎI SỐ LIỆU
 
 CÁC CỘT CÓ THỂ XUẤT
 ${columns}
+${attrColumns}
 
 GIÁ TRỊ HỢP LỆ
 - categories: ${categories}
@@ -65,6 +90,7 @@ QUY TẮC
 8. summary phải là MỘT câu tiếng Việt mô tả đúng những gì sẽ được xuất, để người dùng kiểm tra trước khi tải.
 9. CHỈ điền một trường filter khi người dùng thực sự giới hạn theo trường đó. Không giới hạn thì BỎ HẲN trường đó ra khỏi filters. Tuyệt đối không liệt kê toàn bộ giá trị của một danh sách để thể hiện "lấy tất cả" — làm vậy là sai.
 10. Người dùng nhắc tên ${labels.product.toLowerCase()} (ví dụ ${productExamples || "một sản phẩm trong danh sách"}) → điền products với đúng tên trong danh sách hợp lệ. Nhắc ${labels.brand.toLowerCase()} (${brands}) → điền brands bằng mã.
+11. Khi người dùng yêu cầu xuất trường mở rộng (ví dụ theo nhãn hoặc key trong danh sách TRƯỜNG MỞ RỘNG), hãy thêm cột tương ứng dạng "attr:<key>" vào mảng columns.
 
 CHỌN ACTION
 - STATS: câu hỏi về số liệu, tỷ lệ, phân bổ. Bắt buộc kèm stats. Không ghi số trong reply.

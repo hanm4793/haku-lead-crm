@@ -71,25 +71,9 @@ export function ProjectsPanel({
   const [newSlug, setNewSlug] = React.useState("");
   const [newName, setNewName] = React.useState("");
 
-  const [editName, setEditName] = React.useState("");
-  const [editBrand, setEditBrand] = React.useState("");
-  const [editProduct, setEditProduct] = React.useState("");
-  const [editLocation, setEditLocation] = React.useState("");
-
   const [adPlatform, setAdPlatform] = React.useState<AdPlatform>("google");
   const [adAccountId, setAdAccountId] = React.useState("");
   const [adName, setAdName] = React.useState("");
-
-  const selected = projects.find((p) => p.id === selectedId) ?? projects[0];
-
-  React.useEffect(() => {
-    if (selected) {
-      setEditName(selected.name);
-      setEditBrand(selected.labels.brand);
-      setEditProduct(selected.labels.product);
-      setEditLocation(selected.labels.location);
-    }
-  }, [selected]);
 
   const run = async (fn: () => Promise<{ ok: boolean; error?: string }>, done: string) => {
     setPending(true);
@@ -306,13 +290,4 @@ function Section({ title, count, children }: { title: string; count: number; chi
 
 function Row({ label }: { label: string }) {
   return <div className={cn("rounded border border-border/60 px-2 py-1.5 text-[13px]")}>{label}</div>;
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-[11px] text-muted-foreground">{label}</Label>
-      {children}
-    </div>
-  );
 }

@@ -100,9 +100,11 @@ export function UsersAdmin({
   const [notice, setNotice] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
 
-  React.useEffect(() => {
+  const [prevInitial, setPrevInitial] = React.useState(initialUsers);
+  if (prevInitial !== initialUsers) {
+    setPrevInitial(initialUsers);
     setUsers(initialUsers);
-  }, [initialUsers]);
+  }
 
   const visible = users.filter((user) => {
     if (actorRole === "SUPER_ADMIN" && user.role !== tab) return false;

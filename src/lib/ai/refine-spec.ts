@@ -91,5 +91,15 @@ export function refineSpec(spec: ExportSpec, userText: string, catalog: AiCatalo
 
   if (!filters.overdueOnly && /qua han/.test(q)) filters.overdueOnly = true;
 
-  return { ...spec, filters };
+  const columns = [...spec.columns];
+  if (catalog.attrFields?.length) {
+    for (const attr of catalog.attrFields) {
+      const attrKeyCol = `attr:${attr.key}`;
+      if (!columns.includes(attrKeyCol) && (q.includes(normalize(attr.label)) || q.includes(normalize(attr.key)))) {
+        columns.push(attrKeyCol);
+      }
+    }
+  }
+
+  return { ...spec, filters, columns };
 }
