@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { BarChart3, Loader2, Table2, TriangleAlert } from "lucide-react";
+import { BarChart3, Loader2, Table2 } from "lucide-react";
 
 import { updateLeadAction } from "@/app/leads/actions";
 import { DateRangePicker, resolvePreset, type DateRange, type PresetId } from "@/components/common/date-range-picker";
 import { LeadDetailDialog } from "@/components/leads/lead-detail-dialog";
 import { LeadFilterPopover, type FanpageFilterOption } from "@/components/leads/filter-popover";
 import { useNow } from "@/components/providers/now-provider";
+import { useToast } from "@/components/providers/toast-provider";
 import { OverviewTab } from "@/components/reports/overview-tab";
 import { PivotTab } from "@/components/reports/pivot-tab";
 import { ReportKpiCards } from "@/components/reports/report-kpi-cards";
@@ -39,6 +40,7 @@ export function ReportsPage({
   attrFields?: AttrFieldRow[];
 }) {
   const now = useNow();
+  const toast = useToast();
 
   const [preset, setPreset] = React.useState<PresetId>("THIS_MONTH");
   const [range, setRange] = React.useState<DateRange>(() => resolvePreset("THIS_MONTH", now));
@@ -51,7 +53,6 @@ export function ReportsPage({
   const [splitBy, setSplitBy] = React.useState<PivotDimension | "NONE">("NONE");
   const [summary, setSummary] = React.useState(initialSummary);
   const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
   const [selectedLead, setSelectedLead] = React.useState<Lead | null>(null);
   const [callList, setCallList] = React.useState(initialSummary.overview.callList);
 
@@ -78,7 +79,6 @@ export function ReportsPage({
 
     const controller = new AbortController();
     setLoading(true);
-    setError(null);
 
     fetch("/api/reports/summary", {
       method: "POST",
@@ -96,14 +96,14 @@ export function ReportsPage({
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "Lỗi không xác định");
+        toast.error("Không tải được báo cáo", err instanceof Error ? err.message : "Lỗi không xác định");
       })
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [requestKey]);
+  }, [requestKey, toast]);
 
-  const save = async (lead: Lead, patch: Partial<Lead>, logs: LogEntry[]) => {
+  const save = async (lead: Lead, patch: Partial<Lead>, logs: LogEntry[]): Promise<boolean> => {
     const previous = callList;
     setCallList((rows) => rows.map((row) => (row.id === lead.id ? { ...row, ...patch } : row)));
     setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...patch } : current));
@@ -112,13 +112,15 @@ export function ReportsPage({
     if (!result.ok) {
       setCallList(previous);
       setSelectedLead(lead);
-      setError(result.error);
-      return;
+      toast.error("Không lưu được thay đổi", result.error);
+      return false;
     }
 
     setCallList((rows) => rows.map((row) => (row.id === lead.id ? result.lead : row)));
     setSelectedLead(result.lead);
     reloadLogs();
+    toast.success("Đã lưu thay đổi");
+    return true;
   };
 
   return (
@@ -156,13 +158,6 @@ export function ReportsPage({
           />
         </div>
       </div>
-
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] text-rose-700">
-          <TriangleAlert className="size-4 shrink-0" />
-          {error}
-        </div>
-      )}
 
       <ReportKpiCards current={summary.kpis} previous={summary.previousKpis} />
 
@@ -207,7 +202,7 @@ export function ReportsPage({
         assignees={assignees}
         catalog={catalog}
         attrFields={attrFields}
-        onSave={(patch, entries) => liveSelected && void save(liveSelected, patch, entries)}
+        onSave={(patch, entries) => (liveSelected ? save(liveSelected, patch, entries) : false)}
       />
     </div>
   );

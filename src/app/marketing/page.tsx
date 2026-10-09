@@ -1,7 +1,7 @@
 ﻿import { redirect } from "next/navigation";
 
 import { MarketingPage } from "@/components/marketing/marketing-page";
-import { canViewMarketing, isMarketingRowVisible, isPageVisible } from "@/lib/auth/roles";
+import { canManageSettings, canViewMarketing, isMarketingRowVisible, isPageVisible } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { hasSyncedInsights, latestInsightSync, listAdInsights, listCampaignInsights } from "@/lib/db/insights-repo";
@@ -60,6 +60,7 @@ export default async function Page() {
       adAccountId={config?.adAccountId ?? null}
       syncedAt={latestSync?.finishedAt ?? null}
       today={new Date().toISOString().slice(0, 10)}
+      canSync={canManageSettings(viewer.role)}
     />
   );
 }

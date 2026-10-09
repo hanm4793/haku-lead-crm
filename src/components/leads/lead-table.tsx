@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown, Copy, MessageSquare } from "lucide-
 import { CategoryCell, ContactStatusCell } from "@/components/leads/inline-cells";
 import { COLUMN_BY_ID, displayValue, LEAD_COLUMNS, type LeadColumn } from "@/components/leads/columns";
 import { useNow } from "@/components/providers/now-provider";
+import { useToast } from "@/components/providers/toast-provider";
 import { isOverdue } from "@/lib/filters";
 import type { ContactStatus, Lead, LeadCategory } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -195,6 +196,7 @@ function Dash() {
 }
 
 function PhoneCell({ phone }: { phone: string }) {
+  const toast = useToast();
   const [copied, setCopied] = React.useState(false);
 
   const copy = async (e: React.MouseEvent) => {
@@ -203,8 +205,9 @@ function PhoneCell({ phone }: { phone: string }) {
       await navigator.clipboard.writeText(phone);
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
+      toast.info("Đã sao chép số điện thoại", phone);
     } catch {
-      /* clipboard bị chặn — bỏ qua */
+      toast.warning("Không sao chép được", "Trình duyệt đang chặn clipboard.");
     }
   };
 

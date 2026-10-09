@@ -15,6 +15,7 @@ import { PIVOT_DIMENSIONS, type PivotDimension } from "@/lib/metrics";
 import type { FailReason, LeadCategory, LeadSource } from "@/lib/types";
 import { formatDate, formatNumber } from "@/lib/utils";
 import { useLeadStore } from "@/store/lead-store";
+import { useToast } from "@/components/providers/toast-provider";
 
 function describeFilters(spec: ExportSpec): string[] {
   const f = spec.filters ?? {};
@@ -38,18 +39,17 @@ function describeFilters(spec: ExportSpec): string[] {
 }
 
 export function ExportPreviewCard({ spec, preview }: { spec: ExportSpec; preview: ExportPreview }) {
+  const toast = useToast();
   const router = useRouter();
   const replaceFilters = useLeadStore((s) => s.replaceFilters);
   const [busy, setBusy] = React.useState<"xlsx" | "csv" | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
 
   const run = async (format: "xlsx" | "csv") => {
     setBusy(format);
-    setError(null);
     try {
       await downloadExport({ ...spec, format });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Không tạo được file");
+      toast.error(e instanceof Error ? e.message : "Không tạo được file");
     } finally {
       setBusy(null);
     }
@@ -110,8 +110,6 @@ export function ExportPreviewCard({ spec, preview }: { spec: ExportSpec; preview
           </div>
         </div>
       )}
-
-      {error && <p className="mt-2 text-[12px] text-rose-600">{error}</p>}
 
       <div className="mt-3 flex flex-wrap gap-2">
         <Button size="sm" className="gap-1.5" onClick={() => run("xlsx")} disabled={busy !== null || preview.total === 0}>

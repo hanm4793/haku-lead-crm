@@ -42,6 +42,7 @@ import {
   type Efficiency,
 } from "@/lib/marketing/insights-view";
 import { cn, formatCurrency, formatDate, formatDateTime, formatNumber, formatPercent } from "@/lib/utils";
+import { useToast } from "@/components/providers/toast-provider";
 
 const AXIS_STYLE = { fontSize: 11, fill: "#94a3b8" } as const;
 const GRID_COLOR = "#e2e8f0";
@@ -89,6 +90,7 @@ export function MarketingPage({
   adAccountId,
   syncedAt,
   today,
+  canSync = false,
 }: {
   rows: InsightRow[];
   adRows: AdInsightRow[];
@@ -98,11 +100,12 @@ export function MarketingPage({
   adAccountId: string | null;
   syncedAt: string | null;
   today: string;
+  /** Chỉ super admin được chạy đồng bộ Insights. */
+  canSync?: boolean;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [pending, setPending] = React.useState(false);
-  const [feedback, setFeedback] = React.useState<string | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
   const [preset, setPreset] = React.useState<PresetId>("ALL");
   const [range, setRange] = React.useState<DateRange>({ from: null, to: null });
   const [campaignIds, setCampaignIds] = React.useState<string[]>([]);
@@ -247,15 +250,14 @@ export function MarketingPage({
 
   async function sync() {
     setPending(true);
-    setFeedback(null);
-    setError(null);
     try {
       const outcome = await syncFacebookInsightsAction();
       if (!outcome.ok) {
-        setError(outcome.error);
+        toast.error("Đồng bộ Insights thất bại", outcome.error);
         return;
       }
-      setFeedback(outcome.result.message);
+      if (outcome.result.errors > 0) toast.warning("Đồng bộ Insights xong nhưng có lỗi", outcome.result.message);
+      else toast.success("Đã đồng bộ Insights", outcome.result.message);
       router.refresh();
     } finally {
       setPending(false);
@@ -273,33 +275,24 @@ export function MarketingPage({
             {syncedAt ? ` · đồng bộ ${formatDateTime(syncedAt)}` : ""}
           </p>
         </div>
-        <Button type="button" disabled={pending || !configured} onClick={() => void sync()}>
-          <RefreshCw className={pending ? "animate-spin" : undefined} />
-          {pending ? "Đang đồng bộ…" : "Đồng bộ Insights"}
-        </Button>
+        {canSync ? (
+          <Button type="button" disabled={pending || !configured} onClick={() => void sync()}>
+            <RefreshCw className={pending ? "animate-spin" : undefined} />
+            {pending ? "Đang đồng bộ…" : "Đồng bộ Insights"}
+          </Button>
+        ) : null}
       </div>
 
-      {!configured ? (
+      {canSync && !configured ? (
         <p className="text-sm text-amber-800" role="alert">
           Thiếu FACEBOOK_AD_ACCOUNT_ID — cấu hình biến môi trường để đồng bộ Insights.
         </p>
       ) : null}
       {span.to && span.to < today ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900" role="status">
-          Số liệu đã lưu đến {formatDate(span.to)}. Các ngày sau đó chưa có — bấm Đồng bộ Insights để kéo nốt.
+          Số liệu đã lưu đến {formatDate(span.to)}. Các ngày sau đó chưa có{canSync ? " — bấm Đồng bộ Insights để kéo nốt" : ", liên hệ quản trị viên để đồng bộ"}.
         </p>
       ) : null}
-      {error ? (
-        <p className="text-sm text-rose-700" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {feedback ? (
-        <p className="text-sm text-emerald-800" role="status">
-          {feedback}
-        </p>
-      ) : null}
-
       <div className="flex flex-wrap items-center gap-2">
         <DateRangePicker preset={preset} range={range} onChange={applyRange} />
         <MultiSelect

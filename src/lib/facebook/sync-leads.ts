@@ -12,6 +12,7 @@ import { getDefaultProject } from "@/lib/db/project-repo";
 import { FacebookGraphError, graphGetAllData } from "./graph-client";
 import { mapFacebookLeadFields, type FacebookFieldDatum } from "./map-lead";
 import { resolvePageAccessTokens } from "./page-tokens";
+import { syncScopeTag } from "./sync-scope";
 
 export interface SyncLeadsResult {
   imported: number;
@@ -101,16 +102,19 @@ async function refreshFacebookPageName(pageId: string, name: string | null) {
     .where(eq(facebookPages.facebookPageId, pageId));
 }
 
-export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
+export async function syncFacebookLeads(options?: { projectId?: string }): Promise<SyncLeadsResult> {
+  const tag = syncScopeTag(options?.projectId);
   const config = getFacebookConfig();
   if (!config) {
     throw new Error("Facebook Graph is not configured (thiếu FACEBOOK_ACCESS_TOKEN).");
   }
 
-  const pageIds = await resolveActiveFacebookPageIds();
+  const pageIds = await resolveActiveFacebookPageIds(options?.projectId);
   if (pageIds.length === 0) {
     throw new Error(
-      "Chưa có Fanpage nào để đồng bộ. Thêm Page ID trong Cài đặt hoặc FACEBOOK_PAGE_IDS.",
+      options?.projectId
+        ? "Dự án chưa có Fanpage nào đang bật để đồng bộ."
+        : "Chưa có Fanpage nào để đồng bộ. Thêm Page ID trong Cài đặt hoặc FACEBOOK_PAGE_IDS.",
     );
   }
 
@@ -120,7 +124,7 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
     .values({
       kind: "leads",
       status: "error",
-      message: "Facebook lead sync started.",
+      message: `${tag}Facebook lead sync started.`,
     })
     .returning({ id: metaSyncRuns.id });
 
@@ -258,7 +262,7 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
         status: counts.errors === 0 || counts.imported + counts.updated > 0 ? "ok" : "error",
         finishedAt: new Date(),
         ...counts,
-        message,
+        message: `${tag}${message}`,
       })
       .where(eq(metaSyncRuns.id, run.id));
 
@@ -267,7 +271,7 @@ export async function syncFacebookLeads(): Promise<SyncLeadsResult> {
     const message = error instanceof Error ? error.message : "Facebook lead sync failed.";
     await db
       .update(metaSyncRuns)
-      .set({ status: "error", finishedAt: new Date(), ...counts, message })
+      .set({ status: "error", finishedAt: new Date(), ...counts, message: `${tag}${message}` })
       .where(eq(metaSyncRuns.id, run.id));
     throw error;
   }

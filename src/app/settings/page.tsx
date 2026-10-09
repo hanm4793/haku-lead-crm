@@ -1,26 +1,14 @@
 ﻿import Link from "next/link";
 import { redirect } from "next/navigation";
-import { desc, eq } from "drizzle-orm";
 
-import {
-  FacebookSyncPanel,
-  type LastSyncInfo,
-} from "@/components/settings/facebook-sync-panel";
+import { FacebookSyncPanel } from "@/components/settings/facebook-sync-panel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { estimateCostUsd, getModelId, getProvider, isAiConfigured, PROVIDERS } from "@/lib/ai/model";
 import { canManageSettings } from "@/lib/auth/roles";
 import { getScopedViewer, listUnlinkedUsers } from "@/lib/auth/viewer";
-import { ASSIGNEES, SOURCE_OPTIONS } from "@/lib/constants";
-import { getDb, isDatabaseConfigured } from "@/lib/db/client";
-import {
-  ensureFacebookPagesFromEnv,
-  listFacebookPages,
-} from "@/lib/db/facebook-pages-repo";
-import { getReferenceData } from "@/lib/db/leads-repo";
-import { resolveActiveProject, toProjectViewer } from "@/lib/db/project-repo";
-import { metaSyncRuns } from "@/lib/db/schema";
+import { isDatabaseConfigured } from "@/lib/db/client";
 import { getFacebookConfig, isFacebookTokenConfigured } from "@/lib/facebook/env";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -40,41 +28,6 @@ const AI_ROADMAP = [
 const TOKENS_PER_CALL = { input: 2000, output: 400 };
 const USD_TO_VND = 26000;
 
-async function loadLastFacebookSync(kind: "leads" | "insights"): Promise<{
-  lastSync: LastSyncInfo;
-  syncError: string | null;
-}> {
-  try {
-    const db = getDb();
-    const [row] = await db
-      .select({
-        startedAt: metaSyncRuns.startedAt,
-        status: metaSyncRuns.status,
-        message: metaSyncRuns.message,
-      })
-      .from(metaSyncRuns)
-      .where(eq(metaSyncRuns.kind, kind))
-      .orderBy(desc(metaSyncRuns.startedAt))
-      .limit(1);
-    if (!row) {
-      return { lastSync: null, syncError: null };
-    }
-    return {
-      lastSync: {
-        at: row.startedAt.toISOString(),
-        status: row.status,
-        message: row.message,
-      },
-      syncError: null,
-    };
-  } catch (error) {
-    console.error(`[settings] loadLastFacebookSync(${kind}) failed`, error);
-    const message =
-      error instanceof Error ? error.message : "Không đọc được lịch sử đồng bộ từ database.";
-    return { lastSync: null, syncError: message };
-  }
-}
-
 export default async function Page() {
   const provider = getProvider();
   const modelId = getModelId(provider);
@@ -85,29 +38,10 @@ export default async function Page() {
   const viewer = await getScopedViewer();
   if (viewer && !canManageSettings(viewer.role)) redirect("/leads");
 
-  const activeProject =
-    dbConfigured && viewer
-      ? await resolveActiveProject(toProjectViewer(viewer)).catch(() => null)
-      : null;
-  const reference = dbConfigured
-    ? await getReferenceData(activeProject?.id).catch(() => null)
-    : null;
   const unlinked = dbConfigured ? await listUnlinkedUsers().catch(() => []) : [];
   const facebookConfig = getFacebookConfig();
   const tokenConfigured = isFacebookTokenConfigured();
   const insightsConfigured = Boolean(facebookConfig?.adAccountId);
-  const facebookPages = dbConfigured
-    ? await (async () => {
-        await ensureFacebookPagesFromEnv(undefined, activeProject?.id).catch(() => 0);
-        return listFacebookPages(activeProject ? { projectId: activeProject.id } : undefined);
-      })()
-    : [];
-  const [leadSyncState, insightsSyncState] = dbConfigured
-    ? await Promise.all([loadLastFacebookSync("leads"), loadLastFacebookSync("insights")])
-    : [
-        { lastSync: null, syncError: null },
-        { lastSync: null, syncError: null },
-      ];
   const isAdmin = Boolean(viewer && canManageSettings(viewer.role));
 
   return (
@@ -215,19 +149,6 @@ export default async function Page() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Danh mục tham chiếu</CardTitle>
-            <CardDescription>
-              {reference ? "Đọc từ database (project đang chọn)" : "Nguồn dự phòng từ constants.ts"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-[13px]">
-            <Group title="Nguồn lead" items={SOURCE_OPTIONS.map((o) => o.label)} />
-            <Group title="Nhân sự phụ trách" items={reference?.assignees ?? [...ASSIGNEES]} />
-          </CardContent>
-        </Card>
-
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Tích hợp</CardTitle>
@@ -238,11 +159,6 @@ export default async function Page() {
               tokenConfigured={tokenConfigured}
               insightsConfigured={insightsConfigured}
               dbConfigured={dbConfigured}
-              pages={facebookPages}
-              lastLeadSync={leadSyncState.lastSync}
-              leadSyncError={leadSyncState.syncError}
-              lastInsightsSync={insightsSyncState.lastSync}
-              insightsSyncError={insightsSyncState.syncError}
               isAdmin={isAdmin}
             />
             <Row label="Google Ads" value="Chưa kết nối" />
@@ -263,17 +179,3 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Group({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div>
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
-      <div className="mt-1 flex flex-wrap gap-1.5">
-        {items.map((item) => (
-          <Badge key={item} variant="outline">
-            {item}
-          </Badge>
-        ))}
-      </div>
-    </div>
-  );
-}

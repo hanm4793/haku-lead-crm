@@ -13,10 +13,12 @@ export function Pagination({
   total,
   onPageChange,
   onPageSizeChange,
+  unit = "khách",
 }: {
   page: number;
   pageSize: number;
   total: number;
+  unit?: string;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
 }) {
@@ -30,7 +32,7 @@ export function Pagination({
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-4 py-2.5 text-[13px]">
       <div className="flex items-center gap-3">
         <span className="text-muted-foreground">
-          Hiển thị {formatNumber(first)}–{formatNumber(last)} / {formatNumber(total)} khách
+          Hiển thị {formatNumber(first)}–{formatNumber(last)} / {formatNumber(total)} {unit}
         </span>
         <select
           value={pageSize}

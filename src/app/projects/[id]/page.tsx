@@ -24,6 +24,8 @@ import {
   toProjectViewer,
 } from "@/lib/db/project-repo";
 import { DEFAULT_CATALOG_LABELS } from "@/lib/constants";
+import { isFacebookTokenConfigured } from "@/lib/facebook/env";
+import { loadLastProjectSync } from "@/lib/facebook/last-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +58,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const partners = await listPartnersInProject(id).catch(() => []);
   const partnersAvailable = canManageProject ? await listPartnersNotInProject(id).catch(() => []) : [];
   const adAccounts = await listAdAccounts(id).catch(() => []);
+  const lastLeadSync = canManageProject ? await loadLastProjectSync("leads", id).catch(() => null) : null;
   const canEditLabels = canManageProject || canManageCatalogsInProject(viewer, id);
   const canManageCatalog = canManageCatalogsInProject(viewer, id) || canManageAttrFieldsInProject(viewer, id);
 
@@ -88,6 +91,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         canEditLabels={canEditLabels}
         canManageCatalog={canManageCatalog}
         dbConfigured
+        facebook={{
+          tokenConfigured: isFacebookTokenConfigured(),
+          lastLeadSync,
+        }}
       />
     </div>
   );

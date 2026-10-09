@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Download, Loader2, Search, TriangleAlert } from "lucide-react";
+import { Download, Loader2, Search } from "lucide-react";
 
 import { ColumnVisibilityPopover } from "@/components/common/column-visibility";
 import { DateRangePicker, resolvePreset, type DateRange, type PresetId } from "@/components/common/date-range-picker";
@@ -12,6 +12,7 @@ import { LeadDetailDialog } from "@/components/leads/lead-detail-dialog";
 import { LeadFilterPopover, type FanpageFilterOption } from "@/components/leads/filter-popover";
 import { LeadKpiHeader } from "@/components/leads/kpi-header";
 import { useNow } from "@/components/providers/now-provider";
+import { useToast } from "@/components/providers/toast-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -59,6 +60,7 @@ export function LeadsPage({
   editor?: { role: UserRole; appUserId?: string | null };
 }) {
   const now = useNow();
+  const toast = useToast();
   const filters = useLeadStore((s) => s.filters);
   const setFilters = useLeadStore((s) => s.setFilters);
   const resetFilters = useLeadStore((s) => s.resetFilters);
@@ -71,7 +73,6 @@ export function LeadsPage({
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [exporting, setExporting] = React.useState(false);
   const [searchInput, setSearchInput] = React.useState(filters.search);
-  const [saveError, setSaveError] = React.useState<string | null>(null);
 
   // Gõ tìm kiếm nhanh nhưng chỉ truy vấn sau khi người dùng ngừng gõ.
   React.useEffect(() => {
@@ -94,6 +95,10 @@ export function LeadsPage({
   );
 
   const { data, loading, error, patchRows, refetch } = useLeadPage(initialData, initialRequest, request);
+
+  React.useEffect(() => {
+    if (error) toast.error("Không tải được danh sách lead", error);
+  }, [error, toast]);
 
   const selected = selectedId ? (data.rows.find((row) => row.id === selectedId) ?? null) : null;
   const leadEditable = (lead: Lead) => (editor ? canEditLead(editor, lead) : true);
@@ -118,19 +123,20 @@ export function LeadsPage({
    * Sửa ngay trên giao diện rồi mới gọi server. Nếu server từ chối thì hoàn tác
    * và hiện lỗi, còn thành công thì tải lại để KPI và số trên tab khớp lại.
    */
-  const save = async (lead: Lead, patch: Partial<Lead>, logs: LogEntry[]) => {
+  const save = async (lead: Lead, patch: Partial<Lead>, logs: LogEntry[]): Promise<boolean> => {
     const revert = patchRows([{ id: lead.id, patch }]);
-    setSaveError(null);
 
     const result = await updateLeadAction({ id: lead.id, patch, logs });
     if (!result.ok) {
       revert();
-      setSaveError(result.error);
-      return;
+      toast.error("Không lưu được thay đổi", result.error);
+      return false;
     }
 
+    toast.success("Đã lưu thay đổi");
     refetch();
     if (selectedId === lead.id) reloadLogs();
+    return true;
   };
 
   const handleStatusChange = (lead: Lead, next: ContactStatus) => {
@@ -150,18 +156,10 @@ export function LeadsPage({
     ]);
   };
 
-  const banner = error ?? saveError;
 
   return (
     <div className="flex h-[calc(100vh-33px)] flex-col gap-3 p-4">
       <LeadKpiHeader kpis={data.kpis} />
-
-      {banner && (
-        <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] text-rose-700">
-          <TriangleAlert className="size-4 shrink-0" />
-          {banner}
-        </div>
-      )}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xs">
         <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2.5">
@@ -260,7 +258,7 @@ export function LeadsPage({
         catalog={catalog}
         attrFields={attrFields}
         readOnly={selected ? !leadEditable(selected) : false}
-        onSave={(patch, entries) => selected && leadEditable(selected) && void save(selected, patch, entries)}
+        onSave={(patch, entries) => (selected && leadEditable(selected) ? save(selected, patch, entries) : false)}
       />
     </div>
   );

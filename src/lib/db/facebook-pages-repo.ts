@@ -231,3 +231,10 @@ export async function removeFacebookPage(id: string) {
     .returning({ id: facebookPages.id });
   if (deleted.length === 0) throw new Error("Không tìm thấy Fanpage.");
 }
+
+export async function updateFacebookPageName(facebookPageId: string, name: string) {
+  await getDb()
+    .update(facebookPages)
+    .set({ name, updatedAt: new Date() })
+    .where(eq(facebookPages.facebookPageId, facebookPageId));
+}

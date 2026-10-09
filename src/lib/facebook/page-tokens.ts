@@ -36,3 +36,14 @@ export async function resolvePageAccessTokens(
 
   return result;
 }
+
+export type AccessiblePage = { id: string; name: string | null };
+
+/** Fanpage mà tài khoản của FACEBOOK_ACCESS_TOKEN đang có quyền (qua `/me/accounts`). */
+export async function listAccessiblePages(): Promise<AccessiblePage[]> {
+  const accounts = await graphGetAllData<MeAccount>("/me/accounts", {
+    fields: "id,name",
+    limit: "100",
+  });
+  return accounts.map((account) => ({ id: account.id, name: account.name?.trim() || null }));
+}

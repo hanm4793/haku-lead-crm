@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, ne, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
 import { listAttrFields, type AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import { getDb } from "@/lib/db/client";
@@ -15,6 +15,7 @@ import type {
   ProjectInfo,
 } from "@/lib/types";
 import { UNASSIGNED_ASSIGNMENT_LABEL } from "@/lib/constants";
+import { normalizePhone, phoneKey, validatePhone } from "@/lib/leads/phone";
 import { ratio } from "@/lib/utils";
 
 /**
@@ -448,6 +449,10 @@ export async function getActivityLogs(leadId: string): Promise<ActivityLog[]> {
 }
 
 export interface LeadPatch {
+  /** Họ tên khách; chuỗi rỗng nghĩa là bỏ tên. */
+  name?: string | null;
+  /** SĐT khách; được chuẩn hóa và kiểm tra trùng trong cùng project. */
+  phone?: string;
   contactStatus?: Lead["contactStatus"];
   category?: Lead["category"];
   failReason?: Lead["failReason"];
@@ -533,6 +538,27 @@ export async function updateLead(
 
   const values: Record<string, unknown> = { updatedAt: new Date() };
 
+  if (patch.name !== undefined) {
+    const name = patch.name?.trim() ?? "";
+    if (name.length > 120) throw new Error("Họ tên tối đa 120 ký tự.");
+    values.name = name || null;
+  }
+  if (patch.phone !== undefined) {
+    const problem = validatePhone(patch.phone);
+    if (problem) throw new Error(problem);
+    const phone = normalizePhone(patch.phone);
+    if (phoneKey(phone) !== phoneKey(current.phone)) {
+      const projectId = await resolveLeadProjectId(id);
+      const duplicate = await findLeadByPhone(projectId, phone, id);
+      if (duplicate) {
+        throw new Error(
+          `Số điện thoại ${phone} đã có ở lead «${duplicate.name?.trim() || "Khách chưa có tên"}» (tạo ${duplicate.createdAt.toLocaleDateString("vi-VN")}).`,
+        );
+      }
+    }
+    values.phone = phone;
+  }
+
   if (patch.contactStatus !== undefined) values.contactStatus = patch.contactStatus;
   if (patch.category !== undefined) values.category = patch.category;
   if (patch.failReason !== undefined) values.failReason = patch.failReason;
@@ -587,6 +613,22 @@ export async function updateLead(
   });
 
   return getLeadById(id, viewer);
+}
+
+/** Lead khác cùng project có cùng SĐT (so sánh theo khóa đã bỏ ký tự thừa và đầu số 84). */
+async function findLeadByPhone(projectId: string | null, phone: string, excludeId: string) {
+  const key = phoneKey(phone);
+  const conditions = [
+    sql`regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^84', '0') = ${key}`,
+    ne(leads.id, excludeId),
+  ];
+  if (projectId) conditions.push(eq(leads.projectId, projectId));
+  const [row] = await getDb()
+    .select({ name: leads.name, createdAt: leads.createdAt })
+    .from(leads)
+    .where(and(...conditions))
+    .limit(1);
+  return row ?? null;
 }
 
 async function resolveLeadProjectId(leadId: string): Promise<string | null> {

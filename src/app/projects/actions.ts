@@ -7,6 +7,13 @@ import { z } from "zod";
 import { canManageCatalogsInProject, canManageProjects } from "@/lib/auth/roles";
 import { getViewer } from "@/lib/auth/viewer";
 import {
+  addFacebookPage,
+  listFacebookPages,
+  setFacebookPageActive,
+  updateFacebookPageName,
+} from "@/lib/db/facebook-pages-repo";
+import { listAccessiblePages } from "@/lib/facebook/page-tokens";
+import {
   assignFacebookPageToProject,
   assignPartnerAndStaffToProject,
   assertCanAccessProject,
@@ -156,6 +163,126 @@ export async function assignPageToProjectAction(input: {
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Gán fanpage thất bại." };
+  }
+}
+
+export type AccessiblePageOption = {
+  facebookPageId: string;
+  name: string | null;
+  /** available: chọn được · in_project: đã có ở dự án này · other_project: đang thuộc dự án khác. */
+  state: "available" | "in_project" | "other_project";
+  otherProjectName?: string;
+};
+
+/**
+ * Fanpage mà tài khoản Facebook của token đang có quyền. Quyền với fanpage cấp ở Meta,
+ * app chỉ cho chọn trong danh sách này thay vì nhập Page ID tự do.
+ */
+export async function listAccessiblePagesAction(
+  projectId: string,
+): Promise<{ ok: true; pages: AccessiblePageOption[] } | { ok: false; error: string }> {
+  const gate = await requireProjectAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
+  if (!z.string().uuid().safeParse(projectId).success) return { ok: false, error: "Project không hợp lệ." };
+  try {
+    const [accessible, known, allProjects] = await Promise.all([
+      listAccessiblePages(),
+      listFacebookPages(),
+      listProjects(),
+    ]);
+    const byPageId = new Map(known.map((p) => [p.facebookPageId, p]));
+    const projectName = new Map(allProjects.map((p) => [p.id, p.name]));
+    const pages = accessible.map<AccessiblePageOption>((page) => {
+      const owner = byPageId.get(page.id)?.projectId ?? null;
+      const state = !owner ? "available" : owner === projectId ? "in_project" : "other_project";
+      return {
+        facebookPageId: page.id,
+        name: page.name,
+        state,
+        otherProjectName: state === "other_project" && owner ? projectName.get(owner) : undefined,
+      };
+    });
+    return { ok: true, pages };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Không lấy được danh sách fanpage từ Facebook.",
+    };
+  }
+}
+
+/** Thêm các fanpage đã chọn vào dự án. Chỉ nhận page nằm trong danh sách token có quyền. */
+export async function addPagesToProjectAction(input: {
+  projectId: string;
+  facebookPageIds: string[];
+}): Promise<ProjectActionResult> {
+  const gate = await requireProjectAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
+  const projectId = z.string().uuid().safeParse(input.projectId);
+  if (!projectId.success) return { ok: false, error: "Project không hợp lệ." };
+  const wanted = [...new Set(input.facebookPageIds.map((id) => id.trim()).filter(Boolean))];
+  if (wanted.length === 0) return { ok: false, error: "Chưa chọn fanpage nào." };
+  try {
+    const accessible = new Map((await listAccessiblePages()).map((p) => [p.id, p]));
+    const known = new Map((await listFacebookPages()).map((p) => [p.facebookPageId, p]));
+    for (const id of wanted) {
+      if (!accessible.has(id)) {
+        return { ok: false, error: `Tài khoản Facebook chưa có quyền với fanpage ${id}.` };
+      }
+      const owner = known.get(id)?.projectId;
+      if (owner && owner !== projectId.data) {
+        return { ok: false, error: `Fanpage ${accessible.get(id)?.name ?? id} đang thuộc dự án khác. Gỡ khỏi dự án đó trước.` };
+      }
+    }
+    for (const id of wanted) {
+      await addFacebookPage(id, accessible.get(id)?.name ?? null, projectId.data);
+    }
+    revalidateAll();
+    revalidatePath(`/projects/${projectId.data}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Thêm fanpage thất bại." };
+  }
+}
+
+/** Kiểm tra lại các fanpage của dự án với Facebook: cập nhật tên, báo page token không còn quyền. */
+export async function checkProjectPagesAction(
+  projectId: string,
+): Promise<{ ok: true; checked: number; missing: string[] } | { ok: false; error: string }> {
+  const gate = await requireProjectAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
+  if (!z.string().uuid().safeParse(projectId).success) return { ok: false, error: "Project không hợp lệ." };
+  try {
+    const accessible = new Map((await listAccessiblePages()).map((p) => [p.id, p]));
+    const mine = await listFacebookPages({ projectId });
+    const missing: string[] = [];
+    for (const page of mine) {
+      const found = accessible.get(page.facebookPageId);
+      if (!found) {
+        missing.push(page.name?.trim() || page.facebookPageId);
+        continue;
+      }
+      if (found.name && found.name !== page.name) await updateFacebookPageName(page.facebookPageId, found.name);
+    }
+    revalidatePath(`/projects/${projectId}`);
+    return { ok: true, checked: mine.length, missing };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Kiểm tra fanpage thất bại." };
+  }
+}
+
+export async function setProjectPageActiveAction(input: {
+  id: string;
+  active: boolean;
+}): Promise<ProjectActionResult> {
+  const gate = await requireProjectAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
+  try {
+    await setFacebookPageActive(input.id, input.active);
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Cập nhật fanpage thất bại." };
   }
 }
 

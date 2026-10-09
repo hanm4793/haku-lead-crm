@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ProjectInfo } from "@/lib/types";
+import { useToast } from "@/components/providers/toast-provider";
 
 export function ProjectOverviewForm({
   project,
@@ -18,19 +19,16 @@ export function ProjectOverviewForm({
   canEditName: boolean;
   canEditLabels: boolean;
 }) {
+  const toast = useToast();
   const router = useRouter();
   const [name, setName] = React.useState(project.name);
   const [brand, setBrand] = React.useState(project.labels.brand);
   const [product, setProduct] = React.useState(project.labels.product);
   const [location, setLocation] = React.useState(project.labels.location);
   const [pending, setPending] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [feedback, setFeedback] = React.useState<string | null>(null);
 
   const save = async () => {
     setPending(true);
-    setError(null);
-    setFeedback(null);
     const result = await updateProjectAction({
       id: project.id,
       name: canEditName ? name : undefined,
@@ -40,10 +38,10 @@ export function ProjectOverviewForm({
     });
     setPending(false);
     if (!result.ok) {
-      setError(result.error);
+      toast.error(result.error);
       return;
     }
-    setFeedback("Đã lưu.");
+    toast.success("Đã lưu.");
     router.refresh();
   };
 
@@ -101,8 +99,6 @@ export function ProjectOverviewForm({
       <Button size="sm" disabled={pending} onClick={() => void save()}>
         Lưu thông tin
       </Button>
-      {feedback && <p className="text-[13px] text-emerald-700">{feedback}</p>}
-      {error && <p className="text-[13px] text-rose-600">{error}</p>}
     </div>
   );
 }

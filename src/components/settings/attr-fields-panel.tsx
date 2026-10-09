@@ -1,45 +1,48 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Search, Trash2, X } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import {
   createAttrFieldAction,
   deleteAttrFieldAction,
   setAttrFieldActiveAction,
+  updateAttrFieldAction,
   type AttrFieldActionResult,
 } from "@/app/settings/attr-field-actions";
+import { ConfirmDialog, FormDialog, FormField, RowActions } from "@/components/common/crud-dialogs";
+import { DataTable, ListPanel, type DataColumn } from "@/components/common/data-table";
+import {
+  ActiveSwitch,
+  FilterSelect,
+  ListToolbar,
+  matchesStatus,
+  STATUS_FILTER_OPTIONS,
+} from "@/components/common/list-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AttrFieldRow, AttrFieldType } from "@/lib/db/attr-fields-repo";
-import { cn } from "@/lib/utils";
+import { useToast } from "@/components/providers/toast-provider";
 
-const TYPE_LABELS: Record<AttrFieldType, { label: string; color: string }> = {
-  text: { label: "Văn bản", color: "bg-slate-100 text-slate-700 border-slate-200" },
-  number: { label: "Số", color: "bg-blue-50 text-blue-700 border-blue-200" },
-  select: { label: "Chọn một", color: "bg-purple-50 text-purple-700 border-purple-200" },
-  date: { label: "Ngày tháng", color: "bg-amber-50 text-amber-700 border-amber-200" },
+const TYPE_LABELS: Record<AttrFieldType, string> = {
+  text: "Văn bản",
+  number: "Số",
+  select: "Chọn một",
+  date: "Ngày tháng",
 };
+
+const TYPE_FILTER = [
+  { value: "all", label: "Mọi kiểu dữ liệu" },
+  ...(Object.entries(TYPE_LABELS) as [AttrFieldType, string][]).map(([value, label]) => ({ value, label })),
+];
+
+type FormState = { label: string; key: string; fieldType: AttrFieldType; optionsCsv: string; required: boolean };
+const EMPTY_FORM: FormState = { label: "", key: "", fieldType: "text", optionsCsv: "", required: false };
 
 export function AttrFieldsPanel({
   fields,
@@ -54,29 +57,27 @@ export function AttrFieldsPanel({
 }) {
   const scope = React.useMemo(() => (projectId ? { projectId } : {}), [projectId]);
   const router = useRouter();
+  const toast = useToast();
 
   const [query, setQuery] = React.useState("");
+  const [status, setStatus] = React.useState("all");
+  const [typeFilter, setTypeFilter] = React.useState("all");
   const [pending, setPending] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
 
-  const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
-  const [label, setLabel] = React.useState("");
-  const [key, setKey] = React.useState("");
-  const [fieldType, setFieldType] = React.useState<AttrFieldType>("text");
-  const [optionsCsv, setOptionsCsv] = React.useState("");
-  const [required, setRequired] = React.useState(false);
+  const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [editing, setEditing] = React.useState<AttrFieldRow | null>(null);
+  const [form, setForm] = React.useState<FormState>(EMPTY_FORM);
+  const [deleting, setDeleting] = React.useState<AttrFieldRow | null>(null);
 
-  const [deleteConfirm, setDeleteConfirm] = React.useState<AttrFieldRow | null>(null);
-
-  const run = async (action: () => Promise<AttrFieldActionResult>) => {
+  const run = async (action: () => Promise<AttrFieldActionResult>, success: string) => {
     setPending(true);
-    setError(null);
     try {
       const outcome = await action();
       if (!outcome.ok) {
-        setError(outcome.error);
+        toast.error("Không thực hiện được", outcome.error);
         return false;
       }
+      toast.success(success);
       router.refresh();
       return true;
     } finally {
@@ -84,297 +85,232 @@ export function AttrFieldsPanel({
     }
   };
 
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (field: AttrFieldRow) => {
+    setEditing(field);
+    setForm({
+      label: field.label,
+      key: field.key,
+      fieldType: field.fieldType,
+      optionsCsv: field.options.join(", "),
+      required: field.required,
+    });
+    setDialogOpen(true);
+  };
+
+  const submit = async () => {
+    const optionsCsv = form.fieldType === "select" ? form.optionsCsv : undefined;
+    const ok = await run(
+      () =>
+        editing
+          ? updateAttrFieldAction({
+              ...scope,
+              id: editing.id,
+              label: form.label,
+              fieldType: form.fieldType,
+              optionsCsv,
+              required: form.required,
+            })
+          : createAttrFieldAction({
+              ...scope,
+              label: form.label,
+              key: form.key.trim() || undefined,
+              fieldType: form.fieldType,
+              optionsCsv,
+              required: form.required,
+            }),
+      editing ? `Đã cập nhật field «${form.label.trim()}».` : `Đã thêm field «${form.label.trim()}».`,
+    );
+    if (ok) setDialogOpen(false);
+  };
+
+  const rows = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return fields.filter(
+      (f) =>
+        matchesStatus(status, f.active) &&
+        (typeFilter === "all" || f.fieldType === typeFilter) &&
+        (!q || f.label.toLowerCase().includes(q) || f.key.toLowerCase().includes(q)),
+    );
+  }, [fields, query, status, typeFilter]);
+
+  const columns: DataColumn<AttrFieldRow>[] = [
+    { id: "label", header: "Nhãn hiển thị", sortValue: (f) => f.label, cell: (f) => <span className="font-semibold text-slate-800">{f.label}</span> },
+    {
+      id: "key",
+      header: "Key",
+      sortValue: (f) => f.key,
+      cell: (f) => <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[12px] text-slate-600">{f.key}</span>,
+    },
+    {
+      id: "type",
+      header: "Kiểu dữ liệu",
+      sortValue: (f) => TYPE_LABELS[f.fieldType],
+      cell: (f) => (
+        <div>
+          <Badge variant="info">{TYPE_LABELS[f.fieldType]}</Badge>
+          {f.fieldType === "select" && f.options.length > 0 && (
+            <div className="mt-1 max-w-xs truncate text-[11px] text-muted-foreground" title={f.options.join(", ")}>
+              {f.options.join(", ")}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "required",
+      header: "Bắt buộc",
+      sortValue: (f) => f.required,
+      cell: (f) => (f.required ? <Badge variant="danger">Bắt buộc</Badge> : <span className="text-muted-foreground">Tùy chọn</span>),
+    },
+    {
+      id: "active",
+      header: "Trạng thái",
+      sortValue: (f) => f.active,
+      cell: (f) => (
+        <ActiveSwitch
+          checked={f.active}
+          disabled={!isAdmin || pending}
+          onChange={(active) => void run(() => setAttrFieldActiveAction({ ...scope, id: f.id, active }), "Đã cập nhật trạng thái.")}
+        />
+      ),
+    },
+    ...(isAdmin
+      ? [
+          {
+            id: "actions",
+            header: "",
+            align: "right" as const,
+            width: 90,
+            cell: (f: AttrFieldRow) => (
+              <RowActions editTitle="Sửa field phụ" deleteTitle="Xóa field phụ" onEdit={() => openEdit(f)} onDelete={() => setDeleting(f)} />
+            ),
+          },
+        ]
+      : []),
+  ];
+
   if (!dbConfigured) {
     return <p className="text-xs text-amber-800">Cần DATABASE_URL và project để quản lý field phụ.</p>;
   }
 
-  const filtered = fields.filter((f) => {
-    const q = query.trim().toLowerCase();
-    if (!q) return true;
-    return f.label.toLowerCase().includes(q) || f.key.toLowerCase().includes(q);
-  });
-
   return (
-    <div className="space-y-4">
-      {error && (
-        <div className="flex items-center justify-between rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          <span>{error}</span>
-          <button type="button" onClick={() => setError(null)}>
-            <X className="size-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative min-w-[220px] max-w-xs flex-1">
-          <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Tìm theo nhãn hoặc key…"
-            className="h-8.5 pl-8 text-[12.5px]"
+    <div className="space-y-3">
+      <ListPanel
+        toolbar={
+          <ListToolbar
+            search={{ value: query, onChange: setQuery, placeholder: "Tìm nhãn / key" }}
+            filters={
+              <>
+                <FilterSelect value={status} onChange={setStatus} options={STATUS_FILTER_OPTIONS} />
+                <FilterSelect value={typeFilter} onChange={setTypeFilter} options={TYPE_FILTER} />
+              </>
+            }
+            actions={
+              isAdmin && (
+                <Button size="sm" className="gap-1.5" onClick={openCreate}>
+                  <Plus className="size-3.5" />
+                  Thêm field phụ
+                </Button>
+              )
+            }
           />
-        </div>
-
-        {isAdmin && (
-          <Button
-            size="sm"
-            onClick={() => {
-              setLabel("");
-              setKey("");
-              setFieldType("text");
-              setOptionsCsv("");
-              setRequired(false);
-              setCreateDialogOpen(true);
-            }}
-            className="gap-1.5 shadow-xs"
-          >
-            <Plus className="size-3.5" />
-            <span>Thêm field phụ</span>
-          </Button>
-        )}
-      </div>
-
-      {/* Data Table */}
-      <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-[13px]">
-            <thead className="border-b border-border/80 bg-slate-50/80 text-[11.5px] uppercase tracking-wider text-slate-500 font-semibold">
-              <tr>
-                <th className="py-2.5 pl-4 pr-3 w-14">#</th>
-                <th className="px-3 py-2.5">Nhãn hiển thị</th>
-                <th className="px-3 py-2.5">Mã thuộc tính (Key)</th>
-                <th className="px-3 py-2.5">Kiểu dữ liệu</th>
-                <th className="px-3 py-2.5">Bắt buộc</th>
-                <th className="px-3 py-2.5">Trạng thái</th>
-                {isAdmin && <th className="py-2.5 pl-3 pr-4 text-right">Thao tác</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-8 text-center text-muted-foreground text-[12.5px]">
-                    Không có field phụ nào phù hợp.
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((field, idx) => {
-                  const typeMeta = TYPE_LABELS[field.fieldType];
-                  return (
-                    <tr key={field.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 pl-4 pr-3 text-muted-foreground text-[12px] font-mono">
-                        {idx + 1}
-                      </td>
-                      <td className="px-3 py-3 font-semibold text-slate-900">{field.label}</td>
-                      <td className="px-3 py-3 font-mono text-[12px] text-slate-600">
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5">{field.key}</span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <span
-                          className={cn(
-                            "inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium",
-                            typeMeta.color,
-                          )}
-                        >
-                          {typeMeta.label}
-                        </span>
-                        {field.fieldType === "select" && field.options.length > 0 && (
-                          <div className="mt-1 text-[11px] text-muted-foreground truncate max-w-xs">
-                            Lựa chọn: {field.options.join(", ")}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-3">
-                        {field.required ? (
-                          <Badge variant="danger" className="text-[10.5px]">
-                            Bắt buộc
-                          </Badge>
-                        ) : (
-                          <span className="text-[12px] text-muted-foreground">Tùy chọn</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={field.active}
-                            disabled={!isAdmin || pending}
-                            onCheckedChange={(active) =>
-                              run(() => setAttrFieldActiveAction({ ...scope, id: field.id, active }))
-                            }
-                          />
-                          <span
-                            className={cn(
-                              "text-[11.5px] font-medium",
-                              field.active ? "text-emerald-700" : "text-muted-foreground",
-                            )}
-                          >
-                            {field.active ? "Đang bật" : "Đang tắt"}
-                          </span>
-                        </div>
-                      </td>
-                      {isAdmin && (
-                        <td className="py-3 pl-3 pr-4 text-right">
-                          <Button
-                            variant="ghost"
-                            size="iconSm"
-                            title="Xóa field phụ"
-                            onClick={() => setDeleteConfirm(field)}
-                          >
-                            <Trash2 className="size-3.5 text-slate-400 hover:text-rose-600" />
-                          </Button>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Dialog Thêm Field Phụ */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-[440px]">
-          <DialogHeader>
-            <DialogTitle>Thêm field phụ mới</DialogTitle>
-            <DialogDescription>
-              Tạo trường thông tin tùy chỉnh cho các khách hàng của dự án này.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run(() =>
-                createAttrFieldAction({
-                  ...scope,
-                  label,
-                  key: key.trim() || undefined,
-                  fieldType,
-                  optionsCsv: fieldType === "select" ? optionsCsv : undefined,
-                  required,
-                }),
-              ).then((ok) => {
-                if (ok) setCreateDialogOpen(false);
-              });
-            }}
-            className="space-y-3.5 py-2"
-          >
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">
-                Nhãn hiển thị <span className="text-rose-600">*</span>
-              </Label>
-              <Input
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                placeholder="VD: Số khung, Ngân sách, Diện tích..."
-                required
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">Mã thuộc tính (Key)</Label>
-              <Input
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder="VD: so_khung, ngan_sach (tự sinh nếu để trống)"
-                className="font-mono text-[13px]"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">Kiểu dữ liệu</Label>
-              <Select value={fieldType} onValueChange={(v) => setFieldType(v as AttrFieldType)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="text">Văn bản (Text)</SelectItem>
-                  <SelectItem value="number">Số (Number)</SelectItem>
-                  <SelectItem value="select">Danh sách chọn một (Select)</SelectItem>
-                  <SelectItem value="date">Ngày tháng (Date)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {fieldType === "select" && (
-              <div className="space-y-1.5">
-                <Label className="text-[13px]">
-                  Các lựa chọn (phân cách bằng dấu phẩy) <span className="text-rose-600">*</span>
-                </Label>
-                <Input
-                  value={optionsCsv}
-                  onChange={(e) => setOptionsCsv(e.target.value)}
-                  placeholder="VD: Dưới 1 tỷ, 1 - 2 tỷ, Trên 2 tỷ"
-                  required
-                />
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 pt-1">
-              <Checkbox
-                id="req"
-                checked={required}
-                onCheckedChange={(c) => setRequired(Boolean(c))}
-              />
-              <Label htmlFor="req" className="text-[13px] font-normal cursor-pointer">
-                Bắt buộc điền khi nhập hồ sơ lead
-              </Label>
-            </div>
-
-            <DialogFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>
-                Hủy
-              </Button>
-              <Button type="submit" disabled={pending || !label.trim()}>
-                Thêm field
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog Xác nhận Xóa */}
-      <Dialog
-        open={Boolean(deleteConfirm)}
-        onOpenChange={(open) => !open && setDeleteConfirm(null)}
+        }
       >
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle className="text-rose-600">Xác nhận xóa field phụ</DialogTitle>
-            <DialogDescription>
-              Bạn có chắc chắn muốn xóa trường <strong>«{deleteConfirm?.label}»</strong> không?
-            </DialogDescription>
-          </DialogHeader>
+        <DataTable
+          columns={columns}
+          rows={rows}
+          getRowKey={(f) => f.id}
+          onRowClick={isAdmin ? openEdit : undefined}
+          unit="field"
+          emptyMessage="Không có field phụ nào khớp bộ lọc hiện tại."
+        />
+      </ListPanel>
 
-          <p className="text-[12px] text-muted-foreground bg-slate-50 p-2.5 rounded-lg border border-border/80">
-            ⚠️ Xóa field phụ sẽ không hiển thị trường này trong form lead nữa. Nếu chỉ muốn tạm dừng,
-            hãy chọn <strong>Tắt</strong> thay vì xóa.
-          </p>
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={editing ? "Sửa field phụ" : "Thêm field phụ"}
+        description="Trường thông tin tùy chỉnh cho lead của dự án này."
+        submitLabel={editing ? "Lưu thay đổi" : "Thêm field"}
+        pending={pending}
+        disabled={!form.label.trim() || (form.fieldType === "select" && !form.optionsCsv.trim())}
+        onSubmit={() => void submit()}
+      >
+        <FormField label="Nhãn hiển thị" required>
+          <Input
+            value={form.label}
+            onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+            placeholder="VD: Số khung, Ngân sách, Diện tích…"
+            autoFocus
+          />
+        </FormField>
+        <FormField label="Key" hint={editing ? "Key không đổi được sau khi tạo." : "Tự sinh từ nhãn nếu để trống."}>
+          <Input
+            value={form.key}
+            onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
+            placeholder="VD: so_khung"
+            className="font-mono text-[13px]"
+            disabled={Boolean(editing)}
+          />
+        </FormField>
+        <FormField label="Kiểu dữ liệu">
+          <Select value={form.fieldType} onValueChange={(v) => setForm((f) => ({ ...f, fieldType: v as AttrFieldType }))}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.entries(TYPE_LABELS) as [AttrFieldType, string][]).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
+        {form.fieldType === "select" && (
+          <FormField label="Các lựa chọn" required hint="Phân cách bằng dấu phẩy.">
+            <Input
+              value={form.optionsCsv}
+              onChange={(e) => setForm((f) => ({ ...f, optionsCsv: e.target.value }))}
+              placeholder="VD: Dưới 1 tỷ, 1 - 2 tỷ, Trên 2 tỷ"
+            />
+          </FormField>
+        )}
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="attr-required"
+            checked={form.required}
+            onCheckedChange={(c) => setForm((f) => ({ ...f, required: Boolean(c) }))}
+          />
+          <Label htmlFor="attr-required" className="cursor-pointer text-[13px] font-normal">
+            Bắt buộc điền khi nhập hồ sơ lead
+          </Label>
+        </div>
+      </FormDialog>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDeleteConfirm(null)}>
-              Hủy
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={pending}
-              onClick={async () => {
-                if (!deleteConfirm) return;
-                const ok = await run(() =>
-                  deleteAttrFieldAction({ ...scope, id: deleteConfirm.id }),
-                );
-                if (ok) setDeleteConfirm(null);
-              }}
-            >
-              Xác nhận xóa
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title="Xác nhận xóa field phụ"
+        description={
+          <>
+            Bạn có chắc muốn xóa <strong>«{deleting?.label}»</strong>?
+          </>
+        }
+        note="Field bị xóa sẽ không còn hiện trong form lead. Nếu chỉ muốn tạm dừng, hãy chọn Tắt."
+        pending={pending}
+        onConfirm={async () => {
+          if (!deleting) return;
+          await run(() => deleteAttrFieldAction({ ...scope, id: deleting.id }), `Đã xóa field «${deleting.label}».`);
+          setDeleting(null);
+        }}
+      />
     </div>
   );
 }

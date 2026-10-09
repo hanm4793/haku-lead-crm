@@ -27,6 +27,8 @@ const ACTIVITY_KINDS = [
 ] as const;
 
 const patchSchema = z.object({
+  name: z.string().max(120, "Họ tên tối đa 120 ký tự.").nullable().optional(),
+  phone: z.string().max(30, "Số điện thoại quá dài.").optional(),
   contactStatus: z.enum(["CHUA_LIEN_HE", "DA_LIEN_HE"]).optional(),
   category: enumOf([...CATEGORY_OPTIONS.map((o) => o.value), "CHUA_PHAN_LOAI"]).optional(),
   failReason: enumOf(FAIL_REASON_OPTIONS.map((o) => o.value)).nullable().optional(),

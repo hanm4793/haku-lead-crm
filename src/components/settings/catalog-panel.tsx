@@ -1,17 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  Building2,
-  Edit2,
-  Filter,
-  Plus,
-  Search,
-  Sparkles,
-  Tag,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Plus, Tag } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -29,38 +19,25 @@ import {
   updateProductAction,
   type CatalogActionResult,
 } from "@/app/settings/actions";
-import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog, FormDialog, FormField, RowActions } from "@/components/common/crud-dialogs";
+import { DataTable, ListPanel, type DataColumn } from "@/components/common/data-table";
+import {
+  ActiveSwitch,
+  CountTabs,
+  FilterSelect,
+  ListToolbar,
+  matchesStatus,
+  STATUS_FILTER_OPTIONS,
+} from "@/components/common/list-toolbar";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { BrandRow, CatalogSnapshot, LocationRow, ProductWithBrand } from "@/lib/db/catalog-repo";
 import type { CatalogLabels } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { useToast } from "@/components/providers/toast-provider";
 
-interface CatalogPanelProps {
-  catalog: CatalogSnapshot;
-  labels: CatalogLabels;
-  isAdmin: boolean;
-  dbConfigured: boolean;
-  projectId?: string;
-}
+type Kind = "brands" | "products" | "locations";
+type Editing = { kind: Kind; item?: BrandRow | ProductWithBrand | LocationRow } | null;
 
 export function CatalogPanel({
   catalog,
@@ -68,56 +45,43 @@ export function CatalogPanel({
   isAdmin,
   dbConfigured,
   projectId,
-}: CatalogPanelProps) {
+}: {
+  catalog: CatalogSnapshot;
+  labels: CatalogLabels;
+  isAdmin: boolean;
+  dbConfigured: boolean;
+  projectId?: string;
+}) {
   const router = useRouter();
+  const toast = useToast();
   const scope = React.useMemo(() => (projectId ? { projectId } : {}), [projectId]);
 
-  const [activeTab, setActiveTab] = React.useState<"brands" | "products" | "locations">("brands");
-  const [searchQuery, setSearchQuery] = React.useState("");
-  const [statusFilter, setStatusFilter] = React.useState<"all" | "active" | "inactive">("all");
-  const [selectedBrandFilter, setSelectedBrandFilter] = React.useState<string>("all");
-
+  const [kind, setKind] = React.useState<Kind>("brands");
+  const [query, setQuery] = React.useState("");
+  const [status, setStatus] = React.useState("all");
+  const [brandFilter, setBrandFilter] = React.useState("all");
   const [pending, setPending] = React.useState(false);
-  const [actionError, setActionError] = React.useState<string | null>(null);
 
-  // Dialog State
-  const [brandDialog, setBrandDialog] = React.useState<{
-    open: boolean;
-    mode: "create" | "edit";
-    item?: BrandRow;
-  }>({ open: false, mode: "create" });
-  const [brandForm, setBrandForm] = React.useState({ name: "", code: "" });
+  const [editing, setEditing] = React.useState<Editing>(null);
+  const [form, setForm] = React.useState({ name: "", code: "", brandId: "" });
+  const [deleting, setDeleting] = React.useState<{ kind: Kind; id: string; name: string } | null>(null);
 
-  const [productDialog, setProductDialog] = React.useState<{
-    open: boolean;
-    mode: "create" | "edit";
-    item?: ProductWithBrand;
-  }>({ open: false, mode: "create" });
-  const [productForm, setProductForm] = React.useState({ name: "", brandId: "" });
+  const singular: Record<Kind, string> = {
+    brands: labels.brand,
+    products: labels.product,
+    locations: labels.location,
+  };
+  const activeBrands = catalog.brands.filter((b) => b.active);
 
-  const [locationDialog, setLocationDialog] = React.useState<{
-    open: boolean;
-    mode: "create" | "edit";
-    item?: LocationRow;
-  }>({ open: false, mode: "create" });
-  const [locationForm, setLocationForm] = React.useState({ name: "" });
-
-  const [deleteConfirm, setDeleteConfirm] = React.useState<{
-    open: boolean;
-    type: "brand" | "product" | "location";
-    id: string;
-    name: string;
-  } | null>(null);
-
-  const run = async (action: () => Promise<CatalogActionResult>) => {
+  const run = async (action: () => Promise<CatalogActionResult>, success: string) => {
     setPending(true);
-    setActionError(null);
     try {
       const outcome = await action();
       if (!outcome.ok) {
-        setActionError(outcome.error);
+        toast.error("Không thực hiện được", outcome.error);
         return false;
       }
+      toast.success(success);
       router.refresh();
       return true;
     } finally {
@@ -125,773 +89,268 @@ export function CatalogPanel({
     }
   };
 
+  const toggle = (action: () => Promise<CatalogActionResult>) => void run(action, "Đã cập nhật trạng thái.");
+
+  const changeKind = (next: Kind) => {
+    setKind(next);
+    setQuery("");
+    setStatus("all");
+    setBrandFilter("all");
+  };
+
+  const openCreate = () => {
+    setForm({ name: "", code: "", brandId: activeBrands[0]?.id ?? "" });
+    setEditing({ kind });
+  };
+
+  const openEdit = (target: Kind, item: BrandRow | ProductWithBrand | LocationRow) => {
+    setForm({
+      name: item.name,
+      code: "code" in item ? item.code : "",
+      brandId: "brandId" in item ? item.brandId : "",
+    });
+    setEditing({ kind: target, item });
+  };
+
+  const submit = async () => {
+    if (!editing) return;
+    const id = editing.item?.id;
+    const action = (): Promise<CatalogActionResult> => {
+      if (editing.kind === "brands") {
+        return id
+          ? updateBrandAction({ ...scope, id, name: form.name, code: form.code })
+          : createBrandAction({ ...scope, name: form.name, code: form.code });
+      }
+      if (editing.kind === "products") {
+        return id
+          ? updateProductAction({ ...scope, id, name: form.name, brandId: form.brandId })
+          : createProductAction({ ...scope, name: form.name, brandId: form.brandId });
+      }
+      return id
+        ? updateLocationAction({ ...scope, id, name: form.name })
+        : createLocationAction({ ...scope, name: form.name });
+    };
+    const label = singular[editing.kind].toLowerCase();
+    if (await run(action, id ? `Đã cập nhật ${label}.` : `Đã thêm ${label}.`)) setEditing(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    const { id } = deleting;
+    const action =
+      deleting.kind === "brands"
+        ? () => deleteBrandAction({ ...scope, id })
+        : deleting.kind === "products"
+          ? () => deleteProductAction({ ...scope, id })
+          : () => deleteLocationAction({ ...scope, id });
+    await run(action, `Đã xóa «${deleting.name}».`);
+    setDeleting(null);
+  };
+
+  const rows = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (kind === "brands") {
+      return catalog.brands.filter(
+        (b) => matchesStatus(status, b.active) && (!q || b.name.toLowerCase().includes(q) || b.code.toLowerCase().includes(q)),
+      );
+    }
+    if (kind === "products") {
+      return catalog.products.filter(
+        (p) =>
+          matchesStatus(status, p.active) &&
+          (brandFilter === "all" || p.brandId === brandFilter) &&
+          (!q || p.name.toLowerCase().includes(q) || p.brandName.toLowerCase().includes(q)),
+      );
+    }
+    return catalog.locations.filter((l) => matchesStatus(status, l.active) && (!q || l.name.toLowerCase().includes(q)));
+  }, [catalog, kind, query, status, brandFilter]);
+
+  const activeColumn = <T extends { id: string; active: boolean }>(
+    setActive: (input: { id: string; active: boolean }) => Promise<CatalogActionResult>,
+  ): DataColumn<T> => ({
+    id: "active",
+    header: "Trạng thái",
+    sortValue: (r) => r.active,
+    cell: (r) => (
+      <ActiveSwitch
+        checked={r.active}
+        disabled={!isAdmin || pending}
+        onChange={(active) => toggle(() => setActive({ ...scope, id: r.id, active } as never))}
+      />
+    ),
+  });
+
+  const actionColumn = <T extends BrandRow | ProductWithBrand | LocationRow>(target: Kind): DataColumn<T> => ({
+    id: "actions",
+    header: "",
+    align: "right",
+    width: 90,
+    cell: (r) => (
+      <RowActions
+        editTitle={`Sửa ${singular[target].toLowerCase()}`}
+        deleteTitle={`Xóa ${singular[target].toLowerCase()}`}
+        onEdit={() => openEdit(target, r)}
+        onDelete={() => setDeleting({ kind: target, id: r.id, name: r.name })}
+      />
+    ),
+  });
+
+  const brandColumns: DataColumn<BrandRow>[] = [
+    { id: "name", header: `Tên ${labels.brand}`, sortValue: (b) => b.name, cell: (b) => <span className="font-semibold text-slate-800">{b.name}</span> },
+    {
+      id: "code",
+      header: "Mã",
+      sortValue: (b) => b.code,
+      cell: (b) => <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[12px] font-semibold uppercase text-slate-600">{b.code}</span>,
+    },
+    activeColumn<BrandRow>(setBrandActiveAction),
+    ...(isAdmin ? [actionColumn<BrandRow>("brands")] : []),
+  ];
+
+  const productColumns: DataColumn<ProductWithBrand>[] = [
+    { id: "name", header: `Tên ${labels.product}`, sortValue: (p) => p.name, cell: (p) => <span className="font-semibold text-slate-800">{p.name}</span> },
+    {
+      id: "brand",
+      header: labels.brand,
+      sortValue: (p) => p.brandName,
+      cell: (p) => (
+        <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 ring-1 ring-purple-200">
+          <Tag className="size-3" />
+          {p.brandName}
+        </span>
+      ),
+    },
+    activeColumn<ProductWithBrand>(setProductActiveAction),
+    ...(isAdmin ? [actionColumn<ProductWithBrand>("products")] : []),
+  ];
+
+  const locationColumns: DataColumn<LocationRow>[] = [
+    { id: "name", header: `Tên ${labels.location}`, sortValue: (l) => l.name, cell: (l) => <span className="font-semibold text-slate-800">{l.name}</span> },
+    activeColumn<LocationRow>(setLocationActiveAction),
+    ...(isAdmin ? [actionColumn<LocationRow>("locations")] : []),
+  ];
+
   if (!dbConfigured) {
     return <p className="text-sm text-amber-800">Cần cấu hình DATABASE_URL để quản lý danh mục.</p>;
   }
 
-  const activeBrands = catalog.brands.filter((b) => b.active);
+  const lower = singular[kind].toLowerCase();
+  const table =
+    kind === "brands" ? (
+      <DataTable columns={brandColumns} rows={rows as BrandRow[]} getRowKey={(r) => r.id} unit={lower} defaultSort={{ columnId: "name", order: "asc" }} emptyMessage={`Không có ${lower} nào khớp bộ lọc hiện tại.`} />
+    ) : kind === "products" ? (
+      <DataTable columns={productColumns} rows={rows as ProductWithBrand[]} getRowKey={(r) => r.id} unit={lower} defaultSort={{ columnId: "name", order: "asc" }} emptyMessage={`Không có ${lower} nào khớp bộ lọc hiện tại.`} />
+    ) : (
+      <DataTable columns={locationColumns} rows={rows as LocationRow[]} getRowKey={(r) => r.id} unit={lower} defaultSort={{ columnId: "name", order: "asc" }} emptyMessage={`Không có ${lower} nào khớp bộ lọc hiện tại.`} />
+    );
 
-  // Filter dữ liệu
-  const filteredBrands = catalog.brands.filter((b) => {
-    const matchQuery =
-      !searchQuery ||
-      b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.code.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchStatus =
-      statusFilter === "all" ||
-      (statusFilter === "active" && b.active) ||
-      (statusFilter === "inactive" && !b.active);
-    return matchQuery && matchStatus;
-  });
-
-  const filteredProducts = catalog.products.filter((p) => {
-    const matchQuery =
-      !searchQuery ||
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.brandName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchStatus =
-      statusFilter === "all" ||
-      (statusFilter === "active" && p.active) ||
-      (statusFilter === "inactive" && !p.active);
-    const matchBrand = selectedBrandFilter === "all" || p.brandId === selectedBrandFilter;
-    return matchQuery && matchStatus && matchBrand;
-  });
-
-  const filteredLocations = catalog.locations.filter((l) => {
-    const matchQuery =
-      !searchQuery || l.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchStatus =
-      statusFilter === "all" ||
-      (statusFilter === "active" && l.active) ||
-      (statusFilter === "inactive" && !l.active);
-    return matchQuery && matchStatus;
-  });
+  const dialogKind = editing?.kind ?? kind;
+  const dialogLabel = singular[dialogKind].toLowerCase();
 
   return (
-    <div className="space-y-4">
-      {actionError && (
-        <div className="flex items-center justify-between rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          <span>{actionError}</span>
-          <button type="button" onClick={() => setActionError(null)}>
-            <X className="size-4" />
-          </button>
-        </div>
-      )}
-
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) => {
-          setActiveTab(v as typeof activeTab);
-          setSearchQuery("");
-          setStatusFilter("all");
-          setSelectedBrandFilter("all");
-        }}
-        className="space-y-4"
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/80 pb-3">
-          <TabsList className="bg-slate-100 p-1">
-            <TabsTrigger value="brands" className="gap-2 text-[13px]">
-              <Tag className="size-3.5" />
-              <span>{labels.brand}</span>
-              <Badge variant="muted" className="ml-1 px-1.5 py-0 text-[10px]">
-                {catalog.brands.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="products" className="gap-2 text-[13px]">
-              <Sparkles className="size-3.5" />
-              <span>{labels.product}</span>
-              <Badge variant="muted" className="ml-1 px-1.5 py-0 text-[10px]">
-                {catalog.products.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="locations" className="gap-2 text-[13px]">
-              <Building2 className="size-3.5" />
-              <span>{labels.location}</span>
-              <Badge variant="muted" className="ml-1 px-1.5 py-0 text-[10px]">
-                {catalog.locations.length}
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
-
-          {isAdmin && (
-            <div>
-              {activeTab === "brands" && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setBrandForm({ name: "", code: "" });
-                    setBrandDialog({ open: true, mode: "create" });
-                  }}
-                  className="gap-1.5 shadow-xs"
-                >
-                  <Plus className="size-3.5" />
-                  <span>Thêm {labels.brand.toLowerCase()}</span>
-                </Button>
-              )}
-              {activeTab === "products" && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setProductForm({ name: "", brandId: activeBrands[0]?.id ?? "" });
-                    setProductDialog({ open: true, mode: "create" });
-                  }}
-                  disabled={activeBrands.length === 0}
-                  className="gap-1.5 shadow-xs"
-                >
-                  <Plus className="size-3.5" />
-                  <span>Thêm {labels.product.toLowerCase()}</span>
-                </Button>
-              )}
-              {activeTab === "locations" && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setLocationForm({ name: "" });
-                    setLocationDialog({ open: true, mode: "create" });
-                  }}
-                  className="gap-1.5 shadow-xs"
-                >
-                  <Plus className="size-3.5" />
-                  <span>Thêm {labels.location.toLowerCase()}</span>
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Toolbar Lọc và Tìm kiếm */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex flex-1 flex-wrap items-center gap-2">
-            <div className="relative min-w-[200px] max-w-[280px] flex-1">
-              <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={`Tìm kiếm ${
-                  activeTab === "brands"
-                    ? labels.brand.toLowerCase()
-                    : activeTab === "products"
-                      ? labels.product.toLowerCase()
-                      : labels.location.toLowerCase()
-                }…`}
-                className="h-8.5 pl-8 text-[12.5px]"
+    <div className="space-y-3">
+      <ListPanel
+        toolbar={
+          <ListToolbar
+            tabs={
+              <CountTabs
+                value={kind}
+                onChange={changeKind}
+                tabs={[
+                  { id: "brands", label: labels.brand, count: catalog.brands.length },
+                  { id: "products", label: labels.product, count: catalog.products.length },
+                  { id: "locations", label: labels.location, count: catalog.locations.length },
+                ]}
               />
-            </div>
+            }
+            search={{ value: query, onChange: setQuery, placeholder: `Tìm ${lower}` }}
+            filters={
+              <>
+                <FilterSelect value={status} onChange={setStatus} options={STATUS_FILTER_OPTIONS} />
+                {kind === "products" && (
+                  <FilterSelect
+                    value={brandFilter}
+                    onChange={setBrandFilter}
+                    options={[
+                      { value: "all", label: `Mọi ${labels.brand.toLowerCase()}` },
+                      ...catalog.brands.map((b) => ({ value: b.id, label: b.name })),
+                    ]}
+                  />
+                )}
+              </>
+            }
+            actions={
+              isAdmin && (
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={openCreate}
+                  disabled={kind === "products" && activeBrands.length === 0}
+                  title={kind === "products" && activeBrands.length === 0 ? `Cần ít nhất một ${labels.brand.toLowerCase()} đang bật` : undefined}
+                >
+                  <Plus className="size-3.5" />
+                  Thêm {lower}
+                </Button>
+              )
+            }
+          />
+        }
+      >
+        {table}
+      </ListPanel>
 
-            <Select
-              value={statusFilter}
-              onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}
-            >
-              <SelectTrigger className="h-8.5 w-[140px] text-[12px]">
-                <Filter className="mr-1.5 size-3 text-muted-foreground" />
-                <SelectValue placeholder="Trạng thái" />
+      <FormDialog
+        open={Boolean(editing)}
+        onOpenChange={(open) => !open && setEditing(null)}
+        title={`${editing?.item ? "Sửa" : "Thêm"} ${dialogLabel}`}
+        submitLabel={editing?.item ? "Lưu thay đổi" : "Thêm mới"}
+        pending={pending}
+        disabled={!form.name.trim() || (dialogKind === "products" && !form.brandId)}
+        onSubmit={() => void submit()}
+      >
+        {dialogKind === "products" && (
+          <FormField label={`Thuộc ${labels.brand.toLowerCase()}`} required>
+            <Select value={form.brandId} onValueChange={(brandId) => setForm((f) => ({ ...f, brandId }))}>
+              <SelectTrigger className="text-[13px]">
+                <SelectValue placeholder={`Chọn ${labels.brand.toLowerCase()}`} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả trạng thái</SelectItem>
-                <SelectItem value="active">Đang bật</SelectItem>
-                <SelectItem value="inactive">Đang tắt</SelectItem>
+                {catalog.brands.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name} ({b.code})
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+          </FormField>
+        )}
+        <FormField label={`Tên ${dialogLabel}`} required>
+          <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} autoFocus />
+        </FormField>
+        {dialogKind === "brands" && (
+          <FormField label="Mã" hint="Tự sinh nếu để trống.">
+            <Input
+              value={form.code}
+              onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+              className="font-mono text-[13px] uppercase"
+            />
+          </FormField>
+        )}
+      </FormDialog>
 
-            {activeTab === "products" && (
-              <Select
-                value={selectedBrandFilter}
-                onValueChange={(v) => setSelectedBrandFilter(v)}
-              >
-                <SelectTrigger className="h-8.5 w-[170px] text-[12px]">
-                  <Tag className="mr-1.5 size-3 text-muted-foreground" />
-                  <SelectValue placeholder={`Lọc theo ${labels.brand}`} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tất cả {labels.brand.toLowerCase()}</SelectItem>
-                  {catalog.brands.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-
-          <div className="text-[12px] text-muted-foreground">
-            Hiển thị{" "}
-            <strong>
-              {activeTab === "brands"
-                ? filteredBrands.length
-                : activeTab === "products"
-                  ? filteredProducts.length
-                  : filteredLocations.length}
-            </strong>{" "}
-            mục
-          </div>
-        </div>
-
-        {/* TAB 1: BRANDS */}
-        <TabsContent value="brands" className="space-y-4 pt-1">
-          <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-[13px]">
-                <thead className="border-b border-border/80 bg-slate-50/80 text-[11.5px] uppercase tracking-wider text-slate-500 font-semibold">
-                  <tr>
-                    <th className="py-2.5 pl-4 pr-3 w-14">#</th>
-                    <th className="px-3 py-2.5">Tên {labels.brand}</th>
-                    <th className="px-3 py-2.5">Mã định danh (Code)</th>
-                    <th className="px-3 py-2.5">Trạng thái</th>
-                    {isAdmin && <th className="py-2.5 pl-3 pr-4 text-right">Thao tác</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {filteredBrands.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-muted-foreground text-[12.5px]">
-                        Không tìm thấy {labels.brand.toLowerCase()} nào.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredBrands.map((b, idx) => (
-                      <tr key={b.id} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="py-3 pl-4 pr-3 text-muted-foreground text-[12px] font-mono">
-                          {idx + 1}
-                        </td>
-                        <td className="px-3 py-3 font-semibold text-slate-900">{b.name}</td>
-                        <td className="px-3 py-3 font-mono text-[12px] text-slate-600">
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-bold uppercase">
-                            {b.code}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={b.active}
-                              disabled={!isAdmin || pending}
-                              onCheckedChange={(active) =>
-                                run(() => setBrandActiveAction({ ...scope, id: b.id, active }))
-                              }
-                            />
-                            <span
-                              className={cn(
-                                "text-[11.5px] font-medium",
-                                b.active ? "text-emerald-700" : "text-muted-foreground",
-                              )}
-                            >
-                              {b.active ? "Đang bật" : "Đang tắt"}
-                            </span>
-                          </div>
-                        </td>
-                        {isAdmin && (
-                          <td className="py-3 pl-3 pr-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="iconSm"
-                                title={`Sửa ${labels.brand}`}
-                                onClick={() => {
-                                  setBrandForm({ name: b.name, code: b.code });
-                                  setBrandDialog({ open: true, mode: "edit", item: b });
-                                }}
-                              >
-                                <Edit2 className="size-3.5 text-slate-600 hover:text-primary" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="iconSm"
-                                title={`Xóa ${labels.brand}`}
-                                onClick={() =>
-                                  setDeleteConfirm({
-                                    open: true,
-                                    type: "brand",
-                                    id: b.id,
-                                    name: b.name,
-                                  })
-                                }
-                              >
-                                <Trash2 className="size-3.5 text-slate-400 hover:text-rose-600" />
-                              </Button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* TAB 2: PRODUCTS */}
-        <TabsContent value="products" className="space-y-4 pt-1">
-          <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-[13px]">
-                <thead className="border-b border-border/80 bg-slate-50/80 text-[11.5px] uppercase tracking-wider text-slate-500 font-semibold">
-                  <tr>
-                    <th className="py-2.5 pl-4 pr-3 w-14">#</th>
-                    <th className="px-3 py-2.5">Tên {labels.product}</th>
-                    <th className="px-3 py-2.5">Thuộc {labels.brand}</th>
-                    <th className="px-3 py-2.5">Trạng thái</th>
-                    {isAdmin && <th className="py-2.5 pl-3 pr-4 text-right">Thao tác</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {filteredProducts.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-muted-foreground text-[12.5px]">
-                        Không tìm thấy {labels.product.toLowerCase()} nào.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredProducts.map((p, idx) => (
-                      <tr key={p.id} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="py-3 pl-4 pr-3 text-muted-foreground text-[12px] font-mono">
-                          {idx + 1}
-                        </td>
-                        <td className="px-3 py-3 font-semibold text-slate-900">{p.name}</td>
-                        <td className="px-3 py-3">
-                          <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 ring-1 ring-purple-200">
-                            <Tag className="size-3" />
-                            {p.brandName}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={p.active}
-                              disabled={!isAdmin || pending}
-                              onCheckedChange={(active) =>
-                                run(() => setProductActiveAction({ ...scope, id: p.id, active }))
-                              }
-                            />
-                            <span
-                              className={cn(
-                                "text-[11.5px] font-medium",
-                                p.active ? "text-emerald-700" : "text-muted-foreground",
-                              )}
-                            >
-                              {p.active ? "Đang bật" : "Đang tắt"}
-                            </span>
-                          </div>
-                        </td>
-                        {isAdmin && (
-                          <td className="py-3 pl-3 pr-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="iconSm"
-                                title={`Sửa ${labels.product}`}
-                                onClick={() => {
-                                  setProductForm({ name: p.name, brandId: p.brandId });
-                                  setProductDialog({ open: true, mode: "edit", item: p });
-                                }}
-                              >
-                                <Edit2 className="size-3.5 text-slate-600 hover:text-primary" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="iconSm"
-                                title={`Xóa ${labels.product}`}
-                                onClick={() =>
-                                  setDeleteConfirm({
-                                    open: true,
-                                    type: "product",
-                                    id: p.id,
-                                    name: p.name,
-                                  })
-                                }
-                              >
-                                <Trash2 className="size-3.5 text-slate-400 hover:text-rose-600" />
-                              </Button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* TAB 3: LOCATIONS */}
-        <TabsContent value="locations" className="space-y-4 pt-1">
-          <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-[13px]">
-                <thead className="border-b border-border/80 bg-slate-50/80 text-[11.5px] uppercase tracking-wider text-slate-500 font-semibold">
-                  <tr>
-                    <th className="py-2.5 pl-4 pr-3 w-14">#</th>
-                    <th className="px-3 py-2.5">Tên {labels.location}</th>
-                    <th className="px-3 py-2.5">Trạng thái</th>
-                    {isAdmin && <th className="py-2.5 pl-3 pr-4 text-right">Thao tác</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {filteredLocations.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="py-8 text-center text-muted-foreground text-[12.5px]">
-                        Không tìm thấy {labels.location.toLowerCase()} nào.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredLocations.map((l, idx) => (
-                      <tr key={l.id} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="py-3 pl-4 pr-3 text-muted-foreground text-[12px] font-mono">
-                          {idx + 1}
-                        </td>
-                        <td className="px-3 py-3 font-semibold text-slate-900">{l.name}</td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={l.active}
-                              disabled={!isAdmin || pending}
-                              onCheckedChange={(active) =>
-                                run(() => setLocationActiveAction({ ...scope, id: l.id, active }))
-                              }
-                            />
-                            <span
-                              className={cn(
-                                "text-[11.5px] font-medium",
-                                l.active ? "text-emerald-700" : "text-muted-foreground",
-                              )}
-                            >
-                              {l.active ? "Đang bật" : "Đang tắt"}
-                            </span>
-                          </div>
-                        </td>
-                        {isAdmin && (
-                          <td className="py-3 pl-3 pr-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="iconSm"
-                                title={`Sửa ${labels.location}`}
-                                onClick={() => {
-                                  setLocationForm({ name: l.name });
-                                  setLocationDialog({ open: true, mode: "edit", item: l });
-                                }}
-                              >
-                                <Edit2 className="size-3.5 text-slate-600 hover:text-primary" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="iconSm"
-                                title={`Xóa ${labels.location}`}
-                                onClick={() =>
-                                  setDeleteConfirm({
-                                    open: true,
-                                    type: "location",
-                                    id: l.id,
-                                    name: l.name,
-                                  })
-                                }
-                              >
-                                <Trash2 className="size-3.5 text-slate-400 hover:text-rose-600" />
-                              </Button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      {/* DIALOG BRAND (THÊM / SỬA) */}
-      <Dialog
-        open={brandDialog.open}
-        onOpenChange={(open) => setBrandDialog((prev) => ({ ...prev, open }))}
-      >
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>
-              {brandDialog.mode === "create"
-                ? `Thêm ${labels.brand.toLowerCase()} mới`
-                : `Chỉnh sửa ${labels.brand.toLowerCase()}`}
-            </DialogTitle>
-            <DialogDescription>
-              {brandDialog.mode === "create"
-                ? `Nhập tên và mã đại diện cho ${labels.brand.toLowerCase()} này.`
-                : `Cập nhật thông tin ${labels.brand.toLowerCase()}.`}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3.5 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">
-                Tên {labels.brand} <span className="text-rose-600">*</span>
-              </Label>
-              <Input
-                value={brandForm.name}
-                onChange={(e) => setBrandForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder={`VD: Kia, Mazda, Vinhomes...`}
-                className="text-[13px]"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">Mã định danh (Code)</Label>
-              <Input
-                value={brandForm.code}
-                onChange={(e) => setBrandForm((f) => ({ ...f, code: e.target.value }))}
-                placeholder="VD: KIA, MZD, VHM (tự sinh nếu để trống)"
-                className="font-mono text-[13px] uppercase"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setBrandDialog((prev) => ({ ...prev, open: false }))}
-            >
-              Hủy
-            </Button>
-            <Button
-              type="button"
-              disabled={pending || !brandForm.name.trim()}
-              onClick={async () => {
-                let ok = false;
-                if (brandDialog.mode === "create") {
-                  ok = await run(() =>
-                    createBrandAction({
-                      ...scope,
-                      name: brandForm.name,
-                      code: brandForm.code,
-                    }),
-                  );
-                } else if (brandDialog.item) {
-                  ok = await run(() =>
-                    updateBrandAction({
-                      ...scope,
-                      id: brandDialog.item!.id,
-                      name: brandForm.name,
-                      code: brandForm.code,
-                    }),
-                  );
-                }
-                if (ok) setBrandDialog((prev) => ({ ...prev, open: false }));
-              }}
-            >
-              {brandDialog.mode === "create" ? "Thêm mới" : "Lưu thay đổi"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* DIALOG PRODUCT (THÊM / SỬA) */}
-      <Dialog
-        open={productDialog.open}
-        onOpenChange={(open) => setProductDialog((prev) => ({ ...prev, open }))}
-      >
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>
-              {productDialog.mode === "create"
-                ? `Thêm ${labels.product.toLowerCase()} mới`
-                : `Chỉnh sửa ${labels.product.toLowerCase()}`}
-            </DialogTitle>
-            <DialogDescription>
-              {productDialog.mode === "create"
-                ? `Chọn ${labels.brand.toLowerCase()} và nhập tên ${labels.product.toLowerCase()}.`
-                : `Cập nhật thông tin ${labels.product.toLowerCase()}.`}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3.5 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">
-                Thuộc {labels.brand} <span className="text-rose-600">*</span>
-              </Label>
-              <Select
-                value={productForm.brandId}
-                onValueChange={(brandId) => setProductForm((f) => ({ ...f, brandId }))}
-              >
-                <SelectTrigger className="text-[13px]">
-                  <SelectValue placeholder={`Chọn ${labels.brand.toLowerCase()}`} />
-                </SelectTrigger>
-                <SelectContent>
-                  {catalog.brands.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name} ({b.code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">
-                Tên {labels.product} <span className="text-rose-600">*</span>
-              </Label>
-              <Input
-                value={productForm.name}
-                onChange={(e) => setProductForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder={`VD: Seltos, Carnival, Căn 2PN...`}
-                className="text-[13px]"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setProductDialog((prev) => ({ ...prev, open: false }))}
-            >
-              Hủy
-            </Button>
-            <Button
-              type="button"
-              disabled={pending || !productForm.name.trim() || !productForm.brandId}
-              onClick={async () => {
-                let ok = false;
-                if (productDialog.mode === "create") {
-                  ok = await run(() =>
-                    createProductAction({
-                      ...scope,
-                      brandId: productForm.brandId,
-                      name: productForm.name,
-                    }),
-                  );
-                } else if (productDialog.item) {
-                  ok = await run(() =>
-                    updateProductAction({
-                      ...scope,
-                      id: productDialog.item!.id,
-                      name: productForm.name,
-                      brandId: productForm.brandId,
-                    }),
-                  );
-                }
-                if (ok) setProductDialog((prev) => ({ ...prev, open: false }));
-              }}
-            >
-              {productDialog.mode === "create" ? "Thêm mới" : "Lưu thay đổi"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* DIALOG LOCATION (THÊM / SỬA) */}
-      <Dialog
-        open={locationDialog.open}
-        onOpenChange={(open) => setLocationDialog((prev) => ({ ...prev, open }))}
-      >
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>
-              {locationDialog.mode === "create"
-                ? `Thêm ${labels.location.toLowerCase()} mới`
-                : `Chỉnh sửa ${labels.location.toLowerCase()}`}
-            </DialogTitle>
-            <DialogDescription>
-              Nhập tên {labels.location.toLowerCase()} (chi nhánh, cơ sở, đại lý).
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3.5 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">
-                Tên {labels.location} <span className="text-rose-600">*</span>
-              </Label>
-              <Input
-                value={locationForm.name}
-                onChange={(e) => setLocationForm({ name: e.target.value })}
-                placeholder={`VD: Showroom Hà Nam, Chi nhánh Cầu Giấy...`}
-                className="text-[13px]"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setLocationDialog((prev) => ({ ...prev, open: false }))}
-            >
-              Hủy
-            </Button>
-            <Button
-              type="button"
-              disabled={pending || !locationForm.name.trim()}
-              onClick={async () => {
-                let ok = false;
-                if (locationDialog.mode === "create") {
-                  ok = await run(() =>
-                    createLocationAction({
-                      ...scope,
-                      name: locationForm.name,
-                    }),
-                  );
-                } else if (locationDialog.item) {
-                  ok = await run(() =>
-                    updateLocationAction({
-                      ...scope,
-                      id: locationDialog.item!.id,
-                      name: locationForm.name,
-                    }),
-                  );
-                }
-                if (ok) setLocationDialog((prev) => ({ ...prev, open: false }));
-              }}
-            >
-              {locationDialog.mode === "create" ? "Thêm mới" : "Lưu thay đổi"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* DIALOG CONFIRM DELETE */}
-      <Dialog
-        open={Boolean(deleteConfirm?.open)}
-        onOpenChange={(open) => !open && setDeleteConfirm(null)}
-      >
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle className="text-rose-600">Xác nhận xóa</DialogTitle>
-            <DialogDescription className="text-slate-600">
-              Bạn có chắc chắn muốn xóa mục <strong>«{deleteConfirm?.name}»</strong> không?
-            </DialogDescription>
-          </DialogHeader>
-
-          <p className="text-[12px] text-muted-foreground bg-slate-50 p-2.5 rounded-lg border border-border/80">
-            ⚠️ Nếu đã có lead hoặc dữ liệu liên kết với mục này, hệ thống sẽ từ chối xóa để bảo vệ
-            lịch sử. Bạn có thể chọn <strong>Tắt</strong> mục này thay vì xóa.
-          </p>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDeleteConfirm(null)}>
-              Hủy
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={pending}
-              onClick={async () => {
-                if (!deleteConfirm) return;
-                let ok = false;
-                if (deleteConfirm.type === "brand") {
-                  ok = await run(() => deleteBrandAction({ ...scope, id: deleteConfirm.id }));
-                } else if (deleteConfirm.type === "product") {
-                  ok = await run(() => deleteProductAction({ ...scope, id: deleteConfirm.id }));
-                } else if (deleteConfirm.type === "location") {
-                  ok = await run(() => deleteLocationAction({ ...scope, id: deleteConfirm.id }));
-                }
-                if (ok) setDeleteConfirm(null);
-              }}
-            >
-              Xác nhận xóa
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title="Xác nhận xóa"
+        description={
+          <>
+            Bạn có chắc muốn xóa <strong>«{deleting?.name}»</strong>?
+          </>
+        }
+        note="Nếu đã có lead hoặc dữ liệu liên kết, hệ thống sẽ từ chối xóa để giữ lịch sử. Hãy chọn Tắt thay vì xóa."
+        pending={pending}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

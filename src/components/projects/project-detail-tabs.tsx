@@ -11,7 +11,6 @@ import {
 
 import { AttrFieldsPanel } from "@/components/settings/attr-fields-panel";
 import { CatalogPanel } from "@/components/settings/catalog-panel";
-import { ProjectsPanel } from "@/components/settings/projects-panel";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
@@ -19,21 +18,15 @@ import type { CatalogSnapshot } from "@/lib/db/catalog-repo";
 import type { ProjectAdAccountRow } from "@/lib/db/project-repo";
 import type { CatalogLabels, ProjectInfo } from "@/lib/types";
 
+import { ProjectFacebookSync, type LastSyncInfo } from "./project-facebook-sync";
 import { ProjectOverviewForm } from "./project-overview-form";
-
-type PageRow = {
-  id: string;
-  facebookPageId: string;
-  name: string | null;
-  projectId: string | null;
-  active: boolean;
-};
-type PartnerRow = {
-  id: string;
-  fullName: string;
-  email: string | null;
-  projectId: string | null;
-};
+import {
+  ProjectAdAccountsTable,
+  ProjectPagesTable,
+  ProjectPartnersTable,
+  type PageRow,
+  type PartnerRow,
+} from "./project-resources";
 
 export function ProjectDetailTabs({
   project,
@@ -48,6 +41,7 @@ export function ProjectDetailTabs({
   canEditLabels,
   canManageCatalog,
   dbConfigured,
+  facebook,
 }: {
   project: ProjectInfo;
   catalog: CatalogSnapshot;
@@ -61,6 +55,10 @@ export function ProjectDetailTabs({
   canEditLabels: boolean;
   canManageCatalog: boolean;
   dbConfigured: boolean;
+  facebook: {
+    tokenConfigured: boolean;
+    lastLeadSync: LastSyncInfo;
+  };
 }) {
   const projectPages = pages.filter((p) => p.projectId === project.id);
   const totalCatalogItems =
@@ -136,43 +134,28 @@ export function ProjectDetailTabs({
         />
       </TabsContent>
 
-      <TabsContent value="fanpages" className="pt-2">
-        <ProjectsPanel
-          projects={[project]}
-          activeProjectId={project.id}
-          embeddedProjectId={project.id}
-          pages={pages}
-          partners={[]}
-          adAccounts={[]}
-          canManage={canManageProject}
-          sections={["pages"]}
-        />
+      <TabsContent value="fanpages" className="space-y-3 pt-2">
+        {canManageProject && (
+          <ProjectFacebookSync
+            projectId={project.id}
+            tokenConfigured={facebook.tokenConfigured}
+            activePageCount={projectPages.filter((p) => p.active).length}
+            lastLeadSync={facebook.lastLeadSync}
+          />
+        )}
+        <ProjectPagesTable projectId={project.id} pages={pages} canManage={canManageProject} />
       </TabsContent>
 
       <TabsContent value="ads" className="pt-2">
-        <ProjectsPanel
-          projects={[project]}
-          activeProjectId={project.id}
-          embeddedProjectId={project.id}
-          pages={[]}
-          partners={[]}
-          adAccounts={adAccounts}
-          canManage={canManageProject}
-          sections={["ads"]}
-        />
+        <ProjectAdAccountsTable projectId={project.id} accounts={adAccounts} canManage={canManageProject} />
       </TabsContent>
 
       <TabsContent value="partners" className="pt-2">
-        <ProjectsPanel
-          projects={[project]}
-          activeProjectId={project.id}
-          embeddedProjectId={project.id}
-          pages={[]}
+        <ProjectPartnersTable
+          projectId={project.id}
           partners={partners}
-          partnersAvailable={partnersAvailable}
-          adAccounts={[]}
+          available={partnersAvailable}
           canManage={canManageProject}
-          sections={["partners"]}
         />
       </TabsContent>
 

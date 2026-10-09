@@ -18,7 +18,7 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 | Cài đặt và đồng bộ Facebook | Có | Không | Không |
 | Danh mục / field phụ trên **Cài đặt** | Có. `canManageCatalogs` / `canManageAttrFields` | Không | Không |
 | Danh mục / field phụ trên **Dự án → chi tiết** | Có | Có trên project là thành viên. `canManageCatalogsInProject` | Không |
-| Quản lý project (tạo, gán fanpage, partner, ads) | Có. `canManageProjects` | Không (xem danh sách read-only) | Không |
+| Quản lý project (tạo, thêm fanpage từ danh sách Facebook cấp quyền, bật tắt, gỡ, kiểm tra, gán partner, ads) | Có. `canManageProjects` | Không (xem danh sách read-only) | Không |
 | Đổi project đang xem (switcher header) | Có. Cookie `semtop_project_id` | Có. Membership ≥ 1 (hiện cả khi 1 project) | Có khi > 1 membership (kế thừa partner) |
 | Đổi mật khẩu khi đã đăng nhập | Có | Có | Có |
 

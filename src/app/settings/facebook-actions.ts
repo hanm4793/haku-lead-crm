@@ -1,16 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
 import { canManageSettings } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
-import { resolveActiveProject, toProjectViewer } from "@/lib/db/project-repo";
-import {
-  addFacebookPage,
-  removeFacebookPage,
-  setFacebookPageActive,
-  type FacebookPageRow,
-} from "@/lib/db/facebook-pages-repo";
 import { purgeSampleLeads } from "@/lib/facebook/purge-sample-leads";
 import {
   syncFacebookInsights,
@@ -30,10 +24,6 @@ export type PurgeSampleLeadsActionResult =
   | { ok: true; deleted: number }
   | { ok: false; error: string };
 
-export type FacebookPageActionResult =
-  | { ok: true; page?: FacebookPageRow }
-  | { ok: false; error: string };
-
 async function requireAdmin(): Promise<{ error: string } | { viewer: NonNullable<Awaited<ReturnType<typeof getScopedViewer>>> }> {
   const viewer = await getScopedViewer();
   if (!viewer) return { error: "Phiên đăng nhập đã hết hạn." };
@@ -41,18 +31,32 @@ async function requireAdmin(): Promise<{ error: string } | { viewer: NonNullable
   return { viewer };
 }
 
-function revalidateFacebookPages() {
-  revalidatePath("/leads");
-  revalidatePath("/settings");
+const scopeSchema = z.object({ projectId: z.string().uuid().optional() }).optional();
+
+function parseScope(input: unknown): string | undefined | null {
+  const parsed = scopeSchema.safeParse(input);
+  return parsed.success ? parsed.data?.projectId : null;
 }
 
-export async function syncFacebookLeadsAction(): Promise<SyncFacebookLeadsActionResult> {
+function revalidateFacebookPages(projectId?: string) {
+  revalidatePath("/leads");
+  revalidatePath("/settings");
+  revalidatePath("/projects");
+  if (projectId) revalidatePath(`/projects/${projectId}`);
+}
+
+/** Truyền `projectId` để chỉ đồng bộ các fanpage đang bật của dự án đó. */
+export async function syncFacebookLeadsAction(input?: {
+  projectId?: string;
+}): Promise<SyncFacebookLeadsActionResult> {
   const gate = await requireAdmin();
   if ("error" in gate) return { ok: false, error: gate.error };
+  const projectId = parseScope(input);
+  if (projectId === null) return { ok: false, error: "Project không hợp lệ." };
 
   try {
-    const result = await syncFacebookLeads();
-    revalidateFacebookPages();
+    const result = await syncFacebookLeads({ projectId });
+    revalidateFacebookPages(projectId);
     return { ok: true, result };
   } catch (error) {
     return {
@@ -62,6 +66,7 @@ export async function syncFacebookLeadsAction(): Promise<SyncFacebookLeadsAction
   }
 }
 
+/** Đồng bộ cả ad account (Meta không cho lọc insights theo fanpage). */
 export async function syncFacebookInsightsAction(): Promise<SyncFacebookInsightsActionResult> {
   const gate = await requireAdmin();
   if ("error" in gate) return { ok: false, error: gate.error };
@@ -95,54 +100,3 @@ export async function purgeSampleLeadsAction(): Promise<PurgeSampleLeadsActionRe
   }
 }
 
-export async function addFacebookPageAction(input: {
-  facebookPageId: string;
-  name?: string;
-}): Promise<FacebookPageActionResult> {
-  const gate = await requireAdmin();
-  if ("error" in gate) return { ok: false, error: gate.error };
-  try {
-    const active = await resolveActiveProject(toProjectViewer(gate.viewer));
-    const page = await addFacebookPage(input.facebookPageId, input.name ?? null, active.id);
-    revalidatePath("/settings");
-    return { ok: true, page };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Thêm Fanpage thất bại.",
-    };
-  }
-}
-
-export async function setFacebookPageActiveAction(input: {
-  id: string;
-  active: boolean;
-}): Promise<FacebookPageActionResult> {
-  const gate = await requireAdmin();
-  if ("error" in gate) return { ok: false, error: gate.error };
-  try {
-    const page = await setFacebookPageActive(input.id, input.active);
-    revalidatePath("/settings");
-    return { ok: true, page };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Cập nhật Fanpage thất bại.",
-    };
-  }
-}
-
-export async function removeFacebookPageAction(id: string): Promise<FacebookPageActionResult> {
-  const gate = await requireAdmin();
-  if ("error" in gate) return { ok: false, error: gate.error };
-  try {
-    await removeFacebookPage(id);
-    revalidatePath("/settings");
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Xóa Fanpage thất bại.",
-    };
-  }
-}

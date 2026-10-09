@@ -10,9 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RESET_LINK_EXPIRED, readResetLink } from "@/lib/auth/reset-link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { useToast } from "@/components/providers/toast-provider";
 
 export function ResetPasswordForm() {
   const router = useRouter();
+  const toast = useToast();
   const [ready, setReady] = React.useState(false);
   const [checking, setChecking] = React.useState(true);
   const [password, setPassword] = React.useState("");
@@ -81,13 +83,12 @@ export function ResetPasswordForm() {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setError(null);
     if (password.length < 6) {
-      setError("Mật khẩu tối thiểu 6 ký tự.");
+      toast.error("Mật khẩu tối thiểu 6 ký tự.");
       return;
     }
     if (password !== confirm) {
-      setError("Mật khẩu nhập lại không khớp.");
+      toast.error("Mật khẩu nhập lại không khớp.");
       return;
     }
 
@@ -96,9 +97,10 @@ export function ResetPasswordForm() {
     const { error: updateError } = await supabase.auth.updateUser({ password });
     setPending(false);
     if (updateError) {
-      setError(updateError.message);
+      toast.error(updateError.message);
       return;
     }
+    toast.success("Đã đặt mật khẩu mới");
     router.replace("/leads");
     router.refresh();
   };
@@ -143,7 +145,11 @@ export function ResetPasswordForm() {
                 disabled={!ready}
               />
             </div>
-            {error && <p className="text-[12px] text-rose-600">{error}</p>}
+            {error && (
+              <p className="text-[12px] text-rose-600" role="alert">
+                {error}
+              </p>
+            )}
             <Button type="submit" className="w-full" disabled={!ready || pending}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : "Lưu mật khẩu"}
             </Button>

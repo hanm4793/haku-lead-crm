@@ -23,6 +23,12 @@ const NAV_ITEMS: { href: string; label: string; icon: typeof Users; access: NavG
   { href: "/settings", label: "Cài đặt App", icon: Settings, access: "settings" },
 ];
 
+/**
+ * Màn dữ liệu theo "dự án đang xem" (cookie). Màn Dự án, Cài đặt và Tài khoản tự chứa
+ * ngữ cảnh của riêng nó nên không hiện ô chọn dự án ở header.
+ */
+const PROJECT_SCOPED_ROUTES = ["/leads", "/reports", "/marketing", "/users"];
+
 export function AppShell({
   children,
   viewer,
@@ -55,6 +61,10 @@ export function AppShell({
   };
   const navItems = NAV_ITEMS.filter((item) => canSeeNav(user.role, item.access));
   const showAi = canUseAi(user);
+  const onScopedRoute = PROJECT_SCOPED_ROUTES.some((route) => pathname.startsWith(route));
+  const switcherVisible =
+    onScopedRoute &&
+    (user.role === "STAFF" ? projects.length > 1 : projects.length >= 1);
 
   return (
     <div className="flex min-h-screen">
@@ -151,8 +161,7 @@ export function AppShell({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {((user.role === "SUPER_ADMIN" || user.role === "PARTNER_ADMIN") && projects.length >= 1) ||
-        (user.role === "STAFF" && projects.length > 1) ? (
+        {switcherVisible ? (
           <div className="flex items-center justify-end border-b border-border bg-card px-4 py-2">
             <ProjectSwitcher
               projects={projects}

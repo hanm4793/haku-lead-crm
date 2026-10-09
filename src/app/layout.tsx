@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { ToastProvider } from "@/components/providers/toast-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
@@ -41,6 +42,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="vi" className={plusJakarta.variable}>
       <body className="min-h-screen bg-background font-sans antialiased">
         <TooltipProvider delayDuration={200}>
+          <ToastProvider>
           <AppShell
             viewer={
               viewer
@@ -58,6 +60,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           >
             {children}
           </AppShell>
+          </ToastProvider>
         </TooltipProvider>
       </body>
     </html>

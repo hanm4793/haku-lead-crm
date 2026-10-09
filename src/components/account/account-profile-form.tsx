@@ -7,6 +7,7 @@ import { updateOwnProfileAction } from "@/app/account/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/providers/toast-provider";
 
 export function AccountProfileForm({
   fullName,
@@ -19,10 +20,9 @@ export function AccountProfileForm({
   roleLabel: string;
   canEdit: boolean;
 }) {
+  const toast = useToast();
   const [name, setName] = React.useState(fullName);
   const [pending, setPending] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [info, setInfo] = React.useState<string | null>(null);
 
   const dirty = name.trim() !== fullName.trim();
 
@@ -30,15 +30,13 @@ export function AccountProfileForm({
     event.preventDefault();
     if (!canEdit) return;
     setPending(true);
-    setError(null);
-    setInfo(null);
     const result = await updateOwnProfileAction({ fullName: name });
     setPending(false);
     if (!result.ok) {
-      setError(result.error);
+      toast.error(result.error);
       return;
     }
-    setInfo("Đã lưu hồ sơ.");
+    toast.success("Đã lưu hồ sơ.");
   };
 
   return (
@@ -50,7 +48,6 @@ export function AccountProfileForm({
           value={name}
           onChange={(e) => {
             setName(e.target.value);
-            setInfo(null);
           }}
           disabled={!canEdit || pending}
           maxLength={120}
@@ -68,9 +65,6 @@ export function AccountProfileForm({
         <Label htmlFor="role">Vai trò</Label>
         <Input id="role" value={roleLabel} disabled readOnly />
       </div>
-
-      {error && <p className="text-[12px] text-rose-600">{error}</p>}
-      {info && <p className="text-[12px] text-emerald-700">{info}</p>}
 
       {canEdit && (
         <Button type="submit" disabled={pending || !dirty || !name.trim()}>

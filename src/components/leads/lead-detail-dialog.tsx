@@ -25,6 +25,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/providers/toast-provider";
+import { normalizePhone, phoneKey, validatePhone } from "@/lib/leads/phone";
 import { DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/lib/catalog";
 import {
   ASSIGNEES,
@@ -91,7 +93,11 @@ interface LeadDetailDialogProps {
   logs: ActivityLog[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (patch: Partial<Lead>, logs: { kind: ActivityKind; message: string; byAi?: boolean }[]) => void;
+  /** Trả về false khi server từ chối, để dialog giữ nguyên chỗ đang sửa. */
+  onSave: (
+    patch: Partial<Lead>,
+    logs: { kind: ActivityKind; message: string; byAi?: boolean }[],
+  ) => boolean | void | Promise<boolean | void>;
   readOnly?: boolean;
   assignees?: readonly string[];
   /** Danh mục brand / sản phẩm / location và nhãn theo project. */
@@ -125,6 +131,10 @@ function LeadDetailDialogBody({
     setAttrDraft({ ...(lead.attrs ?? {}) });
   }
   const [justSaved, setJustSaved] = React.useState(false);
+  const toast = useToast();
+  const [editingProfile, setEditingProfile] = React.useState(false);
+  const [profile, setProfile] = React.useState({ name: lead.name ?? "", phone: lead.phone });
+  const [savingProfile, setSavingProfile] = React.useState(false);
   const [aiLoading, setAiLoading] = React.useState<"summarize" | "suggest_action" | "polish_note" | null>(null);
   const [aiResult, setAiResult] = React.useState<{ type: "summarize" | "suggest_action" | "polish_note"; text: string } | null>(null);
   const [copied, setCopied] = React.useState(false);
@@ -151,12 +161,12 @@ function LeadDetailDialogBody({
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        setAiResult({ type: action, text: data.error ?? "Không thể xử lý lúc này." });
+        toast.error("Trợ lý AI chưa xử lý được", data.error ?? "Không thể xử lý lúc này.");
       } else {
         setAiResult({ type: action, text: data.result });
       }
     } catch {
-      setAiResult({ type: action, text: "Lỗi kết nối tới trợ lý AI." });
+      toast.error("Lỗi kết nối tới trợ lý AI", "Kiểm tra mạng rồi thử lại.");
     } finally {
       setAiLoading(null);
     }
@@ -175,7 +185,7 @@ function LeadDetailDialogBody({
     draft.callbackAt !== toDateInputValue(lead.callbackAt) ||
     attrsDirty(attrFields, attrDraft, lead.attrs ?? {});
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const entries: { kind: ActivityKind; message: string; byAi?: boolean }[] = [];
     if (draft.category !== lead.category) {
       entries.push({
@@ -218,8 +228,51 @@ function LeadDetailDialogBody({
       }
       savePatch.attrs = attrsPatch;
     }
-    onSave(savePatch, entries);
-    setJustSaved(true);
+    const result = await onSave(savePatch, entries);
+    setJustSaved(result !== false);
+  };
+
+  const startEditProfile = () => {
+    setProfile({ name: lead.name ?? "", phone: lead.phone });
+    setEditingProfile(true);
+  };
+
+  const saveProfile = async () => {
+    const name = profile.name.trim();
+    const phone = normalizePhone(profile.phone);
+    const phoneProblem = validatePhone(profile.phone);
+    if (name.length > 120) {
+      toast.error("Không lưu được thông tin khách", "Họ tên tối đa 120 ký tự.");
+      return;
+    }
+    if (phoneProblem) {
+      toast.error("Không lưu được thông tin khách", phoneProblem);
+      return;
+    }
+
+    const patchNow: Partial<Lead> = {};
+    const entries: { kind: ActivityKind; message: string }[] = [];
+    if (name !== (lead.name ?? "")) {
+      patchNow.name = name || null;
+      entries.push({ kind: "NOTE", message: `Sửa họ tên: ${lead.name ?? "(trống)"} → ${name || "(trống)"}.` });
+    }
+    if (phoneKey(phone) !== phoneKey(lead.phone) || phone !== lead.phone) {
+      patchNow.phone = phone;
+      entries.push({ kind: "NOTE", message: `Sửa số điện thoại: ${lead.phone || "(trống)"} → ${phone}.` });
+    }
+    if (entries.length === 0) {
+      setEditingProfile(false);
+      return;
+    }
+
+    setSavingProfile(true);
+    try {
+      const result = await onSave(patchNow, entries);
+      if (result === false) return; // trang cha đã hiện toast lỗi, giữ form để sửa lại
+      setEditingProfile(false);
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   const products = (draft.brand ? catalog.productsByBrand[draft.brand] : undefined) ?? [];
@@ -250,32 +303,97 @@ function LeadDetailDialogBody({
         <div className="border-b border-border px-6 pb-4 pt-5">
           <DialogTitle className="flex items-center gap-2 text-xl font-bold">
             {lead.name ?? "Khách chưa có tên"}
-            <button type="button" title="Sửa tên khách" className="text-slate-400 transition-colors hover:text-primary">
-              <Pencil className="size-4" />
-            </button>
-          </DialogTitle>
-          <DialogDescription asChild>
-            <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="tabular-nums">{lead.phone}</span>
+            {!readOnly && !editingProfile && (
               <button
                 type="button"
-                onClick={() => navigator.clipboard?.writeText(lead.phone)}
-                title="Sao chép số"
-                className="transition-colors hover:text-primary"
+                title="Sửa tên và số điện thoại"
+                onClick={startEditProfile}
+                className="text-slate-400 transition-colors hover:text-primary"
               >
-                <Copy className="size-3.5" />
+                <Pencil className="size-4" />
               </button>
-              <a
-                href={`https://zalo.me/${lead.phone}`}
-                target="_blank"
-                rel="noreferrer"
-                title="Nhắn Zalo"
-                className="transition-colors hover:text-primary"
+            )}
+          </DialogTitle>
+          {editingProfile ? (
+            <DialogDescription asChild>
+              <form
+                className="mt-2 space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void saveProfile();
+                }}
               >
-                <MessageSquare className="size-3.5" />
-              </a>
-            </div>
-          </DialogDescription>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-[12px] text-muted-foreground">Họ tên</Label>
+                    <Input
+                      value={profile.name}
+                      onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))}
+                      placeholder="Khách chưa có tên"
+                      maxLength={120}
+                      autoFocus
+                      disabled={savingProfile}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[12px] text-muted-foreground">Số điện thoại</Label>
+                    <Input
+                      value={profile.phone}
+                      onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
+                      inputMode="tel"
+                      className="tabular-nums"
+                      disabled={savingProfile}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button type="submit" size="sm" disabled={savingProfile} className="gap-1.5">
+                    {savingProfile ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                    Lưu thông tin khách
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={savingProfile}
+                    onClick={() => setEditingProfile(false)}
+                  >
+                    Hủy
+                  </Button>
+                </div>
+              </form>
+            </DialogDescription>
+          ) : (
+            <DialogDescription asChild>
+              <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                <span className="tabular-nums">{lead.phone || "Chưa có số điện thoại"}</span>
+                {lead.phone && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(lead.phone);
+                        toast.info("Đã sao chép số điện thoại");
+                      }}
+                      title="Sao chép số"
+                      className="transition-colors hover:text-primary"
+                    >
+                      <Copy className="size-3.5" />
+                    </button>
+                    <a
+                      href={`https://zalo.me/${lead.phone}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Nhắn Zalo"
+                      className="transition-colors hover:text-primary"
+                    >
+                      <MessageSquare className="size-3.5" />
+                    </a>
+                  </>
+                )}
+              </div>
+            </DialogDescription>
+          )}
         </div>
 
         <fieldset disabled={readOnly} className="min-w-0 border-0 p-0">
@@ -371,6 +489,9 @@ function LeadDetailDialogBody({
                 </RowControl>
                 <Row label="Tạo lúc" value={formatDateTime(lead.createdAt)} />
                 <Row label="Số lần liên hệ" value={String(lead.contactCount)} />
+                {lead.campaign && <Row label="Chiến dịch" value={lead.campaign} />}
+                {lead.adContent && <Row label="Nội dung quảng cáo" value={lead.adContent} />}
+                {lead.costPerLead != null && <Row label="Chi phí / lead" value={lead.costPerLead.toLocaleString("vi-VN")} />}
               </dl>
             </div>
 
@@ -566,6 +687,7 @@ function LeadDetailDialogBody({
                           className="h-6 gap-1 px-2 text-[11px]"
                           onClick={() => {
                             void navigator.clipboard.writeText(aiResult.text);
+                            toast.info("Đã sao chép nội dung");
                             setCopied(true);
                             setTimeout(() => setCopied(false), 2000);
                           }}
@@ -629,7 +751,7 @@ function LeadDetailDialogBody({
           )}
           {dirty && !readOnly && <p className="mb-2 text-center text-xs font-medium text-amber-600">• Có thay đổi chưa lưu</p>}
           <Button
-            onClick={handleSave}
+            onClick={() => void handleSave()}
             disabled={readOnly || !dirty}
             className={cn("w-full gap-2", (readOnly || !dirty) && "bg-primary/40")}
           >

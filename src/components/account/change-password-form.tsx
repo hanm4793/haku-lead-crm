@@ -9,24 +9,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { useToast } from "@/components/providers/toast-provider";
 
 export function ChangePasswordForm() {
+  const toast = useToast();
   const [password, setPassword] = React.useState("");
   const [confirm, setConfirm] = React.useState("");
-  const [error, setError] = React.useState<string | null>(null);
-  const [info, setInfo] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setError(null);
-    setInfo(null);
     if (password.length < 6) {
-      setError("Mật khẩu tối thiểu 6 ký tự.");
+      toast.error("Mật khẩu tối thiểu 6 ký tự.");
       return;
     }
     if (password !== confirm) {
-      setError("Mật khẩu nhập lại không khớp.");
+      toast.error("Mật khẩu nhập lại không khớp.");
       return;
     }
     setPending(true);
@@ -34,14 +32,14 @@ export function ChangePasswordForm() {
       const supabase = createSupabaseBrowserClient();
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) {
-        setError(updateError.message);
+        toast.error(updateError.message);
         return;
       }
-      setInfo("Đã đổi mật khẩu.");
+      toast.success("Đã đổi mật khẩu.");
       setPassword("");
       setConfirm("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Không đổi được mật khẩu.");
+      toast.error(e instanceof Error ? e.message : "Không đổi được mật khẩu.");
     } finally {
       setPending(false);
     }
@@ -79,8 +77,6 @@ export function ChangePasswordForm() {
               required
             />
           </div>
-          {error && <p className="text-[12px] text-rose-600">{error}</p>}
-          {info && <p className="text-[12px] text-emerald-700">{info}</p>}
           <div className="flex items-center gap-2 pt-1">
             <Button type="submit" disabled={pending}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : "Lưu mật khẩu"}

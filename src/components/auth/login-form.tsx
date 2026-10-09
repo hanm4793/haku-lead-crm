@@ -9,16 +9,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { useToast } from "@/components/providers/toast-provider";
 
 export function LoginForm({ configured }: { configured: boolean }) {
+  const toast = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = React.useState<"signin" | "signup" | "forgot">("signin");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [fullName, setFullName] = React.useState("");
-  const [error, setError] = React.useState<string | null>(null);
-  const [info, setInfo] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
 
   const goNext = () => {
@@ -30,8 +30,6 @@ export function LoginForm({ configured }: { configured: boolean }) {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setPending(true);
-    setError(null);
-    setInfo(null);
 
     try {
       const supabase = createSupabaseBrowserClient();
@@ -40,10 +38,10 @@ export function LoginForm({ configured }: { configured: boolean }) {
         const redirectTo = `${window.location.origin}/login/reset`;
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
         if (resetError) {
-          setError(resetError.message);
+          toast.error(resetError.message);
           return;
         }
-        setInfo("Nếu email này có tài khoản, bạn sẽ nhận được link đặt lại mật khẩu.");
+        toast.info("Đã gửi yêu cầu", "Nếu email này có tài khoản, bạn sẽ nhận được link đặt lại mật khẩu.");
         setMode("signin");
         return;
       }
@@ -55,21 +53,21 @@ export function LoginForm({ configured }: { configured: boolean }) {
           options: { data: { full_name: fullName || undefined } },
         });
         if (signUpError) {
-          setError(signUpError.message);
+          toast.error(signUpError.message);
           return;
         }
         if (data.session) {
           goNext();
           return;
         }
-        setInfo("Đã tạo tài khoản. Nếu Supabase yêu cầu xác nhận email, hãy mở hộp thư rồi đăng nhập lại.");
+        toast.success("Đã tạo tài khoản", "Nếu hệ thống yêu cầu xác nhận email, hãy mở hộp thư rồi đăng nhập lại.");
         setMode("signin");
         return;
       }
 
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) {
-        setError(
+        toast.error(
           signInError.message === "Invalid login credentials"
             ? "Email hoặc mật khẩu không đúng."
             : signInError.message,
@@ -79,7 +77,7 @@ export function LoginForm({ configured }: { configured: boolean }) {
 
       goNext();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Không đăng nhập được.");
+      toast.error(e instanceof Error ? e.message : "Không đăng nhập được.");
     } finally {
       setPending(false);
     }
@@ -147,9 +145,6 @@ export function LoginForm({ configured }: { configured: boolean }) {
               </div>
             )}
 
-            {error && <p className="text-[12px] text-rose-600">{error}</p>}
-            {info && <p className="text-[12px] text-emerald-700">{info}</p>}
-
             <Button type="submit" className="w-full gap-2" disabled={pending}>
               {pending ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -167,8 +162,6 @@ export function LoginForm({ configured }: { configured: boolean }) {
                 className="w-full text-center text-[12px] text-muted-foreground underline-offset-2 hover:underline"
                 onClick={() => {
                   setMode("forgot");
-                  setError(null);
-                  setInfo(null);
                 }}
               >
                 Quên mật khẩu?
@@ -180,8 +173,6 @@ export function LoginForm({ configured }: { configured: boolean }) {
               className="w-full text-center text-[12px] text-muted-foreground underline-offset-2 hover:underline"
               onClick={() => {
                 setMode((current) => (current === "signin" ? "signup" : "signin"));
-                setError(null);
-                setInfo(null);
               }}
             >
               {mode === "signin" ? "Chưa có tài khoản? Đăng ký" : "Đã có tài khoản? Đăng nhập"}
