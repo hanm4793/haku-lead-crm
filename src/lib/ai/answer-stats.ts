@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
+import { canViewMarketing, dataScope } from "@/lib/auth/roles";
 import { getDb } from "@/lib/db/client";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
 import {
@@ -77,15 +78,76 @@ export interface AnswerStatsOutput {
   leadBreakdown?: StatsBreakdownRow[] | null;
   marketingRows?: MarketingBreakdownRow[] | null;
   suggestions: ChatSuggestion[];
+  resolvedQuery: StatsQuery;
+  resolvedMentions: ChatMention[];
 }
 
-function generateSuggestions(query: StatsQuery, mentions: ChatMention[] = []): ChatSuggestion[] {
+function nextMonthSuggestion(query: StatsQuery, mentions: ChatMention[]): ChatSuggestion | null {
+  if (!query.dateFrom || !query.dateTo) return null;
+  const fromMatch = /^(\d{4})-(\d{2})-01$/.exec(query.dateFrom);
+  if (!fromMatch) return null;
+  const year = Number(fromMatch[1]);
+  const month = Number(fromMatch[2]);
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const suffix = nextYear !== year ? `/${nextYear}` : "";
+  return {
+    label: `Còn tháng ${nextMonth}${suffix} thì sao?`,
+    prompt: `Tháng ${nextMonth}${suffix} thì sao?`,
+    mentions,
+  };
+}
+
+function buildScopeLabels(query: StatsQuery, mentions: ChatMention[], matchedPageNames: string[]): string[] {
+  const labels: string[] = [];
+  const fanpageMentions = mentions.filter((m) => m.type === "fanpage").map((m) => m.label);
+  const pageNames = fanpageMentions.length ? fanpageMentions : matchedPageNames;
+  if (pageNames.length) {
+    labels.push(`Fanpage: ${pageNames.join(", ")}`);
+  }
+
+  const campaignMentions = mentions.filter((m) => m.type === "campaign").map((m) => m.label);
+  if (campaignMentions.length) {
+    labels.push(`Chiến dịch: ${campaignMentions.join(", ")}`);
+  } else if (query.campaignQuery) {
+    labels.push(`Chiến dịch: ${query.campaignQuery}`);
+  }
+
+  const assigneeMentions = mentions.filter((m) => m.type === "assignee").map((m) => m.label);
+  if (assigneeMentions.length) {
+    labels.push(`Phụ trách: ${assigneeMentions.join(", ")}`);
+  } else if (query.assigneeQuery) {
+    labels.push(`Phụ trách: ${query.assigneeQuery}`);
+  }
+
+  if (query.filters?.brands?.length) {
+    labels.push(`Thương hiệu: ${query.filters.brands.join(", ")}`);
+  }
+  if (query.filters?.products?.length) {
+    labels.push(`Sản phẩm: ${query.filters.products.join(", ")}`);
+  }
+  if (query.filters?.locations?.length) {
+    labels.push(`Địa điểm: ${query.filters.locations.join(", ")}`);
+  }
+  if (query.filters?.sources?.length) {
+    labels.push(`Nguồn: ${query.filters.sources.join(", ")}`);
+  }
+  return labels;
+}
+
+function generateSuggestions(
+  query: StatsQuery,
+  mentions: ChatMention[] = [],
+  viewer?: ViewerScope,
+): ChatSuggestion[] {
   const suggestions: ChatSuggestion[] = [];
   const primaryMention = mentions[0];
+  const allowMarketing = viewer ? canViewMarketing(viewer.role) : true;
+  const nextMonth = nextMonthSuggestion(query, mentions);
 
   if (primaryMention) {
     const name = primaryMention.label;
-    if (primaryMention.type === "campaign") {
+    if (primaryMention.type === "campaign" && allowMarketing) {
       suggestions.push(
         {
           label: `Quảng cáo nhiều lead nhất của ${name}`,
@@ -104,89 +166,96 @@ function generateSuggestions(query: StatsQuery, mentions: ChatMention[] = []): C
         },
       );
     } else if (primaryMention.type === "fanpage") {
+      if (nextMonth) suggestions.push(nextMonth);
       suggestions.push(
         {
           label: `Xem chi tiết theo nhân viên của ${name}`,
-          prompt: `Xem chi tiết theo nhân viên của`,
-          mentions: [primaryMention],
-        },
-        {
-          label: `So sánh ${name} với kỳ trước`,
-          prompt: `So sánh với kỳ trước của`,
-          mentions: [primaryMention],
-        },
-        {
-          label: `Xuất danh sách lead của ${name} ra Excel`,
-          prompt: `Xuất danh sách lead của`,
-          mentions: [primaryMention],
-        },
-      );
-    } else if (primaryMention.type === "assignee") {
-      suggestions.push(
-        {
-          label: `Phân loại trạng thái lead của ${name}`,
-          prompt: `Xem chi tiết theo phân loại của`,
-          mentions: [primaryMention],
-        },
-        {
-          label: `So sánh ${name} với kỳ trước`,
-          prompt: `So sánh với kỳ trước của`,
-          mentions: [primaryMention],
-        },
-        {
-          label: `Xuất danh sách lead của ${name} ra Excel`,
-          prompt: `Xuất danh sách lead của`,
-          mentions: [primaryMention],
-        },
-      );
-    } else if (primaryMention.type === "product" || primaryMention.type === "brand") {
-      suggestions.push(
-        {
-          label: `Xem chi tiết theo nguồn của ${name}`,
-          prompt: `Xem chi tiết theo nguồn của`,
-          mentions: [primaryMention],
-        },
-        {
-          label: `Xem chi tiết theo nhân viên phụ trách ${name}`,
-          prompt: `Xem chi tiết theo nhân viên của`,
-          mentions: [primaryMention],
-        },
-        {
-          label: `Xuất danh sách lead ${name} ra Excel`,
-          prompt: `Xuất danh sách lead của`,
-          mentions: [primaryMention],
-        },
-      );
-    } else {
-      suggestions.push(
-        {
-          label: `Chi tiết theo nhân viên của ${name}`,
-          prompt: `Chi tiết theo nhân viên của`,
-          mentions: [primaryMention],
+          prompt: `Xem chi tiết theo nhân viên`,
+          mentions,
         },
         {
           label: `So sánh ${name} với kỳ trước`,
           prompt: `So sánh với kỳ trước`,
-          mentions: [primaryMention],
+          mentions,
+        },
+        {
+          label: `Xuất danh sách lead của ${name} ra Excel`,
+          prompt: `Xuất danh sách này ra excel`,
+          mentions,
+        },
+      );
+    } else if (primaryMention.type === "assignee") {
+      if (nextMonth) suggestions.push(nextMonth);
+      suggestions.push(
+        {
+          label: `Phân loại trạng thái lead của ${name}`,
+          prompt: `Xem chi tiết theo phân loại`,
+          mentions,
+        },
+        {
+          label: `So sánh ${name} với kỳ trước`,
+          prompt: `So sánh với kỳ trước`,
+          mentions,
+        },
+        {
+          label: `Xuất danh sách lead của ${name} ra Excel`,
+          prompt: `Xuất danh sách này ra excel`,
+          mentions,
+        },
+      );
+    } else if (primaryMention.type === "product" || primaryMention.type === "brand") {
+      if (nextMonth) suggestions.push(nextMonth);
+      suggestions.push(
+        {
+          label: `Xem chi tiết theo nguồn của ${name}`,
+          prompt: `Xem chi tiết theo nguồn`,
+          mentions,
+        },
+        {
+          label: `Xem chi tiết theo nhân viên phụ trách ${name}`,
+          prompt: `Xem chi tiết theo nhân viên`,
+          mentions,
+        },
+        {
+          label: `Xuất danh sách lead ${name} ra Excel`,
+          prompt: `Xuất danh sách này ra excel`,
+          mentions,
+        },
+      );
+    } else {
+      if (nextMonth) suggestions.push(nextMonth);
+      suggestions.push(
+        {
+          label: `Chi tiết theo nhân viên của ${name}`,
+          prompt: `Chi tiết theo nhân viên`,
+          mentions,
+        },
+        {
+          label: `So sánh ${name} với kỳ trước`,
+          prompt: `So sánh với kỳ trước`,
+          mentions,
         },
       );
     }
     return suggestions.slice(0, 3);
   }
 
-  if (query.dataset === "marketing") {
+  if (query.dataset === "marketing" && allowMarketing) {
+    if (nextMonth) suggestions.push(nextMonth);
     suggestions.push(
       { label: "Quảng cáo nào CPL rẻ nhất?", prompt: "Quảng cáo nào có CPL thấp nhất?", mentions: [] },
       { label: "Chi tiêu theo từng chiến dịch", prompt: "Chi tiêu theo từng chiến dịch tháng này", mentions: [] },
       { label: "Đối chiếu lead CRM và lead quảng cáo", prompt: "Đối chiếu lead CRM và lead quảng cáo", mentions: [] },
     );
-  } else if (query.dataset === "both") {
+  } else if (query.dataset === "both" && allowMarketing) {
+    if (nextMonth) suggestions.push(nextMonth);
     suggestions.push(
       { label: "Quảng cáo nào mang lại nhiều lead nhất?", prompt: "Quảng cáo nào mang lại nhiều lead nhất?", mentions: [] },
-      { label: "Xem chi tiết lead theo nhân viên", prompt: "Xem chi tiết lead theo nhân viên tháng này", mentions: [] },
-      { label: "Xuất file Excel tháng này", prompt: "Xuất lead tháng này ra excel", mentions: [] },
+      { label: "Xem chi tiết lead theo nhân viên", prompt: "Xem chi tiết lead theo nhân viên", mentions: [] },
+      { label: "Xuất file Excel danh sách này", prompt: "Xuất danh sách này ra excel", mentions: [] },
     );
   } else {
+    if (nextMonth) suggestions.push(nextMonth);
     if (!query.groupBy) {
       suggestions.push(
         { label: "Xem chi tiết theo nhân viên", prompt: "Xem chi tiết lead theo nhân viên", mentions: [] },
@@ -197,7 +266,9 @@ function generateSuggestions(query: StatsQuery, mentions: ChatMention[] = []): C
       suggestions.push(
         { label: "Xuất danh sách này ra Excel", prompt: "Xuất danh sách này ra excel", mentions: [] },
         { label: "So sánh với kỳ trước", prompt: "So sánh với kỳ trước", mentions: [] },
-        { label: "Xem chi tiêu quảng cáo tương ứng", prompt: "Chi tiêu quảng cáo tương ứng", mentions: [] },
+        allowMarketing
+          ? { label: "Xem chi tiêu quảng cáo tương ứng", prompt: "Chi tiêu quảng cáo tương ứng", mentions: [] }
+          : { label: "Xem chi tiết theo phân loại trạng thái", prompt: "Xem chi tiết theo trạng thái", mentions: [] },
       );
     }
   }
@@ -216,31 +287,42 @@ export async function answerFromStats(
   catalog?: AiCatalog,
   mentions: ChatMention[] = [],
 ): Promise<AnswerStatsOutput> {
-  const suggestions = generateSuggestions(query, mentions);
-  const dataset = query.dataset ?? "leads";
-  if (viewer.role !== "SUPER_ADMIN" && viewer.pageIds.length === 0) {
+  const allowMarketing = canViewMarketing(viewer.role);
+  // Nếu tài khoản không có quyền xem Marketing mà câu hỏi là "both" (chung chung), chỉ đọc tập "leads"
+  const dataset = query.dataset === "both" && !allowMarketing ? "leads" : (query.dataset ?? "leads");
+  let resolvedQuery: StatsQuery = { ...query, dataset };
+  let resolvedMentions: ChatMention[] = [...mentions];
+
+  if (dataScope(viewer) === "none") {
+    const suggestions = generateSuggestions(resolvedQuery, resolvedMentions, viewer);
     if (dataset === "marketing") {
       return {
         reply: "Tài khoản chưa được gán fanpage, nên không có số quảng cáo trong phạm vi xem.",
         suggestions,
+        resolvedQuery,
+        resolvedMentions,
       };
     }
     if (dataset === "both") {
       return {
         reply: "Tài khoản chưa được gán fanpage, nên không có lead CRM và không có số quảng cáo trong phạm vi xem.",
         suggestions,
+        resolvedQuery,
+        resolvedMentions,
       };
     }
     return {
       reply: formatStatsReply({
         viewer,
-        query,
+        query: resolvedQuery,
         kpis: emptyKpis(),
         previous: null,
         previousRange: null,
         breakdown: null,
       }),
       suggestions,
+      resolvedQuery,
+      resolvedMentions,
     };
   }
 
@@ -248,54 +330,91 @@ export async function answerFromStats(
     await listFacebookPages(viewer.activeProjectId ? { projectId: viewer.activeProjectId } : undefined),
     viewer,
   );
-  let pageIds = query.pageIds ?? [];
-  if (!pageIds.length && query.pageQuery) {
-    const matched = matchPages(visible, query.pageQuery);
+  let pageIds = resolvedQuery.pageIds ?? [];
+  let matchedPageNames: string[] = [];
+
+  if (pageIds.length > 0) {
+    const byId = new Map(visible.map((p) => [p.facebookPageId, p.name ?? p.facebookPageId]));
+    matchedPageNames = pageIds.map((id) => byId.get(id) ?? id);
+  } else if (resolvedQuery.pageQuery) {
+    const matched = matchPages(visible, resolvedQuery.pageQuery);
     if (matched.length === 0) {
+      const suggestions = generateSuggestions(resolvedQuery, resolvedMentions, viewer);
       return {
         reply: formatStatsReply({
           viewer,
-          query,
+          query: resolvedQuery,
           kpis: emptyKpis(),
           previous: null,
           previousRange: null,
           breakdown: null,
-          unmatchedPage: query.pageQuery,
+          unmatchedPage: resolvedQuery.pageQuery,
           visiblePageNames: visible.map((page) => page.name ?? page.facebookPageId),
         }),
         suggestions,
+        resolvedQuery,
+        resolvedMentions,
       };
     }
     pageIds = matched.map((page) => page.facebookPageId);
+    matchedPageNames = matched.map((page) => page.name ?? page.facebookPageId);
+    resolvedQuery = { ...resolvedQuery, pageIds };
+    if (!resolvedMentions.some((m) => m.type === "fanpage")) {
+      resolvedMentions = [
+        ...resolvedMentions,
+        ...matched.map((page) => ({
+          type: "fanpage" as const,
+          id: page.facebookPageId,
+          label: page.name ?? page.facebookPageId,
+        })),
+      ];
+    }
   }
 
+  const suggestions = generateSuggestions(resolvedQuery, resolvedMentions, viewer);
+  const activeScopeLabels = buildScopeLabels(resolvedQuery, resolvedMentions, matchedPageNames);
+
   const sections: string[] = [];
-  if (query.leadIds?.length) {
-    sections.push(await lookupTaggedLeads(query.leadIds, viewer));
+  if (resolvedQuery.leadIds?.length) {
+    sections.push(await lookupTaggedLeads(resolvedQuery.leadIds, viewer));
   }
   const leadOnly =
-    Boolean(query.leadIds?.length) &&
-    !query.dateFrom &&
-    !query.dateTo &&
-    !query.groupBy &&
-    !query.rankBy &&
-    !query.campaignQuery &&
-    !query.campaignIds?.length &&
-    !query.adIds?.length &&
-    !query.pageQuery &&
-    !query.pageIds?.length;
-  if (leadOnly) return { reply: sections.join("\n\n"), suggestions };
+    Boolean(resolvedQuery.leadIds?.length) &&
+    !resolvedQuery.dateFrom &&
+    !resolvedQuery.dateTo &&
+    !resolvedQuery.groupBy &&
+    !resolvedQuery.rankBy &&
+    !resolvedQuery.campaignQuery &&
+    !resolvedQuery.campaignIds?.length &&
+    !resolvedQuery.adIds?.length &&
+    !resolvedQuery.pageQuery &&
+    !resolvedQuery.pageIds?.length;
+  if (leadOnly) {
+    return {
+      reply: sections.join("\n\n"),
+      suggestions,
+      resolvedQuery,
+      resolvedMentions,
+    };
+  }
 
   let leadBreakdown: StatsBreakdownRow[] | null = null;
   let marketingRows: MarketingBreakdownRow[] | null = null;
 
   if (dataset !== "marketing") {
-    const leadRes = await leadSection(query, viewer, now, pageIds, dataset === "leads" && mentionsAdsMetrics(question));
+    const leadRes = await leadSection(
+      resolvedQuery,
+      viewer,
+      now,
+      pageIds,
+      dataset === "leads" && mentionsAdsMetrics(question),
+      activeScopeLabels,
+    );
     sections.push(leadRes.reply);
     leadBreakdown = leadRes.breakdown;
   }
   if (dataset !== "leads") {
-    const mktRes = await marketingSection(query, viewer, pageIds, catalog);
+    const mktRes = await marketingSection(resolvedQuery, viewer, pageIds, catalog, activeScopeLabels);
     sections.push(mktRes.reply);
     marketingRows = mktRes.rows;
   }
@@ -304,6 +423,8 @@ export async function answerFromStats(
     leadBreakdown,
     marketingRows,
     suggestions,
+    resolvedQuery,
+    resolvedMentions,
   };
 }
 
@@ -313,6 +434,7 @@ async function leadSection(
   now: Date,
   pageIds: string[],
   adsNote: boolean,
+  activeScopeLabels: string[],
 ) {
   const filters = statsToFilters(query, pageIds);
   const extra: Partial<LeadCriteria> = {
@@ -362,6 +484,7 @@ async function leadSection(
     previousRange,
     breakdown,
     adsNote,
+    activeScopeLabels,
   });
   return {
     reply: query.dataset === "both" ? `Lead CRM\n${reply}` : reply,
@@ -374,7 +497,14 @@ async function marketingSection(
   viewer: ViewerScope,
   pageIds: string[],
   catalog?: AiCatalog,
+  activeScopeLabels: string[] = [],
 ) {
+  if (!canViewMarketing(viewer.role)) {
+    return {
+      reply: "Chỉ Super admin mới có quyền xem dữ liệu marketing.",
+      rows: null,
+    };
+  }
   let scopedPages: string[] | null = null;
   if (viewer.activeProjectId) {
     const projectPages = await listFacebookPages({ projectId: viewer.activeProjectId });
@@ -466,6 +596,7 @@ async function marketingSection(
       previous: previous?.totals ?? null,
       previousRange,
       breakdown: current.rows,
+      activeScopeLabels,
     }),
     rows: current.rows,
   };

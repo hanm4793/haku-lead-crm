@@ -2,15 +2,21 @@ import { describe, expect, it } from "vitest";
 
 import type { ViewerScope } from "@/lib/db/leads-repo";
 
+import { parseExportRequestLocally } from "./fallback-parser";
+import { refineSpec } from "./refine-spec";
 import {
   applyMentions,
   formatMarketingReply,
   formatStatsReply,
+  inheritStatsQuery,
   matchPages,
+  mergeContextMentions,
   mergeStats,
   pagesInScope,
   parseStatsQuestion,
+  parseTimeRange,
   pickNamedItem,
+  type ChatMention,
   type StatsQuery,
 } from "./stats-query";
 
@@ -148,6 +154,137 @@ describe("parseStatsQuestion", () => {
   it("leaves export requests to the export parser", () => {
     expect(parseStatsQuestion("Xuất lead tháng này ra excel", now)).toBeNull();
   });
+
+  it("parses specific months, quarters, yesterday, and weeks in parseTimeRange and parseStatsQuestion", () => {
+    expect(parseTimeRange("dữ liệu vào tháng 7", now)).toMatchObject({
+      dateFrom: "2026-07-01",
+      dateTo: "2026-07-31",
+      hasExplicitTime: true,
+    });
+    expect(parseTimeRange("tháng 8 thì sao?", now)).toMatchObject({
+      dateFrom: "2026-08-01",
+      dateTo: "2026-08-31",
+      hasExplicitTime: true,
+    });
+    expect(parseTimeRange("còn tháng 12/2025?", now)).toMatchObject({
+      dateFrom: "2025-12-01",
+      dateTo: "2025-12-31",
+      hasExplicitTime: true,
+    });
+    expect(parseTimeRange("quý 3 năm 2026", now)).toMatchObject({
+      dateFrom: "2026-07-01",
+      dateTo: "2026-09-30",
+      hasExplicitTime: true,
+    });
+    expect(parseTimeRange("hôm qua có bao nhiêu lead", now)).toMatchObject({
+      dateFrom: "2026-09-25",
+      dateTo: "2026-09-25",
+      hasExplicitTime: true,
+    });
+  });
+
+  it("filters MANUAL lead source when asking about manual leads", () => {
+    const query = parseStatsQuestion("Tháng này có bao nhiêu lead thủ công?", now);
+    expect(query?.filters.sources).toEqual(["MANUAL"]);
+    expect(query?.dataset).toBe("leads");
+  });
+});
+
+describe("multi-turn conversational inheritance", () => {
+  const fanpageMention: ChatMention = {
+    type: "fanpage",
+    id: "105589125657497",
+    label: "Kia Hà Nam",
+  };
+
+  it("auto-carries @fanpage from Turn 1 (July) into Turn 2 ('tháng 8 thì sao?') and Turn 3 ('chia theo nhân viên')", () => {
+    // Turn 1: User asks "dữ liệu của @Kia Hà Nam vào tháng 7"
+    const turn1Mentions = [fanpageMention];
+    const turn1Parsed = parseStatsQuestion("dữ liệu của vào tháng 7 @Kia Hà Nam", now, {
+      mentions: turn1Mentions,
+    });
+    expect(turn1Parsed).not.toBeNull();
+    const turn1Stats = applyMentions(turn1Parsed!, turn1Mentions);
+    expect(turn1Stats).toMatchObject({
+      dateFrom: "2026-07-01",
+      dateTo: "2026-07-31",
+      pageIds: ["105589125657497"],
+    });
+
+    // Turn 2: User asks "tháng 8 thì sao?" without re-typing @Kia Hà Nam
+    const turn2Mentions = mergeContextMentions([], turn1Mentions, "tháng 8 thì sao?");
+    expect(turn2Mentions).toEqual([fanpageMention]);
+
+    const turn2Parsed = parseStatsQuestion("tháng 8 thì sao?", now, {
+      lastStats: turn1Stats,
+      mentions: turn2Mentions,
+    });
+    expect(turn2Parsed).not.toBeNull();
+    const turn2Stats = applyMentions(turn2Parsed!, turn2Mentions);
+    expect(turn2Stats).toMatchObject({
+      dateFrom: "2026-08-01",
+      dateTo: "2026-08-31",
+      pageIds: ["105589125657497"],
+      dataset: turn1Stats.dataset,
+    });
+
+    // Turn 3: User asks "chia theo nhân viên phụ trách thì sao?" (keeps August + @Kia Hà Nam)
+    const turn3Mentions = mergeContextMentions([], turn2Mentions, "chia theo nhân viên phụ trách thì sao?");
+    const turn3Parsed = parseStatsQuestion("chia theo nhân viên phụ trách thì sao?", now, {
+      lastStats: turn2Stats,
+      mentions: turn3Mentions,
+    });
+    expect(turn3Parsed).not.toBeNull();
+    const turn3Stats = applyMentions(turn3Parsed!, turn3Mentions);
+    expect(turn3Stats).toMatchObject({
+      dateFrom: "2026-08-01",
+      dateTo: "2026-08-31",
+      pageIds: ["105589125657497"],
+      groupBy: "assignee",
+      dataset: "leads",
+    });
+
+    // Turn 4: User asks "xuất danh sách này ra excel" -> inherits @Kia Hà Nam, August, and splitSheetsBy = assignee
+    const exportLocal = parseExportRequestLocally("xuất danh sách này ra excel", now, undefined, {
+      mentions: turn3Mentions,
+      lastStats: turn3Stats,
+    });
+    expect(exportLocal.spec).not.toBeNull();
+    const refined = refineSpec(exportLocal.spec!, "xuất danh sách này ra excel", undefined, {
+      mentions: turn3Mentions,
+      lastStats: turn3Stats,
+      now,
+    });
+    expect(refined.filters.facebookPageIds).toEqual(["105589125657497"]);
+    expect(refined.filters.dateFrom).toBe("2026-08-01");
+    expect(refined.filters.dateTo).toBe("2026-08-31");
+    expect(refined.splitSheetsBy).toBe("assignee");
+
+    // Turn 5: User asks "còn tất cả các fanpage thì sao?" -> clears pageIds, keeps August
+    const turn5Mentions = mergeContextMentions([], turn3Mentions, "còn tất cả các fanpage thì sao?");
+    expect(turn5Mentions).toEqual([]);
+    const turn5Stats = inheritStatsQuery(
+      parseStatsQuestion("còn tất cả các fanpage thì sao?", now, { lastStats: turn3Stats })!,
+      turn3Stats,
+      "còn tất cả các fanpage thì sao?",
+      now,
+    );
+    expect(turn5Stats.pageIds).toBeNull();
+    expect(turn5Stats.dateFrom).toBe("2026-08-01");
+    expect(turn5Stats.dateTo).toBe("2026-08-31");
+  });
+
+  it("replaces same-type @mention while keeping other pinned @mentions", () => {
+    const pinned: ChatMention[] = [
+      { type: "fanpage", id: "fp-1", label: "Kia Hà Nam" },
+      { type: "brand", id: "KIA", label: "Kia" },
+    ];
+    const nextFanpage: ChatMention[] = [{ type: "fanpage", id: "fp-2", label: "Kia Hòa Bình" }];
+    expect(mergeContextMentions(nextFanpage, pinned, "còn page này thì sao")).toEqual([
+      { type: "brand", id: "KIA", label: "Kia" },
+      { type: "fanpage", id: "fp-2", label: "Kia Hòa Bình" },
+    ]);
+  });
 });
 
 describe("pagesInScope", () => {
@@ -193,7 +330,7 @@ describe("formatStatsReply", () => {
     expect(reply).not.toContain("99");
   });
 
-  it("prints database figures and the previous window", () => {
+  it("prints database figures, active scope labels, and the previous window", () => {
     const reply = formatStatsReply({
       viewer: { role: "SUPER_ADMIN", pageIds: [] },
       query: { ...emptyQuery, comparePrevious: true, groupBy: "fanpage" },
@@ -225,7 +362,9 @@ describe("formatStatsReply", () => {
       },
       previousRange: { from: "2026-08-06", to: "2026-08-31" },
       breakdown: [{ key: "Peugeot Hà Nam", leads: 26, contacted: 10, khqt: 4, failed: 3 }],
+      activeScopeLabels: ["Fanpage: Peugeot Hà Nam"],
     });
+    expect(reply).toContain("Fanpage: Peugeot Hà Nam");
     expect(reply).toContain("Tổng lead: 26");
     expect(reply).toContain("tăng 6");
     expect(reply).toContain("06/08/2026–31/08/2026");
@@ -252,3 +391,4 @@ describe("formatMarketingReply", () => {
     expect(reply).not.toContain("KHQT");
   });
 });
+

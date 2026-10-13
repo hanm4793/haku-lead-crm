@@ -3,7 +3,11 @@ import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { projectAttrFields } from "@/lib/db/schema";
 
-export type AttrFieldType = "text" | "number" | "select" | "date";
+export type AttrFieldType = "text" | "number" | "select" | "multiselect" | "boolean" | "date";
+
+export function isListAttrFieldType(type: AttrFieldType): boolean {
+  return type === "select" || type === "multiselect";
+}
 
 export type AttrFieldRow = {
   id: string;
@@ -72,6 +76,7 @@ export async function createAttrField(input: {
   if (!label) throw new Error("Nhãn field bắt buộc.");
   const key = slugKey(input.key?.trim() || label);
   if (!key) throw new Error("Key field không hợp lệ.");
+  const fieldType = input.fieldType ?? "text";
 
   const [row] = await getDb()
     .insert(projectAttrFields)
@@ -79,8 +84,8 @@ export async function createAttrField(input: {
       projectId: input.projectId,
       key,
       label,
-      fieldType: input.fieldType ?? "text",
-      options: input.fieldType === "select" ? (input.options ?? []).map((o) => o.trim()).filter(Boolean) : [],
+      fieldType,
+      options: isListAttrFieldType(fieldType) ? (input.options ?? []).map((o) => o.trim()).filter(Boolean) : [],
       required: Boolean(input.required),
       sortOrder: input.sortOrder ?? 0,
     })

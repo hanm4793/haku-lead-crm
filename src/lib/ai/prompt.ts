@@ -1,9 +1,10 @@
-﻿import { columnHeader, LEAD_COLUMNS } from "@/components/leads/columns";
+import { columnHeader, LEAD_COLUMNS } from "@/components/leads/columns";
 import { CATEGORY_OPTIONS, FAIL_REASON_OPTIONS, SOURCE_OPTIONS } from "@/lib/constants";
 import { pivotDimensionLabels } from "@/lib/metrics";
 
 import { DEFAULT_AI_CATALOG, type AiCatalog } from "./catalog-context";
 import type { ExportSpec } from "./export-spec";
+import type { ChatMention, StatsQuery } from "./stats-query";
 
 /**
  * System prompt chỉ chứa MÔ TẢ SCHEMA — không chứa bất kỳ dòng dữ liệu khách
@@ -12,7 +13,11 @@ import type { ExportSpec } from "./export-spec";
 export function buildSystemPrompt(
   now: Date = new Date(),
   catalog: AiCatalog = DEFAULT_AI_CATALOG,
-  context?: { lastSpec?: ExportSpec | null; lastStats?: unknown | null },
+  context?: {
+    lastSpec?: ExportSpec | null;
+    lastStats?: StatsQuery | null;
+    activeMentions?: ChatMention[];
+  },
 ) {
   const { labels } = catalog;
   const columns = LEAD_COLUMNS.map((c) => `- ${c.id}: ${columnHeader(c.id, labels)}`).join("\n");
@@ -34,7 +39,25 @@ export function buildSystemPrompt(
         .join("\n")
     : "";
 
-  const contextPrompt = context?.lastSpec
+  const activeMentionsText = context?.activeMentions?.length
+    ? context.activeMentions.map((m) => `@${m.label} (${m.type})`).join(", ")
+    : "Không có";
+
+  const statsContextPrompt =
+    context?.lastStats || context?.activeMentions?.length
+      ? `\nNGỮ CẢNH HỘI THOẠI GẦN NHẤT (DÙNG ĐỂ KẾ THỪA KHI HỎI TIẾP):
+- Thực thể đang ghim (@mention): ${activeMentionsText}
+- Khoảng thời gian câu trước: ${context?.lastStats?.dateFrom ?? "Tất cả"} đến ${context?.lastStats?.dateTo ?? "Tất cả"}
+- Tập dữ liệu câu trước (dataset): ${context?.lastStats?.dataset ?? "both"}
+- Chiều nhóm câu trước (groupBy): ${context?.lastStats?.groupBy ?? "Không"}
+- Bộ lọc thêm câu trước: ${JSON.stringify(context?.lastStats?.filters ?? {})}
+Nếu người dùng hỏi câu ngắn nối tiếp (như "tháng 8 thì sao?", "còn tuần trước?", "chia theo nhân viên thì sao?", "còn @FanpageB?"):
++ BẮT BUỘC giữ action = STATS (hoặc EXPORT nếu họ yêu cầu xuất file).
++ Kế thừa dataset, groupBy, thực thể đang ghim và bộ lọc của câu trước, CHỈ thay đổi đúng phần người dùng vừa hỏi (ví dụ: đổi dateFrom/dateTo sang tháng 8, hoặc đổi groupBy).
++ Nếu người dùng nói "tất cả fanpage", "toàn bộ hệ thống" thì mới bỏ bộ lọc thực thể cũ.\n`
+      : "";
+
+  const exportContextPrompt = context?.lastSpec
     ? `\nNGỮ CẢNH CẤU HÌNH EXPORT GẦN NHẤT:
 - Cột: ${context.lastSpec.columns.join(", ")}
 - Bộ lọc: ${JSON.stringify(context.lastSpec.filters)}
@@ -43,9 +66,7 @@ Nếu người dùng muốn bổ sung, bỏ bớt cột hoặc sửa bộ lọc,
     : "";
 
   return `Bạn là trợ lý AI của hệ thống SEMTOP Marketing CRM. Bạn giúp nhân viên kinh doanh và quản lý lấy đúng dữ liệu họ cần.
-${contextPrompt}
-HÔM NAY là ${new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10)} (giờ Việt Nam).
-
+${statsContextPrompt}${exportContextPrompt}
 HÔM NAY là ${new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10)} (giờ Việt Nam).
 
 NHIỆM VỤ

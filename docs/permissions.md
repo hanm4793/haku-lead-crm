@@ -12,7 +12,7 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 | --- | --- | --- | --- |
 | Lead | Có | Có | Có |
 | Báo cáo | Có | Có | Không, chuyển về Lead. API trả 403 |
-| Marketing | Có | Có | Không, chuyển về Lead |
+| Marketing | Có | Không, chuyển về Lead | Không, chuyển về Lead |
 | Dự án (`/projects`) | Có. `canViewProjects` | Có. Project trong `project_members` | Không, chuyển về Lead |
 | Tài khoản | Có | Có. Chỉ nhân viên của mình | Không, chuyển về Lead |
 | Cài đặt và đồng bộ Facebook | Có | Không | Không |
@@ -26,13 +26,16 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 
 | Hạng mục | Super admin | Partner admin | Nhân viên |
 | --- | --- | --- | --- |
-| Xem lead | Mọi fanpage | Fanpage được gán | Fanpage của partner |
-| Không có grant | Vẫn thấy hết | Không thấy lead | Không thấy lead |
+| Xem lead | Mọi fanpage | Fanpage được gán + lead thủ công trong project | Fanpage của partner + lead thủ công trong project |
+| Không có grant | Vẫn thấy hết | Chỉ thấy lead thủ công trong project đang xem | Chỉ thấy lead thủ công trong project đang xem |
+| Tạo lead thủ công / Import lead (`canCreateLead`, `canImportLeads`) | Có. Mặc định chưa giao (`resolveManualLeadAssignee`) | Có. Mặc định chưa giao (`resolveManualLeadAssignee`) | Có. Tự động gán phụ trách là chính tài khoản đó (`resolveManualLeadAssignee`) |
 | Sửa lead, ghi chú, nhật ký | Mọi lead đang xem | Mọi lead đang xem | Chỉ lead được giao cho mình |
+| Sửa tên & số điện thoại lead (`canEditLeadProfile`) | Chỉ lead nguồn `MANUAL` (thủ công / import) | Chỉ lead nguồn `MANUAL` (thủ công / import) | Chỉ lead nguồn `MANUAL` được giao cho mình |
+| Bình luận lead (thêm, trả lời) | Mọi lead đang xem | Mọi lead đang xem | Chỉ lead được giao cho mình |
 | Lead chưa giao | Sửa được | Sửa được | Chỉ xem |
 | Bộ lọc fanpage trên Lead và Báo cáo | Mọi fanpage đang bật | Fanpage được gán | Fanpage của partner |
 | Số liệu báo cáo | Mọi fanpage | Cùng phạm vi lead | Không vào màn |
-| Ads và chiến dịch marketing | Mọi dòng thuộc fanpage của **project đang xem** (switcher). Không gắn page → ẩn khi đã chọn project | Chỉ ad có page được gán **và** thuộc project đang xem. Chiến dịch lấy từ các ad đó | Không vào màn |
+| Ads và chiến dịch marketing | Mọi dòng thuộc fanpage của **project đang xem** (switcher). Không gắn page → ẩn khi đã chọn project | Không vào màn | Không vào màn |
 | Người được giao lead | Mọi nhân viên đang hoạt động | Nhân viên cùng partner | Nhân viên cùng partner |
 
 ## Tài khoản
@@ -53,6 +56,7 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 | --- | --- | --- | --- |
 | Mở trợ lý và gọi `/api/ai/chat`, `/api/ai/mentions`, `/api/ai/lead-copilot` | Luôn bật | Chỉ khi super admin bật cờ AI | Không. API trả 403 |
 | Số liệu AI đọc | Mọi fanpage | Fanpage được gán. Hết grant thì không có số | Không gọi được |
+| Số liệu Marketing / Ads & gợi ý `@campaign`, `@ad` trong AI (`canViewMarketing`) | Có | Không (chỉ đọc số liệu Lead CRM) | Không |
 
 Lead CRM và số lead trên ads là hai tập khác nhau. Câu trả lời AI phải giữ đúng phạm vi fanpage của người hỏi.
 

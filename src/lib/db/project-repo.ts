@@ -245,8 +245,8 @@ export async function createProject(input: {
       slug,
       name,
       brandLabel: input.brandLabel?.trim() || "Thương hiệu",
-      productLabel: input.productLabel?.trim() || "Sản phẩm",
-      locationLabel: input.locationLabel?.trim() || "Địa điểm",
+      productLabel: input.productLabel?.trim() || "Loại sản phẩm",
+      locationLabel: input.locationLabel?.trim() || "Đại lý",
     })
     .returning();
   if (!row) throw new Error("Không tạo được project.");
@@ -270,8 +270,8 @@ export async function updateProject(
     values.name = name;
   }
   if (patch.brandLabel !== undefined) values.brandLabel = patch.brandLabel.trim() || "Thương hiệu";
-  if (patch.productLabel !== undefined) values.productLabel = patch.productLabel.trim() || "Sản phẩm";
-  if (patch.locationLabel !== undefined) values.locationLabel = patch.locationLabel.trim() || "Địa điểm";
+  if (patch.productLabel !== undefined) values.productLabel = patch.productLabel.trim() || "Loại sản phẩm";
+  if (patch.locationLabel !== undefined) values.locationLabel = patch.locationLabel.trim() || "Đại lý";
   if (patch.active !== undefined) values.active = patch.active;
 
   const [row] = await getDb().update(projects).set(values).where(eq(projects.id, id)).returning();

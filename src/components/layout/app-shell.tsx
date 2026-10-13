@@ -10,7 +10,7 @@ import { AiChatPanel } from "@/components/ai/ai-chat-panel";
 import { ProjectSwitcher } from "@/components/layout/project-switcher";
 import { UserMenu } from "@/components/layout/user-menu";
 import { Button } from "@/components/ui/button";
-import { canSeeNav, canUseAi, ROLE_LABELS, type NavGate, type UserRole } from "@/lib/auth/roles";
+import { canSeeNav, canUseAi, canViewMarketing, ROLE_LABELS, type NavGate, type UserRole } from "@/lib/auth/roles";
 import type { ProjectInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -184,7 +184,13 @@ export function AppShell({
         </footer>
       </div>
 
-      {showAi && <AiChatPanel open={aiOpen} onOpenChange={setAiOpen} />}
+      {showAi && (
+        <AiChatPanel
+          open={aiOpen}
+          onOpenChange={setAiOpen}
+          canSeeMarketing={canViewMarketing(user.role)}
+        />
+      )}
     </div>
   );
 }

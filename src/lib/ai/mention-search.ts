@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import type { MentionType } from "@/lib/ai/stats-query";
+import { canViewMarketing } from "@/lib/auth/roles";
 import { getDb } from "@/lib/db/client";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
 import { scopeConditions, type ViewerScope } from "@/lib/db/leads-repo";
@@ -45,6 +46,7 @@ export async function searchMentions(
 ): Promise<MentionHit[]> {
   const q = needle(query);
   const scopedPages = await getProjectPageScope(viewer);
+  const allowMarketing = canViewMarketing(viewer.role);
 
   if (type && type !== "all") {
     switch (type) {
@@ -61,19 +63,19 @@ export async function searchMentions(
       case "location":
         return searchLocations(viewer, q);
       case "campaign":
-        return searchCampaigns(scopedPages, q);
+        return allowMarketing ? searchCampaigns(scopedPages, q) : [];
       case "ad":
-        return searchAds(scopedPages, q);
+        return allowMarketing ? searchAds(scopedPages, q) : [];
     }
   }
 
-  // Khi type là "all" hoặc không truyền: tìm kiếm song song trên tất cả các danh mục
+  // Khi type là "all" hoặc không truyền: tìm kiếm song song trên tất cả các danh mục được phép
   const [brandsRes, productsRes, fanpagesRes, staffRes, campaignsRes, locationsRes] = await Promise.all([
     searchBrands(viewer, q),
     searchProducts(viewer, q),
     searchPages(viewer, q),
     searchStaff(viewer, q),
-    searchCampaigns(scopedPages, q),
+    allowMarketing ? searchCampaigns(scopedPages, q) : Promise.resolve([] as MentionHit[]),
     searchLocations(viewer, q),
   ]);
 

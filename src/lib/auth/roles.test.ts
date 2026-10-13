@@ -4,8 +4,12 @@ import { scopeConditions } from "@/lib/db/leads-repo";
 
 import {
   assertCanManageAccount,
+  canCommentLead,
+  canCreateLead,
   canEditLead,
+  canEditLeadProfile,
   canEmailAccount,
+  canImportLeads,
   canManageAttrFields,
   canManageAttrFieldsInProject,
   canManageCatalogs,
@@ -26,6 +30,7 @@ import {
   pageGrantUserId,
   prepareCreateAccount,
   rejectNewSuperAdmin,
+  resolveManualLeadAssignee,
   type UserRole,
 } from "./roles";
 
@@ -36,15 +41,17 @@ describe("menu", () => {
     for (const role of ROLES) expect(canSeeNav(role, "all")).toBe(true);
   });
 
-  it("reports and marketing are manager screens", () => {
+  it("reports is manager screen and marketing is super-admin-only", () => {
     expect(canSeeNav("SUPER_ADMIN", "reports")).toBe(true);
     expect(canSeeNav("PARTNER_ADMIN", "reports")).toBe(true);
     expect(canSeeNav("STAFF", "reports")).toBe(false);
     expect(canViewReports("STAFF")).toBe(false);
 
     expect(canSeeNav("SUPER_ADMIN", "marketing")).toBe(true);
-    expect(canSeeNav("PARTNER_ADMIN", "marketing")).toBe(true);
+    expect(canSeeNav("PARTNER_ADMIN", "marketing")).toBe(false);
     expect(canSeeNav("STAFF", "marketing")).toBe(false);
+    expect(canViewMarketing("SUPER_ADMIN")).toBe(true);
+    expect(canViewMarketing("PARTNER_ADMIN")).toBe(false);
     expect(canViewMarketing("STAFF")).toBe(false);
   });
 
@@ -127,9 +134,9 @@ describe("lead data", () => {
     expect(isMarketingRowVisible(superAdmin, null, ["p1"])).toBe(false);
 
     const partner = { role: "PARTNER_ADMIN" as const, pageIds: ["p1"] };
-    expect(isMarketingRowVisible(partner, "p1", ["p1", "p2"])).toBe(true);
+    expect(isMarketingRowVisible(partner, "p1", ["p1", "p2"])).toBe(false);
     expect(isMarketingRowVisible(partner, "p2", ["p1", "p2"])).toBe(false);
-    expect(isMarketingRowVisible(partner, "p1", ["p2"])).toBe(false);
+    expect(isMarketingRowVisible({ role: "STAFF" as const, pageIds: ["p1"] }, "p1", ["p1"])).toBe(false);
   });
 
   it("staff inherit the partner grant and partners hold their own", () => {
@@ -148,6 +155,46 @@ describe("lead data", () => {
 
     expect(canEditLead({ role: "PARTNER_ADMIN", appUserId: "partner" }, { assigneeId: null })).toBe(true);
     expect(canEditLead({ role: "SUPER_ADMIN", appUserId: "super" }, { assigneeId: "anyone" })).toBe(true);
+  });
+
+  it("only MANUAL leads allow editing name and phone, respecting lead edit boundary", () => {
+    const staff = { role: "STAFF" as const, appUserId: "staff-1" };
+    const partner = { role: "PARTNER_ADMIN" as const, appUserId: "partner-1" };
+    const superAdmin = { role: "SUPER_ADMIN" as const, appUserId: "super-1" };
+
+    expect(canEditLeadProfile(superAdmin, { assigneeId: null, source: "MANUAL" })).toBe(true);
+    expect(canEditLeadProfile(partner, { assigneeId: null, source: "MANUAL" })).toBe(true);
+    expect(canEditLeadProfile(staff, { assigneeId: "staff-1", source: "MANUAL" })).toBe(true);
+    expect(canEditLeadProfile(staff, { assigneeId: "other", source: "MANUAL" })).toBe(false);
+
+    // Non-manual sources (e.g., FACEBOOK, GOOGLE, HOTLINE) cannot edit name/phone even for super admin
+    expect(canEditLeadProfile(superAdmin, { assigneeId: "staff-1", source: "FACEBOOK" })).toBe(false);
+    expect(canEditLeadProfile(partner, { assigneeId: null, source: "FACEBOOK" })).toBe(false);
+    expect(canEditLeadProfile(staff, { assigneeId: "staff-1", source: "FACEBOOK" })).toBe(false);
+  });
+
+  it("all roles can create/import manual leads; staff auto-assigns to self while admin defaults to unassigned", () => {
+    for (const role of ROLES) {
+      expect(canCreateLead(role)).toBe(true);
+      expect(canImportLeads(role)).toBe(true);
+    }
+
+    expect(resolveManualLeadAssignee({ role: "STAFF", appUserId: "staff-1" }, null)).toBe("staff-1");
+    expect(resolveManualLeadAssignee({ role: "STAFF", appUserId: "staff-1" }, "someone-else")).toBe("staff-1");
+    expect(resolveManualLeadAssignee({ role: "SUPER_ADMIN", appUserId: "super-1" }, null)).toBeNull();
+    expect(resolveManualLeadAssignee({ role: "PARTNER_ADMIN", appUserId: "partner-1" }, undefined)).toBeNull();
+    expect(resolveManualLeadAssignee({ role: "SUPER_ADMIN", appUserId: "super-1" }, "staff-2")).toBe("staff-2");
+  });
+
+  it("staff comment only on leads assigned to themselves, managers on all in view", () => {
+    const staff = { role: "STAFF" as const, appUserId: "staff-1" };
+    expect(canCommentLead(staff, { assigneeId: "staff-1" })).toBe(true);
+    expect(canCommentLead(staff, { assigneeId: "other" })).toBe(false);
+    expect(canCommentLead(staff, { assigneeId: null })).toBe(false);
+    expect(canCommentLead({ role: "STAFF", appUserId: null }, { assigneeId: "staff-1" })).toBe(false);
+
+    expect(canCommentLead({ role: "PARTNER_ADMIN", appUserId: "partner" }, { assigneeId: null })).toBe(true);
+    expect(canCommentLead({ role: "SUPER_ADMIN", appUserId: "super" }, { assigneeId: "anyone" })).toBe(true);
   });
 });
 
@@ -280,4 +327,11 @@ describe("AI", () => {
     expect(canUseAi({ role: "PARTNER_ADMIN" })).toBe(false);
     expect(canUseAi({ role: "STAFF", aiEnabled: true })).toBe(false);
   });
+
+  it("restricts AI marketing metrics and @campaign/@ad mentions to super admin via canViewMarketing", () => {
+    expect(canViewMarketing("SUPER_ADMIN")).toBe(true);
+    expect(canViewMarketing("PARTNER_ADMIN")).toBe(false);
+    expect(canViewMarketing("STAFF")).toBe(false);
+  });
 });
+

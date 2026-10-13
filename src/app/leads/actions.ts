@@ -2,9 +2,26 @@
 
 import { z } from "zod";
 
+import { canCreateLead, canImportLeads } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
-import { appendActivityLog, updateLead } from "@/lib/db/leads-repo";
-import type { ActivityLog } from "@/lib/types";
+import { catalogOptionsFromReference, DEFAULT_LEAD_CATALOG } from "@/lib/catalog";
+import { listAttrFields } from "@/lib/db/attr-fields-repo";
+import { createLeadComment } from "@/lib/db/lead-comments-repo";
+import {
+  appendActivityLog,
+  createManualLead,
+  getReferenceData,
+  insertImportedLeads,
+  listExistingPhonesAndEmails,
+  updateLead,
+} from "@/lib/db/leads-repo";
+import { getDefaultProject } from "@/lib/db/project-repo";
+import { listAssignableStaff } from "@/lib/db/users-repo";
+import {
+  parseAndValidateImportWorkbook,
+  type ImportValidationReport,
+} from "@/lib/leads/import-leads";
+import type { ActivityLog, LeadComment } from "@/lib/types";
 import {
   CATEGORY_OPTIONS,
   CHANNEL_DETAIL_OPTIONS,
@@ -52,6 +69,7 @@ const patchSchema = z.object({
     }),
   careNote: z.string().max(4000).nullable().optional(),
   callbackAt: z.string().nullable().optional(),
+  contactCount: z.number().int().min(0).max(9999).optional(),
   attrs: z.record(z.string().max(200), z.string().max(4000)).optional(),
 });
 
@@ -114,3 +132,162 @@ export async function appendActivityLogAction(input: unknown): Promise<AppendLog
     return { ok: false, error: error instanceof Error ? error.message : "Ghi nhật ký thất bại." };
   }
 }
+
+const addCommentSchema = z.object({
+  leadId: z.string().uuid(),
+  content: z
+    .string()
+    .trim()
+    .min(1, "Nội dung bình luận không được để trống.")
+    .max(3000, "Nội dung tối đa 3.000 ký tự."),
+  parentId: z.string().uuid().nullable().optional(),
+});
+
+export type AddLeadCommentResult = { ok: true; comment: LeadComment } | { ok: false; error: string };
+
+export async function addLeadCommentAction(input: unknown): Promise<AddLeadCommentResult> {
+  const viewer = await getScopedViewer();
+  if (!viewer) return { ok: false, error: "Phiên đăng nhập đã hết hạn." };
+
+  const parsed = addCommentSchema.safeParse(input);
+  if (!parsed.success) {
+    const errorMsg = parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ.";
+    return { ok: false, error: errorMsg };
+  }
+
+  try {
+    const comment = await createLeadComment(parsed.data, viewer);
+    return { ok: true, comment };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Thêm bình luận thất bại." };
+  }
+}
+
+const createManualLeadSchema = z.object({
+  name: z.string().trim().min(1, "Vui lòng nhập họ tên khách hàng.").max(120, "Họ tên tối đa 120 ký tự."),
+  phone: z.string().trim().min(1, "Vui lòng nhập số điện thoại.").max(30, "Số điện thoại quá dài."),
+  email: z.string().max(160).nullable().optional(),
+  brand: z.string().max(40).nullable().optional(),
+  product: z.string().max(80).nullable().optional(),
+  location: z.string().max(120).nullable().optional(),
+  channelDetail: enumOf(CHANNEL_DETAIL_OPTIONS.map((o) => o.value)).optional(),
+  category: enumOf([...CATEGORY_OPTIONS.map((o) => o.value), "CHUA_PHAN_LOAI"]).optional(),
+  failReason: enumOf(FAIL_REASON_OPTIONS.map((o) => o.value)).nullable().optional(),
+  assignee: z.string().max(120).nullable().optional(),
+  careNote: z.string().max(4000).nullable().optional(),
+  callbackAt: z.string().nullable().optional(),
+  attrs: z.record(z.string().max(200), z.string().max(4000)).optional(),
+});
+
+export type CreateManualLeadResult = { ok: true; lead: Lead } | { ok: false; error: string };
+
+export async function createManualLeadAction(input: unknown): Promise<CreateManualLeadResult> {
+  const viewer = await getScopedViewer();
+  if (!viewer) return { ok: false, error: "Phiên đăng nhập đã hết hạn." };
+  if (!canCreateLead(viewer.role)) {
+    return { ok: false, error: "Bạn không có quyền tạo lead." };
+  }
+
+  const parsed = createManualLeadSchema.safeParse(input);
+  if (!parsed.success) {
+    const errorMsg = parsed.error.issues[0]?.message ?? "Dữ liệu tạo lead không hợp lệ.";
+    return { ok: false, error: errorMsg };
+  }
+
+  try {
+    const lead = await createManualLead(parsed.data, viewer, {
+      appUserId: viewer.appUserId,
+      fullName: viewer.fullName,
+    });
+    return { ok: true, lead };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Tạo lead thất bại." };
+  }
+}
+
+export type ValidateLeadImportResult =
+  | { ok: true; report: ImportValidationReport }
+  | { ok: false; error: string };
+
+export async function validateLeadImportAction(formData: FormData): Promise<ValidateLeadImportResult> {
+  const viewer = await getScopedViewer();
+  if (!viewer) return { ok: false, error: "Phiên đăng nhập đã hết hạn." };
+  if (!canImportLeads(viewer.role)) {
+    return { ok: false, error: "Bạn không có quyền import lead." };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { ok: false, error: "Vui lòng chọn file Excel (.xlsx) để kiểm tra." };
+  }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) {
+    return { ok: false, error: "Chỉ hỗ trợ định dạng file Excel (.xlsx)." };
+  }
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const projectId = viewer.activeProjectId ?? (await getDefaultProject())?.id ?? null;
+
+    const [reference, attrFields, assignees, existingLeads] = await Promise.all([
+      getReferenceData(projectId ?? undefined).catch(() => null),
+      projectId ? listAttrFields(projectId, { activeOnly: true }).catch(() => []) : Promise.resolve([]),
+      listAssignableStaff(viewer).catch(() => []),
+      listExistingPhonesAndEmails(projectId),
+    ]);
+
+    const catalog = reference ? catalogOptionsFromReference(reference) : DEFAULT_LEAD_CATALOG;
+    const report = await parseAndValidateImportWorkbook(arrayBuffer, {
+      catalog,
+      attrFields,
+      assignees,
+      existingLeads,
+      viewer: {
+        role: viewer.role,
+        appUserId: viewer.appUserId,
+        fullName: viewer.fullName,
+      },
+    });
+
+    return { ok: true, report };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Không đọc được file Excel.",
+    };
+  }
+}
+
+const commitImportSchema = z.object({
+  rows: z.array(createManualLeadSchema).min(1).max(2000),
+});
+
+export type CommitLeadImportResult =
+  | { ok: true; importedCount: number }
+  | { ok: false; error: string };
+
+export async function commitLeadImportAction(input: unknown): Promise<CommitLeadImportResult> {
+  const viewer = await getScopedViewer();
+  if (!viewer) return { ok: false, error: "Phiên đăng nhập đã hết hạn." };
+  if (!canImportLeads(viewer.role)) {
+    return { ok: false, error: "Bạn không có quyền import lead." };
+  }
+
+  const parsed = commitImportSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Danh sách lead cần import không hợp lệ." };
+  }
+
+  try {
+    const res = await insertImportedLeads(parsed.data.rows, viewer, {
+      appUserId: viewer.appUserId,
+      fullName: viewer.fullName,
+    });
+    return { ok: true, importedCount: res.importedCount };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Import lead thất bại.",
+    };
+  }
+}
+

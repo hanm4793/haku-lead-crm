@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { dataScope } from "@/lib/auth/roles";
 import type { ViewerScope } from "@/lib/db/leads-repo";
 import { previousCalendarRange } from "@/lib/date-range";
 import { EMPTY_FILTERS } from "@/lib/filters";
@@ -51,6 +52,14 @@ export const statsQuerySchema = z.object({
   campaignQuery: z.string().max(120).nullable().optional(),
   assigneeQuery: z.string().max(80).nullable().optional(),
   filters: exportFiltersSchema.optional(),
+});
+
+/** Schema nhận lại `lastStats` từ client để kế thừa ngữ cảnh qua nhiều lượt hội thoại. */
+export const lastStatsSchema = statsQuerySchema.extend({
+  pageIds: z.array(z.string().max(80)).nullable().optional(),
+  campaignIds: z.array(z.string().max(80)).nullable().optional(),
+  adIds: z.array(z.string().max(80)).nullable().optional(),
+  leadIds: z.array(z.string().max(80)).nullable().optional(),
 });
 
 export type StatsDataset = "leads" | "marketing" | "both";
@@ -146,8 +155,31 @@ export function statsFromModel(input: unknown): StatsQuery | null {
   };
 }
 
+export function statsFromLastStats(input: unknown): StatsQuery | null {
+  const parsed = lastStatsSchema.safeParse(input);
+  if (!parsed.success) return null;
+  const stats = parsed.data;
+  return {
+    dateFrom: stats.dateFrom ?? null,
+    dateTo: stats.dateTo ?? null,
+    comparePrevious: Boolean(stats.comparePrevious),
+    dataset: stats.dataset ?? "leads",
+    groupBy: asGroupBy(stats.groupBy),
+    rankBy: stats.rankBy ?? null,
+    topN: stats.topN ?? null,
+    pageQuery: blank(stats.pageQuery),
+    campaignQuery: blank(stats.campaignQuery),
+    assigneeQuery: blank(stats.assigneeQuery),
+    pageIds: stats.pageIds?.length ? stats.pageIds : null,
+    campaignIds: stats.campaignIds?.length ? stats.campaignIds : null,
+    adIds: stats.adIds?.length ? stats.adIds : null,
+    leadIds: stats.leadIds?.length ? stats.leadIds : null,
+    filters: { ...stats.filters },
+  };
+}
+
 export function pagesInScope(pages: PageOption[], viewer: ViewerScope): PageOption[] {
-  if (viewer.role === "SUPER_ADMIN") return pages;
+  if (dataScope(viewer) === "all") return pages;
   const allowed = new Set(viewer.pageIds);
   return pages.filter((page) => allowed.has(page.facebookPageId));
 }
@@ -160,8 +192,9 @@ export function matchPages(pages: PageOption[], query: string): PageOption[] {
   );
 }
 
-const GROUP_LABEL: Record<string, string> = {
+export const GROUP_LABEL: Record<string, string> = {
   fanpage: "fanpage",
+  ad: "quảng cáo",
   ...PIVOT_DIMENSIONS,
 };
 
@@ -194,8 +227,9 @@ export function formatStatsReply(input: {
   unmatchedPage?: string | null;
   visiblePageNames?: string[];
   adsNote?: boolean;
+  activeScopeLabels?: string[];
 }): string {
-  if (input.viewer.role !== "SUPER_ADMIN" && input.viewer.pageIds.length === 0) {
+  if (dataScope(input.viewer) === "none") {
     return "Tài khoản chưa được gán fanpage, nên không có lead nào trong phạm vi xem.";
   }
 
@@ -205,10 +239,15 @@ export function formatStatsReply(input: {
     return `Không thấy fanpage khớp «${input.unmatchedPage}» trong phạm vi tài khoản.${hint}`;
   }
 
-  const scope =
-    input.viewer.role === "SUPER_ADMIN"
-      ? "Số liệu trên toàn bộ lead CRM."
-      : "Số liệu trong các fanpage được gán cho tài khoản.";
+  const baseScope =
+    dataScope(input.viewer) === "all"
+      ? "Số liệu trên toàn bộ lead CRM"
+      : "Số liệu trong các fanpage được gán cho tài khoản";
+  const scopeFilterText =
+    input.activeScopeLabels && input.activeScopeLabels.length > 0
+      ? ` (${input.activeScopeLabels.join(" • ")})`
+      : "";
+  const scope = `${baseScope}${scopeFilterText}.`;
 
   const { kpis } = input;
   const lines = [
@@ -289,22 +328,229 @@ export function marketingGroupBy(groupBy: StatsQuery["groupBy"]): MarketingGroup
   return null;
 }
 
-/** Từ khóa trong câu hỏi thắng lựa chọn của model khi model chọn nhầm chiều. */
-export function mergeStats(model: StatsQuery | null, local: StatsQuery | null): StatsQuery | null {
-  if (!model) return local;
-  if (!local) return model;
+/** Từ khóa trong câu hỏi thắng lựa chọn của model khi model chọn nhầm chiều; đồng thời kế thừa ngữ cảnh lượt trước. */
+export function mergeStats(
+  model: StatsQuery | null,
+  local: StatsQuery | null,
+  lastStats?: StatsQuery | null,
+  text?: string,
+  now?: Date,
+): StatsQuery | null {
+  let merged: StatsQuery | null = null;
+  if (!model) {
+    merged = local;
+  } else if (!local) {
+    merged = model;
+  } else {
+    const time = text !== undefined ? parseTimeRange(text, now) : null;
+    const dateFrom = time?.clearsDate
+      ? null
+      : time?.hasExplicitTime
+        ? time.dateFrom
+        : (local.dateFrom ?? model.dateFrom);
+    const dateTo = time?.clearsDate
+      ? null
+      : time?.hasExplicitTime
+        ? time.dateTo
+        : (local.dateTo ?? model.dateTo);
+
+    merged = {
+      ...model,
+      dateFrom,
+      dateTo,
+      comparePrevious: local.comparePrevious || model.comparePrevious,
+      dataset: text !== undefined && !hasExplicitDataset(text) ? model.dataset : local.dataset,
+      groupBy: local.groupBy ?? model.groupBy,
+      rankBy: local.rankBy ?? model.rankBy,
+      topN: local.topN ?? model.topN,
+      pageQuery: local.pageQuery ?? model.pageQuery,
+      campaignQuery: local.campaignQuery ?? model.campaignQuery,
+      assigneeQuery: local.assigneeQuery ?? model.assigneeQuery,
+      pageIds: local.pageIds ?? model.pageIds,
+      campaignIds: local.campaignIds ?? model.campaignIds,
+      adIds: local.adIds ?? model.adIds,
+      leadIds: local.leadIds ?? model.leadIds,
+      filters: mergeExportFilters(model.filters, local.filters),
+    };
+  }
+
+  if (lastStats) {
+    return inheritStatsQuery(merged ?? blankStats(), lastStats, text ?? "", now);
+  }
+  return merged;
+}
+
+function mergeExportFilters(base: ExportFilters | undefined, override: ExportFilters | undefined): ExportFilters {
+  const result: ExportFilters = { ...(base ?? {}) };
+  if (!override) return result;
+  if (override.search !== undefined) result.search = override.search;
+  if (override.dateField !== undefined) result.dateField = override.dateField;
+  if (override.dateFrom !== undefined) result.dateFrom = override.dateFrom;
+  if (override.dateTo !== undefined) result.dateTo = override.dateTo;
+  if (override.contactStatus !== undefined) result.contactStatus = override.contactStatus;
+  if (override.overdueOnly !== undefined) result.overdueOnly = override.overdueOnly;
+  if (override.categories?.length) result.categories = override.categories;
+  if (override.failReasons?.length) result.failReasons = override.failReasons;
+  if (override.sources?.length) result.sources = override.sources;
+  if (override.brands?.length) result.brands = override.brands;
+  if (override.products?.length) result.products = override.products;
+  if (override.locations?.length) result.locations = override.locations;
+  if (override.assignees?.length) result.assignees = override.assignees;
+  if (override.facebookPageIds?.length) result.facebookPageIds = override.facebookPageIds;
+  return result;
+}
+
+/** Nhận diện khi người dùng muốn thoát khỏi bộ lọc fanpage/thực thể đang ghim để xem toàn hệ thống. */
+export function wantsResetScope(text: string): boolean {
+  const q = fold(text);
+  return /(?:tat ca|toan bo)\s+(?:cac\s+)?(?:fanpage|page|lead|he thong)|toan he thong|bo loc|xoa loc|bo ghim/.test(
+    q,
+  );
+}
+
+/** Loại bỏ nhãn @mention ở cuối câu hỏi để tên fanpage/chiến dịch không làm nhiễu bộ đọc thời gian. */
+export function stripMentionLabels(text: string, mentions: ChatMention[] = []): string {
+  let result = text;
+  for (const m of mentions) {
+    if (!m.label) continue;
+    const escaped = m.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    result = result.replace(new RegExp(`@${escaped}`, "gi"), " ");
+  }
+  return result.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Hợp nhất @mentions của lượt hiện tại với @mentions đang ghim từ lượt trước.
+ * - Nếu người dùng yêu cầu xem "tất cả fanpage / toàn bộ hệ thống" -> xóa mentions cũ.
+ * - Nếu lượt này không chọn @mention mới -> tự động giữ nguyên @mentions lượt trước.
+ * - Nếu lượt này chọn @mention cùng loại (ví dụ đổi từ @FanpageA sang @FanpageB) -> thay thế loại đó, giữ các loại khác.
+ */
+export function mergeContextMentions(
+  currentMentions: ChatMention[],
+  lastMentions: ChatMention[],
+  text: string,
+): ChatMention[] {
+  if (wantsResetScope(text)) return currentMentions;
+  if (currentMentions.length === 0) return lastMentions;
+  if (lastMentions.length === 0) return currentMentions;
+  // Nếu tra cứu đích danh 1 lead cụ thể thì không ghép filter khác
+  if (currentMentions.some((m) => m.type === "lead")) return currentMentions;
+
+  const currentTypes = new Set(currentMentions.map((m) => m.type));
+  const keptFromLast = lastMentions.filter((m) => m.type !== "lead" && !currentTypes.has(m.type));
+  const combined = [...keptFromLast, ...currentMentions];
+  const seen = new Set<string>();
+  return combined.filter((m) => {
+    const key = `${m.type}:${m.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function hasAnyTimeWord(text: string): boolean {
+  const q = fold(text);
+  return /(ngay|tuan|thang|\bthg\b|\bt\d{1,2}\b|quy|nam|hom nay|hom qua|hom kia|ky nay|ky truoc|\d{1,2}\/\d{1,2})/.test(
+    q,
+  );
+}
+
+/**
+ * Kế thừa thông minh `lastStats` khi người dùng hỏi nối tiếp (ví dụ: "tháng 8 thì sao?", "chia theo nhân viên thì sao?", "còn @FanpageB?").
+ */
+export function inheritStatsQuery(
+  current: StatsQuery,
+  lastStats: StatsQuery | null | undefined,
+  text: string,
+  now: Date = new Date(),
+): StatsQuery {
+  if (!lastStats) return current;
+
+  const q = fold(text);
+  const resetScope = wantsResetScope(text);
+  const time = parseTimeRange(text, now);
+  const local = parseStatsQuestion(text, now);
+
+  // 1. Kế thừa khoảng thời gian nếu câu hỏi mới không nhắc tới mốc thời gian mới
+  let dateFrom = current.dateFrom;
+  let dateTo = current.dateTo;
+  if (time.clearsDate) {
+    dateFrom = null;
+    dateTo = null;
+  } else if (time.hasExplicitTime) {
+    dateFrom = time.dateFrom;
+    dateTo = time.dateTo;
+  } else if (!hasAnyTimeWord(text)) {
+    dateFrom = lastStats.dateFrom;
+    dateTo = lastStats.dateTo;
+  }
+
+  // 2. Kế thừa dataset (leads / marketing / both) nếu câu mới không chỉ định rõ
+  const dataset: StatsDataset = hasExplicitDataset(text) ? current.dataset : lastStats.dataset;
+
+  // 3. Kế thừa groupBy / rankBy / topN
+  const asksNewGroup = Boolean(local?.groupBy) || /(theo|tung|moi|chia|nhom|phan bo)/.test(q);
+  const asksOverviewOnly = /(tong quan|tong hop|khong chia|bo nhom)/.test(q);
+  const groupBy = asksOverviewOnly
+    ? null
+    : asksNewGroup && current.groupBy
+      ? current.groupBy
+      : (local?.groupBy ?? lastStats.groupBy ?? current.groupBy);
+
+  const rankBy = local?.rankBy ?? (groupBy === lastStats.groupBy ? (current.rankBy ?? lastStats.rankBy) : current.rankBy);
+  const topN = rankBy ? (local?.topN ?? current.topN ?? lastStats.topN ?? 5) : null;
+
+  // 4. Nếu người dùng yêu cầu reset phạm vi ("tất cả fanpage"), bỏ các filter thực thể cũ
+  if (resetScope) {
+    return {
+      ...current,
+      dateFrom,
+      dateTo,
+      dataset,
+      groupBy,
+      rankBy,
+      topN,
+      pageQuery: null,
+      campaignQuery: null,
+      assigneeQuery: null,
+      pageIds: null,
+      campaignIds: null,
+      adIds: null,
+      leadIds: null,
+      filters: current.filters ?? {},
+    };
+  }
+
+  // 5. Kế thừa các bộ lọc thực thể (fanpage, chiến dịch, nhân viên, sản phẩm, thương hiệu, trạng thái...)
+  const pageIds = current.pageIds?.length ? current.pageIds : current.pageQuery ? null : lastStats.pageIds;
+  const pageQuery = current.pageQuery ?? (pageIds?.length ? null : lastStats.pageQuery);
+  const campaignIds = current.campaignIds?.length
+    ? current.campaignIds
+    : current.campaignQuery
+      ? null
+      : lastStats.campaignIds;
+  const campaignQuery = current.campaignQuery ?? (campaignIds?.length ? null : lastStats.campaignQuery);
+  const assigneeQuery = current.assigneeQuery ?? lastStats.assigneeQuery;
+  const adIds = current.adIds?.length ? current.adIds : lastStats.adIds;
+  const leadIds = current.leadIds?.length ? current.leadIds : lastStats.leadIds;
+  const filters = mergeExportFilters(lastStats.filters, current.filters);
+
   return {
-    ...model,
-    dataset: local.dataset,
-    groupBy: local.groupBy ?? model.groupBy,
-    rankBy: local.rankBy ?? model.rankBy,
-    topN: local.topN ?? model.topN,
-    pageQuery: local.pageQuery ?? model.pageQuery,
-    campaignQuery: local.campaignQuery ?? model.campaignQuery,
-    pageIds: local.pageIds ?? model.pageIds,
-    campaignIds: local.campaignIds ?? model.campaignIds,
-    adIds: local.adIds ?? model.adIds,
-    leadIds: local.leadIds ?? model.leadIds,
+    dateFrom,
+    dateTo,
+    comparePrevious: current.comparePrevious,
+    dataset,
+    groupBy,
+    rankBy,
+    topN,
+    pageQuery,
+    campaignQuery,
+    assigneeQuery,
+    pageIds,
+    campaignIds,
+    adIds,
+    leadIds,
+    filters,
   };
 }
 
@@ -341,15 +587,20 @@ export function formatMarketingReply(input: {
   previous: MarketingTotals | null;
   previousRange: { from: string | null; to: string | null } | null;
   breakdown: Array<MarketingTotals & { key: string }> | null;
+  activeScopeLabels?: string[];
 }): string {
-  if (input.viewer.role !== "SUPER_ADMIN" && input.viewer.pageIds.length === 0) {
+  if (dataScope(input.viewer) === "none") {
     return "Tài khoản chưa được gán fanpage, nên không có số quảng cáo trong phạm vi xem.";
   }
 
   const group = marketingGroupBy(input.query.groupBy);
   const winner = input.query.rankBy ? input.breakdown?.[0] : undefined;
+  const scopeSuffix =
+    input.activeScopeLabels && input.activeScopeLabels.length > 0
+      ? ` (${input.activeScopeLabels.join(" • ")})`
+      : "";
   const lines = [
-    "Quảng cáo — lượt trên Ads, không phải lead CRM.",
+    `Quảng cáo — lượt trên Ads, không phải lead CRM${scopeSuffix}.`,
     periodLabel(input.query.dateFrom, input.query.dateTo) + ".",
   ];
 
@@ -434,15 +685,23 @@ export function formatAmbiguousName(kind: string, query: string, names: string[]
 export function extractCampaignName(text: string): string | null {
   const match = /(?:cua\s+|trong\s+)?chien dich\s+(.+)$/.exec(fold(text));
   if (!match?.[1]) return null;
-  const name = match[1].replace(/\b(thang nay|thang truoc|hom nay)\b/g, "").trim();
+  const name = match[1]
+    .replace(/\s+(?:vao\s+|trong\s+)?(?:thang\s*\d{1,2}(?:\/\d{4})?|thang nay|thang truoc|hom nay|hom qua|tuan nay|tuan truoc)$/g, "")
+    .replace(/\b(thang nay|thang truoc|hom nay)\b/g, "")
+    .trim();
   if (!name || /^nao\b/.test(name)) return null;
   return name;
 }
 
 export function extractPageFilter(text: string): string | null {
   const q = fold(text);
-  if (/theo fanpage|tung fanpage|moi fanpage|theo page|tung page/.test(q)) return null;
-  const match = /(?:cua|tren)\s+(?:fanpage|page)\s+(.+?)(?=\s+thang|\s+trong\b|$)/.exec(q);
+  if (/theo fanpage|tung fanpage|moi fanpage|theo page|tung page|tat ca fanpage|tat ca cac page|tat ca page|toan bo fanpage/.test(q)) {
+    return null;
+  }
+  const match =
+    /(?:cua|tren)\s+(?:fanpage|page)\s+(.+?)(?=\s+vao\b|\s+thang\b|\s+tuan\b|\s+quy\b|\s+hom\b|\s+trong\b|\s+so\s+voi\b|\s+theo\b|$)/.exec(
+      q,
+    );
   if (!match?.[1]) return null;
   const name = match[1].trim();
   if (!name || /^nao\b/.test(name)) return null;
@@ -516,41 +775,246 @@ export function applyMentions(query: StatsQuery, mentions: ChatMention[]): Stats
   };
 }
 
-/** Bộ luật khi chưa có API key, hoặc khi model không điền được stats. */
-export function parseStatsQuestion(text: string, now: Date = new Date()): StatsQuery | null {
+export interface ParsedTimeRange {
+  dateFrom: string | null;
+  dateTo: string | null;
+  label: string | null;
+  hasExplicitTime: boolean;
+  clearsDate: boolean;
+}
+
+/**
+ * Bộ phân tích mốc thời gian tiếng Việt chuẩn hóa dùng chung cho cả STATS và EXPORT.
+ * Hỗ trợ: hôm nay, hôm qua, hôm kia, tuần này, tuần trước, N ngày, tháng này, tháng trước,
+ * tháng 1..12 (kèm năm hoặc viết tắt t1..t12), quý 1..4, quý này, quý trước, năm nay, năm trước,
+ * khoảng ngày dd/mm/yyyy - dd/mm/yyyy, và "tất cả thời gian".
+ */
+export function parseTimeRange(text: string, now: Date = new Date()): ParsedTimeRange {
   const q = fold(text);
+  const campaign = extractCampaignName(q);
+  const cleanQ = campaign ? q.replace(campaign, " ") : q;
+  const iso = (date: Date) => toDateInputValue(date.toISOString());
+
+  if (/(tat ca thoi gian|toan thoi gian|moi thoi diem|tu truoc den nay|toan bo thoi gian)/.test(cleanQ)) {
+    return { dateFrom: null, dateTo: null, label: "tất cả thời gian", hasExplicitTime: true, clearsDate: true };
+  }
+
+  // Khoảng ngày cụ thể: dd/mm[/yyyy] đến dd/mm[/yyyy]
+  const rangeMatch =
+    /(?:tu\s+)?(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\s*(?:den|toi|-|–)\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/.exec(
+      cleanQ,
+    );
+  if (rangeMatch) {
+    const d1 = Number(rangeMatch[1]);
+    const m1 = Number(rangeMatch[2]) - 1;
+    const y1 = rangeMatch[3] ? Number(rangeMatch[3]) : now.getFullYear();
+    const d2 = Number(rangeMatch[4]);
+    const m2 = Number(rangeMatch[5]) - 1;
+    const y2 = rangeMatch[6] ? Number(rangeMatch[6]) : y1;
+    const from = iso(new Date(y1, m1, d1));
+    const to = iso(new Date(y2, m2, d2));
+    return { dateFrom: from, dateTo: to, label: `${vnDate(from)}–${vnDate(to)}`, hasExplicitTime: true, clearsDate: false };
+  }
+
+  if (/thang nay|dau thang den nay|trong thang nay/.test(cleanQ)) {
+    return {
+      dateFrom: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
+      dateTo: iso(now),
+      label: "tháng này",
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  if (/thang truoc|thang vua roi|thang qua/.test(cleanQ)) {
+    return {
+      dateFrom: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+      dateTo: iso(new Date(now.getFullYear(), now.getMonth(), 0)),
+      label: "tháng trước",
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  if (/hom nay|ngay hom nay/.test(cleanQ)) {
+    return {
+      dateFrom: iso(now),
+      dateTo: iso(now),
+      label: "hôm nay",
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  if (/hom qua|ngay hom qua/.test(cleanQ)) {
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    return {
+      dateFrom: iso(yesterday),
+      dateTo: iso(yesterday),
+      label: "hôm qua",
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  if (/hom kia|ngay hom kia/.test(cleanQ)) {
+    const dayBefore = new Date(now);
+    dayBefore.setDate(dayBefore.getDate() - 2);
+    return {
+      dateFrom: iso(dayBefore),
+      dateTo: iso(dayBefore),
+      label: "hôm kia",
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  if (/tuan nay|trong tuan nay|dau tuan den nay/.test(cleanQ)) {
+    const dayOfWeek = (now.getDay() + 6) % 7;
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
+    return {
+      dateFrom: iso(monday),
+      dateTo: iso(now),
+      label: "tuần này",
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  if (/tuan truoc|tuan vua roi|tuan qua/.test(cleanQ)) {
+    const dayOfWeek = (now.getDay() + 6) % 7;
+    const lastMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek - 7);
+    const lastSunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek - 1);
+    return {
+      dateFrom: iso(lastMonday),
+      dateTo: iso(lastSunday),
+      label: "tuần trước",
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  const days = /(\d+)\s*ngay/.exec(cleanQ);
+  if (days) {
+    const count = Math.max(1, Number(days[1]));
+    const from = new Date(now);
+    from.setDate(from.getDate() - (count - 1));
+    return {
+      dateFrom: iso(from),
+      dateTo: iso(now),
+      label: `${count} ngày gần nhất`,
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  if (/quy nay|trong quy nay/.test(cleanQ)) {
+    const startMonth = Math.floor(now.getMonth() / 3) * 3;
+    return {
+      dateFrom: iso(new Date(now.getFullYear(), startMonth, 1)),
+      dateTo: iso(now),
+      label: "quý này",
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  if (/quy truoc|quy vua roi/.test(cleanQ)) {
+    const currentQStart = Math.floor(now.getMonth() / 3) * 3;
+    return {
+      dateFrom: iso(new Date(now.getFullYear(), currentQStart - 3, 1)),
+      dateTo: iso(new Date(now.getFullYear(), currentQStart, 0)),
+      label: "quý trước",
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  const quarterMatch = /(?:^|\s)quy\s*([1-4])(?:\s*[\/\-]?\s*(?:nam\s*)?(\d{4}))?(?=\s|$|[?,!.])/.exec(cleanQ);
+  if (quarterMatch) {
+    const qNum = Number(quarterMatch[1]);
+    const year = quarterMatch[2] ? Number(quarterMatch[2]) : now.getFullYear();
+    const startMonth = (qNum - 1) * 3;
+    return {
+      dateFrom: iso(new Date(year, startMonth, 1)),
+      dateTo: iso(new Date(year, startMonth + 3, 0)),
+      label: `quý ${qNum}${quarterMatch[2] ? `/${year}` : ""}`,
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  const monthMatch =
+    /(?:^|\s)(?:thang|thg)\s*(1[0-2]|0?[1-9])(?:\s*[\/\-]\s*(\d{4})|\s+nam\s+(\d{4}))?(?=\s|$|[?,!.])/.exec(
+      cleanQ,
+    ) ?? /(?:^|\s)t(1[0-2]|0?[1-9])(?:\s*\/\s*(\d{4}))?(?=\s|$|[?,!])/.exec(cleanQ);
+  if (monthMatch) {
+    const mNum = Number(monthMatch[1]);
+    const yearStr = monthMatch[2] || monthMatch[3];
+    const year = yearStr ? Number(yearStr) : now.getFullYear();
+    return {
+      dateFrom: iso(new Date(year, mNum - 1, 1)),
+      dateTo: iso(new Date(year, mNum, 0)),
+      label: `tháng ${mNum}${yearStr ? `/${year}` : ""}`,
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  if (/nam nay|trong nam nay|dau nam den nay/.test(cleanQ)) {
+    return {
+      dateFrom: iso(new Date(now.getFullYear(), 0, 1)),
+      dateTo: iso(now),
+      label: "năm nay",
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  if (/nam truoc|nam ngoai/.test(cleanQ)) {
+    const y = now.getFullYear() - 1;
+    return {
+      dateFrom: iso(new Date(y, 0, 1)),
+      dateTo: iso(new Date(y, 11, 31)),
+      label: "năm trước",
+      hasExplicitTime: true,
+      clearsDate: false,
+    };
+  }
+
+  return { dateFrom: null, dateTo: null, label: null, hasExplicitTime: false, clearsDate: false };
+}
+
+/** Bộ luật khi chưa có API key, hoặc khi model không điền được stats. */
+export function parseStatsQuestion(
+  text: string,
+  now: Date = new Date(),
+  context?: { lastStats?: StatsQuery | null; mentions?: ChatMention[] },
+): StatsQuery | null {
+  const cleaned = context?.mentions?.length ? stripMentionLabels(text, context.mentions) : text;
+  const q = fold(cleaned);
   if (!q) return null;
   if (/(xuat|export|tai ve|file excel|excel|csv)/.test(q)) return null;
-  if (/(huong dan|cach dung|la gi\b|y nghia)/.test(q) && !/(bao nhieu|tong)/.test(q)) return null;
+  if (/(huong dan|cach dung|la gi\b|y nghia|cong thuc)/.test(q) && !/(bao nhieu|tong|so lieu|du lieu)/.test(q)) {
+    return null;
+  }
+
+  const time = parseTimeRange(cleaned, now);
+  const hasContext = Boolean(context?.lastStats || (context?.mentions && context.mentions.length > 0));
 
   const asksNumbers =
-    /(bao nhieu|so lieu|thong ke|tong lead|ty le|phan bo|theo fanpage|tung fanpage|theo page|theo chien dich|theo nguon|theo phu trach|theo trang thai|so voi|qua han|khqt|da lien he|chua lien he|chi phi|chi tieu|ngan sach|quang cao|marketing|ctr|\bcpl\b|luot click|hien thi)/.test(
+    /(bao nhieu|so lieu|du lieu|thong ke|bao cao|tinh hinh|ket qua|doanh so|tong|ty le|phan bo|chi tiet|theo fanpage|tung fanpage|moi fanpage|theo page|tung page|theo chien dich|theo nguon|theo kenh|theo phu trach|theo nhan vien|theo sale|theo trang thai|theo phan loai|theo thuong hieu|theo hang|theo san pham|theo dong xe|theo dai ly|theo showroom|theo dia diem|theo chi nhanh|so voi|so sanh|doi chieu|qua han|khqt|gdtd|khd|ky hop dong|bi loai|mat khach|fail|da lien he|chua lien he|chi phi|chi tieu|ngan sach|quang cao|\bads\b|marketing|ctr|\bcpl\b|luot click|\bclick\b|hien thi|impression|thu cong|nhieu nhat|thap nhat|cao nhat|re nhat|\btop\b)/.test(
       q,
     );
-  if (!asksNumbers) return null;
 
-  const iso = (date: Date) => toDateInputValue(date.toISOString());
-  let dateFrom: string | null = null;
-  let dateTo: string | null = null;
+  const isFollowUpPhrase = /(thi sao|the nao|nhu the nao|ra sao|\bcon\b|vay con|the con|tuong ung|tiep theo)/.test(q);
+  const isTimeFollowUp = time.hasExplicitTime && (isFollowUpPhrase || hasContext || /fanpage|page|chien dich/.test(q));
+  const isContextFollowUp = hasContext && (isFollowUpPhrase || time.hasExplicitTime || wantsResetScope(q));
 
-  if (/thang nay/.test(q)) {
-    dateFrom = iso(new Date(now.getFullYear(), now.getMonth(), 1));
-    dateTo = iso(now);
-  } else if (/thang truoc/.test(q)) {
-    dateFrom = iso(new Date(now.getFullYear(), now.getMonth() - 1, 1));
-    dateTo = iso(new Date(now.getFullYear(), now.getMonth(), 0));
-  } else if (/hom nay/.test(q)) {
-    dateFrom = iso(now);
-    dateTo = iso(now);
-  } else {
-    const days = /(\d+)\s*ngay/.exec(q);
-    if (days) {
-      const from = new Date(now);
-      from.setDate(from.getDate() - (Number(days[1]) - 1));
-      dateFrom = iso(from);
-      dateTo = iso(now);
-    }
-  }
+  if (!asksNumbers && !isTimeFollowUp && !isContextFollowUp) return null;
+
+  const { dateFrom, dateTo } = time;
 
   const wantsLowCpl = /cpl/.test(q) && /thap|re nhat|nho nhat/.test(q);
   const wantsMostLeads = /(nhieu lead|lead nhat|thu ve)/.test(q);
@@ -570,27 +1034,40 @@ export function parseStatsQuestion(text: string, now: Date = new Date()): StatsQ
   if (/quang cao|\bads\b/.test(q) && (ranking || campaignQuery)) groupBy = "ad";
   else if (/theo fanpage|tung fanpage|moi fanpage|theo page|tung page/.test(q)) groupBy = "fanpage";
   else if (/chien dich|campaign/.test(q) && !campaignQuery) groupBy = "campaign";
-  else if (/nguon|kenh/.test(q)) groupBy = "source";
-  else if (/phu trach|nhan vien/.test(q)) groupBy = "assignee";
+  else if (/theo nguon|tung nguon|theo kenh|phan bo.*nguon/.test(q) || (/nguon|kenh/.test(q) && !/thu cong|tiktok|zalo|landing/.test(q))) groupBy = "source";
+  else if (/phu trach|nhan vien|\bsale\b/.test(q)) groupBy = "assignee";
   else if (/trang thai|phan loai/.test(q)) groupBy = "category";
   else if (/thuong hieu|hang xe|\bhang\b/.test(q)) groupBy = "brand";
-  else if (/dong xe|san pham/.test(q)) groupBy = "product";
-  else if (/showroom|dia diem|chi nhanh/.test(q)) groupBy = "location";
+  else if (/dong xe|san pham|loai san pham/.test(q)) groupBy = "product";
+  else if (/dai ly|showroom|dia diem|chi nhanh/.test(q)) groupBy = "location";
 
   let pageQuery = extractPageFilter(q);
-  if (!pageQuery && groupBy !== "fanpage") {
-    const named = /fanpage\s+([a-z0-9][a-z0-9 \-]{1,40}?)(?=\s+thang|\s+co\b|\s+bao|\s+trong|$)/.exec(q);
+  if (!pageQuery && groupBy !== "fanpage" && !wantsResetScope(q)) {
+    const named =
+      /fanpage\s+([a-z0-9][a-z0-9 \-]{1,40}?)(?=\s+vao\b|\s+thang\b|\s+tuan\b|\s+quy\b|\s+hom\b|\s+co\b|\s+bao\b|\s+trong\b|\s+thi\b|$)/.exec(
+        q,
+      );
     if (named && named[1] !== "nao") pageQuery = named[1].trim();
   }
 
   const filters: ExportFilters = {};
-  if (/khqt|quan tam/.test(q)) filters.categories = ["KHQT"];
+  if (/khqt|quan tam/.test(q)) filters.categories = /tro len/.test(q) ? ["KHQT", "GDTD", "KHD"] : ["KHQT"];
+  else if (/ky hop dong|\bkhd\b/.test(q)) filters.categories = ["KHD"];
+  else if (/\bgdtd\b/.test(q)) filters.categories = ["GDTD", "KHD"];
   else if (/fail|bi loai|mat khach/.test(q)) filters.categories = ["FAIL"];
+
   if (/qua han/.test(q)) filters.overdueOnly = true;
   if (/chua lien he/.test(q)) filters.contactStatus = "CHUA_LIEN_HE";
   else if (/da lien he/.test(q)) filters.contactStatus = "DA_LIEN_HE";
 
-  return {
+  if (groupBy !== "source") {
+    if (/thu cong|nhap tay|\bmanual\b/.test(q)) filters.sources = ["MANUAL"];
+    else if (/tiktok/.test(q)) filters.sources = ["TIKTOK_LEAD_ADS"];
+    else if (/zalo/.test(q)) filters.sources = ["ZALO_LEAD"];
+    else if (/landing page/.test(q)) filters.sources = ["LANDING_PAGE_FORM"];
+  }
+
+  const parsedResult: StatsQuery = {
     dateFrom,
     dateTo,
     comparePrevious: /so voi|ky truoc|tang|giam/.test(q),
@@ -607,14 +1084,36 @@ export function parseStatsQuestion(text: string, now: Date = new Date()): StatsQ
     leadIds: null,
     filters,
   };
+
+  if (context?.lastStats) {
+    return inheritStatsQuery(parsedResult, context.lastStats, cleaned, now);
+  }
+  return parsedResult;
+}
+
+export function hasExplicitDataset(text: string): boolean {
+  const q = fold(text);
+  const marketing =
+    /(chi phi|chi tieu|ngan sach|spend|impression|hien thi|luot click|\bclick\b|ctr|\bcpl\b|quang cao|\bads\b|marketing|hieu qua)/.test(
+      q,
+    );
+  const crm =
+    /(lien he|khqt|gdtd|\bkhd\b|qua han|ky hop dong|bi loai|phu trach|nhan vien|trang thai|phan loai|dai ly|showroom|dia diem|crm|thu cong)/.test(
+      q,
+    );
+  return marketing || crm;
 }
 
 export function datasetFor(text: string): StatsDataset {
   const q = fold(text);
-  const marketing = /(chi phi|chi tieu|ngan sach|spend|impression|hien thi|luot click|\bclick\b|ctr|\bcpl\b|quang cao|ads|marketing|hieu qua)/.test(
-    q,
-  );
-  const crm = /(lien he|khqt|gdtd|qua han|ky hop dong|bi loai|phu trach|trang thai|showroom|dia diem|crm)/.test(q);
+  const marketing =
+    /(chi phi|chi tieu|ngan sach|spend|impression|hien thi|luot click|\bclick\b|ctr|\bcpl\b|quang cao|\bads\b|marketing|hieu qua)/.test(
+      q,
+    );
+  const crm =
+    /(lien he|khqt|gdtd|\bkhd\b|qua han|ky hop dong|bi loai|phu trach|nhan vien|trang thai|phan loai|dai ly|showroom|dia diem|crm|thu cong)/.test(
+      q,
+    );
   if (marketing && crm) return "both";
   if (marketing) return "marketing";
   if (crm) return "leads";
@@ -624,3 +1123,4 @@ export function datasetFor(text: string): StatsDataset {
 export function mentionsAdsMetrics(text: string) {
   return /(quang cao|ads manager|insight|chi phi|ngan sach|spend)/.test(fold(text));
 }
+

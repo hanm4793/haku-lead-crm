@@ -144,7 +144,7 @@ export function ProjectsList({
       >
         <FormField label="Tên dự án" required>
           <Input
-            placeholder="VD: Showroom Kia Mazda, Bất động sản Vinhomes…"
+            placeholder="VD: Đại lý Kia Mazda, Bất động sản Vinhomes…"
             value={newName}
             onChange={(e) => {
               setNewName(e.target.value);

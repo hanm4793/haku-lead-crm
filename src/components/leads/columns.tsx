@@ -6,6 +6,7 @@ import {
   UNASSIGNED_ASSIGNMENT_LABEL,
   UNASSIGNED_PRODUCT_LABEL,
 } from "@/lib/constants";
+import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import type { CatalogLabels, Lead } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
@@ -23,8 +24,8 @@ export const LEAD_COLUMNS: LeadColumn[] = [
   { id: "createdAt", header: "Thời gian", width: 150, sortable: true, value: (l) => l.createdAt },
   { id: "name", header: "Khách hàng", width: 165, sortable: true, value: (l) => l.name },
   { id: "phone", header: "SĐT", width: 155, sortable: true, value: (l) => l.phone },
-  { id: "contactStatus", header: "Trạng thái", width: 145, sortable: true, value: (l) => l.contactStatus },
-  { id: "category", header: "Phân loại", width: 140, sortable: true, value: (l) => l.category },
+  { id: "contactStatus", header: "Trạng thái", width: 160, sortable: true, value: (l) => l.contactStatus },
+  { id: "category", header: "Phân loại", width: 155, sortable: true, value: (l) => l.category },
   { id: "failReason", header: "Lý do loại", width: 210, value: (l) => (l.failReason ? FAIL_REASON_LABEL[l.failReason] : null) },
   { id: "source", header: "Nguồn", width: 115, sortable: true, value: (l) => SOURCE_LABEL[l.source] },
   {
@@ -59,6 +60,26 @@ export const LEAD_COLUMNS: LeadColumn[] = [
   { id: "costPerLead", header: "Chi phí / lead", width: 140, align: "right", sortable: true, value: (l) => l.costPerLead },
 ];
 
+export const ATTR_COLUMN_PREFIX = "attr:";
+
+export function attrColumnId(key: string) {
+  return `${ATTR_COLUMN_PREFIX}${key}`;
+}
+
+/** Cột cho field phụ của project — sinh động từ cấu hình, id dạng `attr:<key>`. */
+export function buildAttrColumns(fields: AttrFieldRow[]): LeadColumn[] {
+  return fields.map((field) => ({
+    id: attrColumnId(field.key),
+    header: field.label,
+    width:
+      field.fieldType === "text" || field.fieldType === "select" || field.fieldType === "multiselect"
+        ? 170
+        : 130,
+    align: field.fieldType === "number" ? "right" : field.fieldType === "boolean" ? "center" : undefined,
+    value: (lead) => lead.attrs?.[field.key] ?? null,
+  }));
+}
+
 export const DEFAULT_VISIBLE_COLUMNS = [
   "createdAt",
   "name",
@@ -86,18 +107,26 @@ export function columnHeader(
   if (columnId === "brand") return labels.brand;
   if (columnId === "product") return labels.product;
   if (columnId === "location") return labels.location;
-  if (columnId.startsWith("attr:")) {
-    const key = columnId.slice(5);
+  if (columnId.startsWith(ATTR_COLUMN_PREFIX)) {
+    const key = columnId.slice(ATTR_COLUMN_PREFIX.length);
     return attrLabels?.[key] ?? key;
   }
   return COLUMN_BY_ID.get(columnId)?.header ?? columnId;
 }
 
 /** Chuỗi hiển thị trong ô — cũng dùng làm giá trị ô Excel. */
-export function displayValue(lead: Lead, columnId: string): string {
-  if (columnId.startsWith("attr:")) {
-    const key = columnId.slice(5);
-    return lead.attrs?.[key] ?? "";
+export function displayValue(lead: Lead, columnId: string, attrFields?: AttrFieldRow[]): string {
+  if (columnId.startsWith(ATTR_COLUMN_PREFIX)) {
+    const key = columnId.slice(ATTR_COLUMN_PREFIX.length);
+    const raw = lead.attrs?.[key] ?? "";
+    const type = attrFields?.find((f) => f.key === key)?.fieldType;
+    if (!raw) return "";
+    if (type === "date") return formatDate(raw);
+    if (type === "boolean") {
+      if (raw === "true") return "Có";
+      if (raw === "false") return "Không";
+    }
+    return raw;
   }
   const column = COLUMN_BY_ID.get(columnId);
   if (!column) {

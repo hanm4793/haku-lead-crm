@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import { exportSpecSchema } from "@/lib/ai/export-spec";
 import { queryLeads } from "@/lib/ai/query-leads";
+import { listAttrFields } from "@/lib/db/attr-fields-repo";
 import { buildLeadCsv, buildLeadWorkbook } from "@/lib/export/build-workbook";
 
 export const runtime = "nodejs";
@@ -17,11 +18,14 @@ export async function POST(request: Request) {
   }
 
   const spec = parsed.data;
-  const leads = await queryLeads(spec, viewer);
+  const [leads, attrFields] = await Promise.all([
+    queryLeads(spec, viewer),
+    viewer.activeProjectId ? listAttrFields(viewer.activeProjectId).catch(() => []) : Promise.resolve([]),
+  ]);
   const filename = `${spec.title || "danh-sach-lead"}-${new Date().toISOString().slice(0, 10)}`;
 
   if (spec.format === "csv") {
-    return new NextResponse(buildLeadCsv(spec, leads), {
+    return new NextResponse(buildLeadCsv(spec, leads, attrFields), {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${encodeURIComponent(filename)}.csv"`,
@@ -29,7 +33,7 @@ export async function POST(request: Request) {
     });
   }
 
-  const buffer = await buildLeadWorkbook(spec, leads);
+  const buffer = await buildLeadWorkbook(spec, leads, attrFields);
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

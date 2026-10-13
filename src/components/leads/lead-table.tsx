@@ -4,9 +4,10 @@ import * as React from "react";
 import { ArrowDown, ArrowUp, ChevronsUpDown, Copy, MessageSquare } from "lucide-react";
 
 import { CategoryCell, ContactStatusCell } from "@/components/leads/inline-cells";
-import { COLUMN_BY_ID, displayValue, LEAD_COLUMNS, type LeadColumn } from "@/components/leads/columns";
+import { buildAttrColumns, COLUMN_BY_ID, displayValue, LEAD_COLUMNS, type LeadColumn } from "@/components/leads/columns";
 import { useNow } from "@/components/providers/now-provider";
 import { useToast } from "@/components/providers/toast-provider";
+import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import { isOverdue } from "@/lib/filters";
 import type { ContactStatus, Lead, LeadCategory } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ export function LeadTable({
   onStatusChange,
   onCategoryChange,
   canEdit,
+  attrFields,
 }: {
   leads: Lead[];
   visibleColumns: string[];
@@ -34,12 +36,15 @@ export function LeadTable({
   onStatusChange: (lead: Lead, next: ContactStatus) => void;
   onCategoryChange: (lead: Lead, next: LeadCategory) => void;
   canEdit?: (lead: Lead) => boolean;
+  /** Field phụ đang bật của project — mỗi field là một cột `attr:<key>`. */
+  attrFields?: AttrFieldRow[];
 }) {
   const now = useNow();
-  const columns = React.useMemo(
-    () => visibleColumns.map((id) => COLUMN_BY_ID.get(id)).filter((c): c is LeadColumn => Boolean(c)),
-    [visibleColumns],
-  );
+  const columns = React.useMemo(() => {
+    const byId = new Map(COLUMN_BY_ID);
+    for (const column of buildAttrColumns(attrFields ?? [])) byId.set(column.id, column);
+    return visibleColumns.map((id) => byId.get(id)).filter((c): c is LeadColumn => Boolean(c));
+  }, [visibleColumns, attrFields]);
 
   const toggleSort = (column: LeadColumn) => {
     if (!column.sortable) return;
@@ -118,6 +123,7 @@ export function LeadTable({
                   <Cell
                     lead={lead}
                     column={column}
+                    attrFields={attrFields}
                     editable={!canEdit || canEdit(lead)}
                     onStatusChange={onStatusChange}
                     onCategoryChange={onCategoryChange}
@@ -135,12 +141,14 @@ export function LeadTable({
 function Cell({
   lead,
   column,
+  attrFields,
   editable,
   onStatusChange,
   onCategoryChange,
 }: {
   lead: Lead;
   column: LeadColumn;
+  attrFields?: AttrFieldRow[];
   editable: boolean;
   onStatusChange: (lead: Lead, next: ContactStatus) => void;
   onCategoryChange: (lead: Lead, next: LeadCategory) => void;
@@ -180,7 +188,7 @@ function Cell({
         </span>
       );
     default: {
-      const text = displayValue(lead, column.id);
+      const text = displayValue(lead, column.id, attrFields);
       if (!text) return <Dash />;
       return (
         <span className="block truncate text-slate-700" title={text}>

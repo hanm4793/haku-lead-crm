@@ -28,11 +28,11 @@ export const exportFiltersSchema = z.object({
   failReasons: z.array(z.enum(FAIL_REASON_OPTIONS.map((o) => o.value) as [string, ...string[]])).optional(),
   sources: z.array(z.enum(SOURCE_OPTIONS.map((o) => o.value) as [string, ...string[]])).optional().describe("Nguồn lead. Bỏ trống nếu người dùng không giới hạn nguồn"),
   brands: z.array(z.string().max(40)).optional().describe("Mã thương hiệu khách quan tâm, đúng theo danh sách hợp lệ"),
-  products: z.array(z.string().max(80)).optional().describe("BẮT BUỘC điền khi người dùng nhắc tên sản phẩm / dòng xe, đúng theo danh sách hợp lệ"),
-  locations: z.array(z.string().max(120)).optional().describe("Địa điểm / showroom. Bỏ trống nếu không giới hạn — kể cả khi tách sheet theo địa điểm"),
+  products: z.array(z.string().max(80)).optional().describe("BẮT BUỘC điền khi người dùng nhắc tên loại sản phẩm / sản phẩm, đúng theo danh sách hợp lệ"),
+  locations: z.array(z.string().max(120)).optional().describe("Đại lý / chi nhánh / địa điểm. Bỏ trống nếu không giới hạn — kể cả khi tách sheet theo đại lý"),
   assignees: z.array(z.string().max(120)).optional().describe("Nhân viên phụ trách"),
   facebookPageIds: z
-    .array(z.string().regex(/^\d{5,}$/))
+    .array(z.string().min(1).max(80))
     .optional()
     .describe("Meta Fanpage IDs — lọc lead theo trang Facebook nguồn"),
   overdueOnly: z.boolean().optional().describe("Chỉ lấy lead quá hạn gọi lại"),

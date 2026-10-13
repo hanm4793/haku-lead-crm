@@ -1,13 +1,22 @@
 import { SOURCE_OPTIONS } from "@/lib/constants";
+import { PIVOT_DIMENSIONS, type PivotDimension } from "@/lib/metrics";
 
 import { DEFAULT_AI_CATALOG, type AiCatalog } from "./catalog-context";
 import type { ExportFilters, ExportSpec } from "./export-spec";
+import {
+  parseTimeRange,
+  stripMentionLabels,
+  wantsResetScope,
+  type ChatMention,
+  type StatsQuery,
+} from "./stats-query";
 
 function normalize(text: string) {
   return text
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
     .toLowerCase();
 }
 
@@ -38,17 +47,60 @@ function matchByName<T extends string>(haystack: string, candidates: readonly T[
   return candidates.filter((value) => haystack.includes(normalize(value)));
 }
 
+export interface RefineSpecContext {
+  mentions?: ChatMention[];
+  lastStats?: StatsQuery | null;
+  lastSpec?: ExportSpec | null;
+  now?: Date;
+}
+
 /**
- * Dọn lại spec do LLM sinh ra bằng một lớp xác định.
- *
- * Model rất tốt ở phần hiểu ý định (khoảng thời gian, phân loại, tách sheet)
- * nhưng hay bỏ sót các thực thể phải khớp chính xác từng ký tự — đặc biệt là
- * tên sản phẩm. Việc dò tên thì regex làm chuẩn hơn và không tốn token, nên ở
- * đây ta chỉ bổ sung khi model để trống chứ không ghi đè lựa chọn của model.
+ * Dọn lại spec do LLM sinh ra bằng một lớp xác định, đồng thời kế thừa
+ * ngữ cảnh từ @mentions, `lastStats` hoặc `lastSpec` khi người dùng yêu cầu
+ * "xuất danh sách này ra excel" / "xuất file csv".
  */
-export function refineSpec(spec: ExportSpec, userText: string, catalog: AiCatalog = DEFAULT_AI_CATALOG): ExportSpec {
-  const q = normalize(userText);
-  const filters: ExportFilters = { ...spec.filters };
+export function refineSpec(
+  spec: ExportSpec,
+  userText: string,
+  catalog: AiCatalog = DEFAULT_AI_CATALOG,
+  context?: RefineSpecContext,
+): ExportSpec {
+  const mentions = context?.mentions ?? [];
+  const lastStats = context?.lastStats ?? null;
+  const lastSpec = context?.lastSpec ?? null;
+  const cleanText = mentions.length ? stripMentionLabels(userText, mentions) : userText;
+  const q = normalize(cleanText);
+  const resetScope = wantsResetScope(cleanText);
+
+  const inheritedFilters: ExportFilters = resetScope
+    ? {}
+    : {
+        ...(lastSpec?.filters ?? {}),
+        ...(lastStats?.filters ?? {}),
+      };
+
+  const filters: ExportFilters = {
+    ...inheritedFilters,
+    ...spec.filters,
+  };
+
+  // Thời gian: ưu tiên mốc thời gian tường minh trong câu hiện tại; nếu không có thì kế thừa từ lastStats/lastSpec
+  const time = parseTimeRange(cleanText, context?.now ?? new Date());
+  if (time.clearsDate) {
+    delete filters.dateFrom;
+    delete filters.dateTo;
+  } else if (time.hasExplicitTime) {
+    filters.dateFrom = time.dateFrom;
+    filters.dateTo = time.dateTo;
+  } else if (!filters.dateFrom && !filters.dateTo) {
+    if (lastStats?.dateFrom || lastStats?.dateTo) {
+      filters.dateFrom = lastStats.dateFrom;
+      filters.dateTo = lastStats.dateTo;
+    } else if (lastSpec?.filters?.dateFrom || lastSpec?.filters?.dateTo) {
+      filters.dateFrom = lastSpec.filters.dateFrom;
+      filters.dateTo = lastSpec.filters.dateTo;
+    }
+  }
 
   filters.sources = dropIfExhaustive(
     filters.sources,
@@ -60,6 +112,30 @@ export function refineSpec(spec: ExportSpec, userText: string, catalog: AiCatalo
   filters.assignees = dropIfExhaustive(keepKnown(filters.assignees, catalog.assignees), catalog.assignees);
 
   if (!filters.search?.trim()) delete filters.search;
+
+  // Áp dụng @mentions trực tiếp vào bộ lọc Export
+  if (!resetScope && mentions.length > 0) {
+    const pageIds = mentions.filter((m) => m.type === "fanpage").map((m) => m.id);
+    const brandIds = mentions.filter((m) => m.type === "brand").map((m) => m.id);
+    const productNames = mentions.filter((m) => m.type === "product").map((m) => m.label);
+    const locationNames = mentions.filter((m) => m.type === "location").map((m) => m.label);
+    const assigneeNames = mentions.filter((m) => m.type === "assignee").map((m) => m.label);
+
+    if (pageIds.length) filters.facebookPageIds = pageIds;
+    if (brandIds.length) filters.brands = brandIds;
+    if (productNames.length) filters.products = productNames;
+    if (locationNames.length) filters.locations = locationNames;
+    if (assigneeNames.length) filters.assignees = assigneeNames;
+  }
+
+  // Kế thừa facebookPageIds từ lastStats nếu chưa có
+  if (!resetScope && !filters.facebookPageIds?.length) {
+    if (lastStats?.pageIds?.length) {
+      filters.facebookPageIds = lastStats.pageIds;
+    } else if (lastSpec?.filters?.facebookPageIds?.length) {
+      filters.facebookPageIds = lastSpec.filters.facebookPageIds;
+    }
+  }
 
   if (!filters.products?.length) {
     const products = matchByName(q, catalog.products);
@@ -74,6 +150,10 @@ export function refineSpec(spec: ExportSpec, userText: string, catalog: AiCatalo
   if (!filters.assignees?.length) {
     const assignees = matchByName(q, catalog.assignees);
     if (assignees.length) filters.assignees = assignees;
+    else if (!resetScope && lastStats?.assigneeQuery) {
+      const matchedFromStats = keepKnown([lastStats.assigneeQuery], catalog.assignees);
+      if (matchedFromStats?.length) filters.assignees = matchedFromStats;
+    }
   }
 
   if (!filters.brands?.length) {
@@ -91,7 +171,7 @@ export function refineSpec(spec: ExportSpec, userText: string, catalog: AiCatalo
 
   if (!filters.overdueOnly && /qua han/.test(q)) filters.overdueOnly = true;
 
-  const columns = [...spec.columns];
+  const columns = [...(spec.columns?.length ? spec.columns : (lastSpec?.columns ?? []))];
   if (catalog.attrFields?.length) {
     for (const attr of catalog.attrFields) {
       const attrKeyCol = `attr:${attr.key}`;
@@ -101,5 +181,19 @@ export function refineSpec(spec: ExportSpec, userText: string, catalog: AiCatalo
     }
   }
 
-  return { ...spec, filters, columns };
+  let splitSheetsBy = spec.splitSheetsBy ?? lastSpec?.splitSheetsBy ?? null;
+  if (!splitSheetsBy && lastStats?.groupBy && lastStats.groupBy in PIVOT_DIMENSIONS) {
+    splitSheetsBy = lastStats.groupBy as PivotDimension;
+  }
+
+  const format = /csv/.test(q) ? "csv" : /excel|xlsx/.test(q) ? "xlsx" : (spec.format ?? "xlsx");
+
+  return {
+    ...spec,
+    filters,
+    columns,
+    splitSheetsBy,
+    format,
+  };
 }
+

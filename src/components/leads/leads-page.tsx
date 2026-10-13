@@ -1,25 +1,39 @@
 "use client";
 
 import * as React from "react";
-import { Download, Loader2, Search } from "lucide-react";
+import { ChevronDown, Download, FileSpreadsheet, FileUp, Loader2, Plus, Search } from "lucide-react";
 
 import { ColumnVisibilityPopover } from "@/components/common/column-visibility";
 import { DateRangePicker, resolvePreset, type DateRange, type PresetId } from "@/components/common/date-range-picker";
 import { Pagination } from "@/components/common/pagination";
 import { ALL_COLUMN_TOGGLES, LeadTable, type SortState } from "@/components/leads/lead-table";
-import { DEFAULT_VISIBLE_COLUMNS } from "@/components/leads/columns";
+import { attrColumnId, buildAttrColumns, DEFAULT_VISIBLE_COLUMNS } from "@/components/leads/columns";
+import { CreateLeadDialog } from "@/components/leads/create-lead-dialog";
+import { ImportLeadsDialog } from "@/components/leads/import-leads-dialog";
 import { LeadDetailDialog } from "@/components/leads/lead-detail-dialog";
 import { LeadFilterPopover, type FanpageFilterOption } from "@/components/leads/filter-popover";
 import { LeadKpiHeader } from "@/components/leads/kpi-header";
 import { useNow } from "@/components/providers/now-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLeadLogs } from "@/hooks/use-lead-logs";
 import { useLeadPage } from "@/hooks/use-lead-page";
 import { updateLeadAction } from "@/app/leads/actions";
-import { canEditLead, type UserRole } from "@/lib/auth/roles";
+import {
+  canCreateLead,
+  canEditLead,
+  canEditLeadProfile,
+  canImportLeads,
+  type UserRole,
+} from "@/lib/auth/roles";
 import { DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/lib/catalog";
 import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import type { LeadPage } from "@/lib/db/leads-repo";
@@ -35,6 +49,8 @@ interface LogEntry {
   message: string;
 }
 
+const NO_ATTR_FIELDS: AttrFieldRow[] = [];
+
 const TABS: { id: LeadFilters["tab"]; label: string }[] = [
   { id: "ALL", label: "Tất cả" },
   { id: "CHUA_LIEN_HE", label: "Chưa liên hệ" },
@@ -48,7 +64,7 @@ export function LeadsPage({
   fanpageOptions = [],
   assignees = [],
   catalog = DEFAULT_LEAD_CATALOG,
-  attrFields = [],
+  attrFields = NO_ATTR_FIELDS,
   editor,
 }: {
   initialData: LeadPage;
@@ -57,7 +73,7 @@ export function LeadsPage({
   assignees?: string[];
   catalog?: LeadCatalogOptions;
   attrFields?: AttrFieldRow[];
-  editor?: { role: UserRole; appUserId?: string | null };
+  editor?: { role: UserRole; appUserId?: string | null; fullName?: string | null };
 }) {
   const now = useNow();
   const toast = useToast();
@@ -65,13 +81,29 @@ export function LeadsPage({
   const setFilters = useLeadStore((s) => s.setFilters);
   const resetFilters = useLeadStore((s) => s.resetFilters);
 
-  const [visibleColumns, setVisibleColumns] = React.useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
+  // Field phụ đã cấu hình hiện thành cột (mặc định bật). Người dùng tự chọn cột thì giữ
+  // lựa chọn đó cho đến khi danh sách field của project đổi, lúc đó dùng lại mặc định.
+  const attrSignature = attrFields.map((f) => f.key).join("|");
+  const defaultColumns = React.useMemo(
+    () => [...DEFAULT_VISIBLE_COLUMNS, ...attrFields.map((f) => attrColumnId(f.key))],
+    [attrFields],
+  );
+  const columnToggles = React.useMemo(
+    () => [...ALL_COLUMN_TOGGLES, ...buildAttrColumns(attrFields).map((c) => ({ id: c.id, header: c.header }))],
+    [attrFields],
+  );
+  const [customColumns, setCustomColumns] = React.useState<{ signature: string; ids: string[] } | null>(null);
+  const visibleColumns = customColumns?.signature === attrSignature ? customColumns.ids : defaultColumns;
+  const setVisibleColumns = (ids: string[]) => setCustomColumns({ signature: attrSignature, ids });
   const [sort, setSort] = React.useState<SortState>({ columnId: "createdAt", order: "desc" });
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(initialRequest.pageSize);
   const [datePreset, setDatePreset] = React.useState<PresetId>("ALL");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [exporting, setExporting] = React.useState(false);
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = React.useState(false);
   const [searchInput, setSearchInput] = React.useState(filters.search);
 
   // Gõ tìm kiếm nhanh nhưng chỉ truy vấn sau khi người dùng ngừng gõ.
@@ -102,6 +134,10 @@ export function LeadsPage({
 
   const selected = selectedId ? (data.rows.find((row) => row.id === selectedId) ?? null) : null;
   const leadEditable = (lead: Lead) => (editor ? canEditLead(editor, lead) : true);
+  const leadProfileEditable = (lead: Lead) =>
+    editor ? canEditLeadProfile(editor, lead) : lead.source === "MANUAL";
+  const allowCreate = editor ? canCreateLead(editor.role) : true;
+  const allowImport = editor ? canImportLeads(editor.role) : true;
   const { logs: selectedLogs, reload: reloadLogs } = useLeadLogs(selectedId);
 
   const handleDateChange = (preset: PresetId, range: DateRange) => {
@@ -116,6 +152,31 @@ export function LeadsPage({
       await downloadExport(filtersToExportSpec(filters, visibleColumns));
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    setDownloadingTemplate(true);
+    try {
+      const response = await fetch("/api/leads/template");
+      if (!response.ok) {
+        toast.error("Không tải được file mẫu");
+        return;
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "lead-import-template.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.info("Đã tải file lead mẫu");
+    } catch {
+      toast.error("Không tải được file mẫu");
+    } finally {
+      setDownloadingTemplate(false);
     }
   };
 
@@ -216,15 +277,54 @@ export function LeadsPage({
 
           <div className="ml-auto flex items-center gap-2">
             {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+
+            {allowCreate && (
+              <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+                <Plus className="size-3.5" />
+                Tạo lead mới
+              </Button>
+            )}
+
+            {allowImport && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={downloadingTemplate}
+                  >
+                    {downloadingTemplate ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <FileUp className="size-3.5" />
+                    )}
+                    Import lead
+                    <ChevronDown className="size-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onSelect={() => setImportOpen(true)} className="gap-2">
+                    <FileUp className="size-4 text-primary" />
+                    Import lead từ Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={handleDownloadTemplate} className="gap-2">
+                    <FileSpreadsheet className="size-4 text-emerald-600" />
+                    Tải lead mẫu (.xlsx)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
             <Button variant="outline" size="sm" className="gap-2" onClick={handleExport} disabled={exporting}>
               {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
               Xuất Excel
             </Button>
             <ColumnVisibilityPopover
-              columns={ALL_COLUMN_TOGGLES}
+              columns={columnToggles}
               visible={visibleColumns}
               onChange={setVisibleColumns}
-              defaults={DEFAULT_VISIBLE_COLUMNS}
+              defaults={defaultColumns}
             />
           </div>
         </div>
@@ -238,6 +338,7 @@ export function LeadsPage({
           onStatusChange={handleStatusChange}
           onCategoryChange={handleCategoryChange}
           canEdit={leadEditable}
+          attrFields={attrFields}
         />
 
         <Pagination
@@ -258,7 +359,30 @@ export function LeadsPage({
         catalog={catalog}
         attrFields={attrFields}
         readOnly={selected ? !leadEditable(selected) : false}
+        canEditProfile={selected ? leadProfileEditable(selected) : false}
         onSave={(patch, entries) => (selected && leadEditable(selected) ? save(selected, patch, entries) : false)}
+      />
+
+      <CreateLeadDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        assignees={assignees}
+        catalog={catalog}
+        attrFields={attrFields}
+        editor={editor}
+        onCreated={(newLead) => {
+          refetch();
+          setSelectedId(newLead.id);
+        }}
+      />
+
+      <ImportLeadsDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onDownloadTemplate={handleDownloadTemplate}
+        onImported={() => {
+          refetch();
+        }}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 ﻿import ExcelJS from "exceljs";
 
-import { COLUMN_BY_ID, displayValue } from "@/components/leads/columns";
+import { ATTR_COLUMN_PREFIX, COLUMN_BY_ID, displayValue } from "@/components/leads/columns";
+import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import type { ExportSpec } from "@/lib/ai/export-spec";
 import { computeKpis, dimensionValue, type PivotDimension } from "@/lib/metrics";
 import type { Lead } from "@/lib/types";
@@ -8,15 +9,23 @@ import { formatPercent } from "@/lib/utils";
 
 const HEADER_FILL = "FF12479E";
 
-function writeSheet(sheet: ExcelJS.Worksheet, leads: Lead[], columnIds: string[]) {
+/** Tiêu đề cột: field phụ lấy nhãn đã cấu hình, không có thì dùng key. */
+function columnHeaderText(id: string, attrFields: AttrFieldRow[]) {
+  if (id.startsWith(ATTR_COLUMN_PREFIX)) {
+    const key = id.slice(ATTR_COLUMN_PREFIX.length);
+    return attrFields.find((f) => f.key === key)?.label ?? key;
+  }
+  return COLUMN_BY_ID.get(id)?.header ?? id;
+}
+
+function writeSheet(sheet: ExcelJS.Worksheet, leads: Lead[], columnIds: string[], attrFields: AttrFieldRow[]) {
   sheet.columns = columnIds.map((id) => {
     const column = COLUMN_BY_ID.get(id);
-    const header = id.startsWith("attr:") ? `Trường: ${id.slice(5)}` : (column?.header ?? id);
-    return { header, key: id, width: Math.max(12, Math.round((column?.width ?? 140) / 8)) };
+    return { header: columnHeaderText(id, attrFields), key: id, width: Math.max(12, Math.round((column?.width ?? 140) / 8)) };
   });
 
   for (const lead of leads) {
-    sheet.addRow(Object.fromEntries(columnIds.map((id) => [id, displayValue(lead, id)])));
+    sheet.addRow(Object.fromEntries(columnIds.map((id) => [id, displayValue(lead, id, attrFields)])));
   }
 
   const header = sheet.getRow(1);
@@ -67,7 +76,11 @@ function safeSheetName(name: string, used: Set<string>) {
   return candidate;
 }
 
-export async function buildLeadWorkbook(spec: ExportSpec, leads: Lead[]): Promise<Buffer> {
+export async function buildLeadWorkbook(
+  spec: ExportSpec,
+  leads: Lead[],
+  attrFields: AttrFieldRow[] = [],
+): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "SEMTOP Marketing CRM";
   workbook.created = new Date();
@@ -88,20 +101,20 @@ export async function buildLeadWorkbook(spec: ExportSpec, leads: Lead[]): Promis
     const used = new Set<string>();
     const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
     for (const [key, rows] of sorted) {
-      writeSheet(workbook.addWorksheet(safeSheetName(key, used)), rows, spec.columns);
+      writeSheet(workbook.addWorksheet(safeSheetName(key, used)), rows, spec.columns, attrFields);
     }
   } else {
-    writeSheet(workbook.addWorksheet("Danh sách lead"), leads, spec.columns);
+    writeSheet(workbook.addWorksheet("Danh sách lead"), leads, spec.columns, attrFields);
   }
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }
 
-export function buildLeadCsv(spec: ExportSpec, leads: Lead[]): string {
+export function buildLeadCsv(spec: ExportSpec, leads: Lead[], attrFields: AttrFieldRow[] = []): string {
   const escape = (v: string) => (/[",\n;]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const header = spec.columns.map((id) => escape(COLUMN_BY_ID.get(id)?.header ?? id)).join(",");
-  const body = leads.map((lead) => spec.columns.map((id) => escape(displayValue(lead, id))).join(",")).join("\n");
+  const header = spec.columns.map((id) => escape(columnHeaderText(id, attrFields))).join(",");
+  const body = leads.map((lead) => spec.columns.map((id) => escape(displayValue(lead, id, attrFields))).join(",")).join("\n");
   // BOM để Excel trên Windows đọc đúng tiếng Việt.
   return `\uFEFF${header}\n${body}`;
 }

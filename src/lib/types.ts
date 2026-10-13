@@ -21,7 +21,7 @@ export type FailReason =
   | "TRUNG_SPAM"
   | "KHAC";
 
-export type LeadSource = "FACEBOOK" | "GOOGLE" | "TIKTOK" | "ZALO" | "WEBSITE" | "HOTLINE";
+export type LeadSource = "FACEBOOK" | "GOOGLE" | "TIKTOK" | "ZALO" | "WEBSITE" | "HOTLINE" | "MANUAL";
 
 export type ChannelDetail = "TIN_NHAN" | "FORM" | "COMMENT" | "CUOC_GOI" | "CHAT_WEB";
 
@@ -46,6 +46,19 @@ export interface ActivityLog {
   actor: string;
   /** Ghi nhận hành động do AI thực hiện thay vì người dùng. */
   byAi?: boolean;
+}
+
+export interface LeadComment {
+  id: string;
+  leadId: string;
+  userId: string | null;
+  userName: string;
+  userRole?: string | null;
+  content: string;
+  parentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  replies?: LeadComment[];
 }
 
 export interface CatalogLabels {

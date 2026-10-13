@@ -1,4 +1,4 @@
-﻿import { redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 
 import { LeadsPage } from "@/components/leads/leads-page";
 import { NowProvider } from "@/components/providers/now-provider";
@@ -72,7 +72,7 @@ export default async function Page() {
         fanpageOptions={fanpageOptions}
         assignees={assignees}
         catalog={catalog}
-        editor={{ role: viewer.role, appUserId: viewer.appUserId }}
+        editor={{ role: viewer.role, appUserId: viewer.appUserId, fullName: viewer.fullName }}
         attrFields={attrFields}
       />
     </NowProvider>

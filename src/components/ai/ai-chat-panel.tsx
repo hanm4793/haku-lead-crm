@@ -29,7 +29,17 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { ExportPreview } from "@/lib/ai/export-preview";
 import type { ExportSpec } from "@/lib/ai/export-spec";
-import { MENTION_TYPES, type ChatMention, type MentionType, type StatsBreakdownRow } from "@/lib/ai/stats-query";
+import {
+  GROUP_LABEL,
+  MENTION_TYPES,
+  mergeContextMentions,
+  periodLabel,
+  wantsResetScope,
+  type ChatMention,
+  type MentionType,
+  type StatsBreakdownRow,
+  type StatsQuery,
+} from "@/lib/ai/stats-query";
 import type { MarketingBreakdownRow } from "@/lib/db/insights-repo";
 import { cn } from "@/lib/utils";
 
@@ -63,8 +73,8 @@ const CATEGORY_META: Record<
   { label: string; desc: string; icon: React.ComponentType<{ className?: string }>; color: string }
 > = {
   product: {
-    label: "Sản phẩm / Dòng xe",
-    desc: "Sản phẩm khách quan tâm (Seltos, Carnival, 2008...)",
+    label: "Loại sản phẩm",
+    desc: "Sản phẩm / loại sản phẩm khách quan tâm",
     icon: Car,
     color: "text-sky-600 bg-sky-50 border-sky-200",
   },
@@ -93,8 +103,8 @@ const CATEGORY_META: Record<
     color: "text-emerald-600 bg-emerald-50 border-emerald-200",
   },
   location: {
-    label: "Showroom / Địa điểm",
-    desc: "Chi nhánh tiếp nhận và phục vụ khách",
+    label: "Đại lý / Chi nhánh",
+    desc: "Đại lý hoặc chi nhánh tiếp nhận và phục vụ khách",
     icon: MapPin,
     color: "text-orange-600 bg-orange-50 border-orange-200",
   },
@@ -163,13 +173,30 @@ const WELCOME_MESSAGE: ChatMessage = {
     "Chào bạn! Tôi là Trợ lý AI của SEMTOP CRM. Bạn có thể hỏi số liệu CRM, chi phí quảng cáo hoặc nhờ tôi chuẩn bị file Excel/CSV theo yêu cầu.",
 };
 
-export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function AiChatPanel({
+  open,
+  onOpenChange,
+  canSeeMarketing = true,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  canSeeMarketing?: boolean;
+}) {
   const [messages, setMessages] = React.useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = React.useState("");
   const [mentions, setMentions] = React.useState<ChatMention[]>([]);
 
+  const availableMentionTypes = React.useMemo(
+    () => MENTION_TYPES.filter((item) => canSeeMarketing || (item.id !== "campaign" && item.id !== "ad")),
+    [canSeeMarketing],
+  );
+  const availableTopics = React.useMemo(
+    () => TOPIC_SUGGESTIONS.filter((topic) => canSeeMarketing || topic.group !== "Marketing & Facebook Ads"),
+    [canSeeMarketing],
+  );
+
   // Menu @ hierarchical state:
-  // step = "categories": Hiện danh sách 8 danh mục lớn, KHÔNG gọi API.
+  // step = "categories": Hiện danh sách danh mục lớn, KHÔNG gọi API.
   // step = "items": Đã chọn 1 danh mục, gọi API tìm kiếm các mục trong danh mục đó.
   // step = "global_search": Người dùng gõ từ khóa trực tiếp sau @, gọi API tìm kiếm toàn bộ.
   const [mentionOpen, setMentionOpen] = React.useState(false);
@@ -183,6 +210,7 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
   const [loading, setLoading] = React.useState(false);
   const [mode, setMode] = React.useState<"ai" | "fallback" | null>(null);
   const [lastSpec, setLastSpec] = React.useState<ExportSpec | null>(null);
+  const [lastStats, setLastStats] = React.useState<StatsQuery | null>(null);
   const [lastMentions, setLastMentions] = React.useState<ChatMention[]>([]);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -250,15 +278,54 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
   };
 
   const chooseMention = (item: MentionItem) => {
-    setMentions((current) => [...current, { type: item.type, id: item.id, label: item.label }]);
+    setMentions((current) => {
+      const next = current.filter((m) => !(m.type === item.type && m.id === item.id));
+      return [...next, { type: item.type, id: item.id, label: item.label }];
+    });
     setInput((current) => current.replace(/(?:^|\s)@[^\n@]*$/, "").trimEnd());
     closeMentions();
+  };
+
+  const removePinnedMention = (target: ChatMention) => {
+    setLastMentions((current) => current.filter((m) => !(m.type === target.type && m.id === target.id)));
+    setLastStats((current) => {
+      if (!current) return null;
+      const next = { ...current, filters: { ...current.filters } };
+      if (target.type === "fanpage") {
+        next.pageIds = next.pageIds?.filter((id) => id !== target.id) ?? null;
+        if (!next.pageIds?.length) next.pageIds = null;
+        next.pageQuery = null;
+      } else if (target.type === "campaign") {
+        next.campaignIds = next.campaignIds?.filter((id) => id !== target.id) ?? null;
+        if (!next.campaignIds?.length) next.campaignIds = null;
+        next.campaignQuery = null;
+      } else if (target.type === "ad") {
+        next.adIds = next.adIds?.filter((id) => id !== target.id) ?? null;
+        if (!next.adIds?.length) next.adIds = null;
+      } else if (target.type === "assignee") {
+        next.assigneeQuery = null;
+      } else if (target.type === "brand") {
+        next.filters.brands = next.filters.brands?.filter((b) => b !== target.id);
+      } else if (target.type === "product") {
+        next.filters.products = next.filters.products?.filter((p) => p !== target.label);
+      } else if (target.type === "location") {
+        next.filters.locations = next.filters.locations?.filter((l) => l !== target.label);
+      }
+      return next;
+    });
+  };
+
+  const clearAllPinnedContext = () => {
+    setLastMentions([]);
+    setLastStats(null);
+    setLastSpec(null);
   };
 
   const resetChat = () => {
     setMessages([WELCOME_MESSAGE]);
     setMentions([]);
     setLastSpec(null);
+    setLastStats(null);
     setLastMentions([]);
     closeMentions();
   };
@@ -273,7 +340,13 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
     const trimmed = text.trim();
     if ((!trimmed && tagged.length === 0) || loading) return;
 
-    const shown = [trimmed, ...tagged.map((item) => `@${item.label}`)].filter(Boolean).join(" ");
+    // Tự động ghép @mentions đang ghim từ câu trước nếu người dùng hỏi nối tiếp (ví dụ: "tháng 8 thì sao?")
+    const effectiveTagged = mergeContextMentions(tagged, lastMentions, trimmed);
+    const mentionSuffix = effectiveTagged
+      .filter((item) => !trimmed.toLowerCase().includes(`@${item.label.toLowerCase()}`))
+      .map((item) => `@${item.label}`);
+    const shown = [trimmed, ...mentionSuffix].filter(Boolean).join(" ");
+
     const userMessage: ChatMessage = { id: `u-${Date.now()}`, role: "user", content: shown };
     const history = [...messages, userMessage];
     setMessages(history);
@@ -290,9 +363,24 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
           messages: history
             .filter((m) => m.id !== "welcome")
             .map((m) => ({ role: m.role, content: m.content })),
-          mentions: tagged,
+          mentions: effectiveTagged,
           lastSpec,
-          lastMentions,
+          lastStats: wantsResetScope(trimmed)
+            ? lastStats
+              ? {
+                  ...lastStats,
+                  pageIds: null,
+                  campaignIds: null,
+                  adIds: null,
+                  leadIds: null,
+                  pageQuery: null,
+                  campaignQuery: null,
+                  assigneeQuery: null,
+                  filters: {},
+                }
+              : null
+            : lastStats,
+          lastMentions: wantsResetScope(trimmed) ? [] : lastMentions,
         }),
       });
       const data = await response.json();
@@ -300,10 +388,13 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
       if (data.spec) {
         setLastSpec(data.spec);
       }
-      if (data.activeMentions && data.activeMentions.length > 0) {
+      if (data.stats !== undefined) {
+        setLastStats(data.stats);
+      }
+      if (Array.isArray(data.activeMentions)) {
         setLastMentions(data.activeMentions);
-      } else if (tagged.length > 0) {
-        setLastMentions(tagged);
+      } else if (effectiveTagged.length > 0) {
+        setLastMentions(effectiveTagged);
       }
       setMessages((prev) => [
         ...prev,
@@ -331,6 +422,10 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
       setLoading(false);
     }
   };
+
+  const hasPinnedContext =
+    lastMentions.length > 0 || Boolean(lastStats?.dateFrom || lastStats?.dateTo || lastStats?.groupBy);
+
 
   return (
     <>
@@ -478,7 +573,7 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
               <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Gợi ý câu hỏi phổ biến
               </div>
-              {TOPIC_SUGGESTIONS.map((topic) => (
+              {availableTopics.map((topic) => (
                 <div key={topic.group} className="space-y-1.5">
                   <div className="text-[11.5px] font-medium text-slate-700">{topic.group}</div>
                   <div className="space-y-1">
@@ -526,7 +621,7 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
                   </div>
 
                   <div className="max-h-72 overflow-y-auto py-1 space-y-0.5 thin-scrollbar">
-                    {MENTION_TYPES.map((cat, index) => {
+                    {availableMentionTypes.map((cat, index) => {
                       const meta = CATEGORY_META[cat.id];
                       const Icon = meta.icon;
                       return (
@@ -593,7 +688,7 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
                         placeholder={
                           selectedCategory
                             ? `Tìm ${CATEGORY_META[selectedCategory].label.toLowerCase()}…`
-                            : "Tìm sản phẩm, fanpage, chiến dịch…"
+                            : "Tìm sản phẩm, fanpage, nhân viên…"
                         }
                         className="w-full bg-transparent outline-hidden text-[12px] placeholder:text-muted-foreground"
                       />
@@ -667,6 +762,72 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
             </div>
           )}
 
+          {/* Thanh hiển thị ngữ cảnh đang ghim từ câu hỏi trước */}
+          {hasPinnedContext && (
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-[11px]">
+              <div className="flex flex-wrap items-center gap-1 min-w-0">
+                <span className="font-medium text-slate-600 shrink-0">Đang ghim ngữ cảnh:</span>
+                {lastMentions.map((item) => {
+                  const meta = CATEGORY_META[item.type];
+                  return (
+                    <span
+                      key={`pinned-${item.type}-${item.id}`}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10.5px] font-medium",
+                        meta?.color ?? "bg-primary/10 text-primary border-primary/20",
+                      )}
+                    >
+                      <span>@{item.label}</span>
+                      <button
+                        type="button"
+                        onClick={() => removePinnedMention(item)}
+                        title="Bỏ ghim đối tượng này"
+                        className="rounded-full hover:bg-black/10 p-0.2"
+                      >
+                        <X className="size-2.5" />
+                      </button>
+                    </span>
+                  );
+                })}
+                {(lastStats?.dateFrom || lastStats?.dateTo) && (
+                  <span className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10.5px] font-medium text-slate-700">
+                    <span>{periodLabel(lastStats.dateFrom, lastStats.dateTo)}</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLastStats((curr) => (curr ? { ...curr, dateFrom: null, dateTo: null } : null))
+                      }
+                      title="Bỏ ghim khoảng thời gian"
+                      className="rounded-full hover:bg-black/10 p-0.2"
+                    >
+                      <X className="size-2.5" />
+                    </button>
+                  </span>
+                )}
+                {lastStats?.groupBy && (
+                  <span className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10.5px] font-medium text-slate-700">
+                    <span>Nhóm: {GROUP_LABEL[lastStats.groupBy] ?? lastStats.groupBy}</span>
+                    <button
+                      type="button"
+                      onClick={() => setLastStats((curr) => (curr ? { ...curr, groupBy: null } : null))}
+                      title="Bỏ ghim chiều nhóm"
+                      className="rounded-full hover:bg-black/10 p-0.2"
+                    >
+                      <X className="size-2.5" />
+                    </button>
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={clearAllPinnedContext}
+                className="shrink-0 text-[10.5px] font-medium text-muted-foreground hover:text-destructive underline-offset-2 hover:underline"
+              >
+                Bỏ ghim
+              </button>
+            </div>
+          )}
+
           {/* Ô nhập tin nhắn */}
           <div className="rounded-xl border border-input bg-background p-2 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all">
             {/* Tag Pills đã gắn */}
@@ -733,14 +894,14 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
                     e.preventDefault();
                     setMentionIndex((current) =>
                       e.key === "ArrowDown"
-                        ? (current + 1) % MENTION_TYPES.length
-                        : (current - 1 + MENTION_TYPES.length) % MENTION_TYPES.length,
+                        ? (current + 1) % availableMentionTypes.length
+                        : (current - 1 + availableMentionTypes.length) % availableMentionTypes.length,
                     );
                     return;
                   }
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    const cat = MENTION_TYPES[mentionIndex];
+                    const cat = availableMentionTypes[mentionIndex];
                     if (cat) pickCategory(cat.id);
                     return;
                   }
@@ -773,7 +934,11 @@ export function AiChatPanel({ open, onOpenChange }: { open: boolean; onOpenChang
                   send(input);
                 }
               }}
-              placeholder="Hỏi số liệu, bấm nút @ hoặc gõ @ để chọn đối tượng…"
+              placeholder={
+                lastMentions.length > 0
+                  ? `Hỏi tiếp cho ${lastMentions.map((m) => `@${m.label}`).join(", ")} (ví dụ: tháng 8 thì sao?)…`
+                  : "Hỏi số liệu, bấm nút @ hoặc gõ @ để chọn đối tượng…"
+              }
               className="min-h-12 w-full resize-none border-0 p-1 text-[13px] shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/80 leading-relaxed"
               rows={2}
             />

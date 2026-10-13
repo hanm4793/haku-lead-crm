@@ -85,6 +85,27 @@
       "when": 1791000000000,
       "tag": "0011_project_members",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791100000000,
+      "tag": "0012_lead_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791200000000,
+      "tag": "0013_attr_field_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791300000000,
+      "tag": "0014_manual_lead_source",
+      "breakpoints": true
     }
   ]
 }

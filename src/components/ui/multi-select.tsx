@@ -18,6 +18,8 @@ export function MultiSelect({
   onChange,
   placeholder = "Tất cả",
   searchable = true,
+  disabled = false,
+  displayMode = "count",
   className,
   contentClassName,
 }: {
@@ -26,6 +28,8 @@ export function MultiSelect({
   onChange: (next: string[]) => void;
   placeholder?: string;
   searchable?: boolean;
+  disabled?: boolean;
+  displayMode?: "count" | "labels";
   className?: string;
   contentClassName?: string;
 }) {
@@ -44,24 +48,28 @@ export function MultiSelect({
   const label =
     selected.length === 0
       ? placeholder
-      : selected.length === 1
-        ? (options.find((o) => o.value === selected[0])?.label ?? selected[0])
-        : `${selected.length} lựa chọn`;
+      : displayMode === "labels"
+        ? selected.map((val) => options.find((o) => o.value === val)?.label ?? val).join(", ")
+        : selected.length === 1
+          ? (options.find((o) => o.value === selected[0])?.label ?? selected[0])
+          : `${selected.length} lựa chọn`;
 
   return (
     <Popover>
       <PopoverTrigger
+        type="button"
+        disabled={disabled}
         className={cn(
           "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 text-sm shadow-xs outline-none transition",
-          "hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring/30",
+          "hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50",
           selected.length === 0 && "text-muted-foreground",
           className,
         )}
       >
-        <span className="truncate">{label}</span>
+        <span className="truncate text-left">{label}</span>
         <ChevronDown className="size-4 shrink-0 opacity-60" />
       </PopoverTrigger>
-      <PopoverContent className={cn("w-64 p-2", contentClassName)}>
+      <PopoverContent className={cn("w-[var(--radix-popover-trigger-width)] min-w-56 p-2", contentClassName)}>
         {searchable && (
           <div className="relative mb-2">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />

@@ -1,15 +1,28 @@
 import { SOURCE_OPTIONS } from "@/lib/constants";
-import { toDateInputValue } from "@/lib/utils";
 
 import { DEFAULT_AI_CATALOG, type AiCatalog } from "./catalog-context";
 import { DEFAULT_EXPORT_COLUMNS, type ExportSpec } from "./export-spec";
+import {
+  parseTimeRange,
+  periodLabel,
+  stripMentionLabels,
+  type ChatMention,
+  type StatsQuery,
+} from "./stats-query";
 
 function fold(text: string) {
   return text
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
     .toLowerCase();
+}
+
+export interface LocalExportContext {
+  mentions?: ChatMention[];
+  lastStats?: StatsQuery | null;
+  lastSpec?: ExportSpec | null;
 }
 
 /**
@@ -20,8 +33,10 @@ export function parseExportRequestLocally(
   text: string,
   now: Date = new Date(),
   catalog: AiCatalog = DEFAULT_AI_CATALOG,
+  context?: LocalExportContext,
 ): { reply: string; spec: ExportSpec | null } {
-  const raw = text.trim();
+  const mentions = context?.mentions ?? [];
+  const raw = (mentions.length ? stripMentionLabels(text, mentions) : text).trim();
   const q = fold(raw);
   const { labels } = catalog;
 
@@ -29,7 +44,7 @@ export function parseExportRequestLocally(
   if (!wantsExport) {
     return {
       reply:
-        "Mình hiện chạy ở chế độ không có API key nên chỉ xử lý được yêu cầu xuất dữ liệu. Bạn thử: \"xuất lead Facebook tháng này, tách sheet theo phụ trách\".",
+        "Mình hiện chạy ở chế độ không có API key nên xử lý theo từ khóa. Bạn có thể hỏi số liệu (ví dụ: \"dữ liệu của @Fanpage vào tháng 7\", \"tháng 8 thì sao?\") hoặc yêu cầu xuất dữ liệu (\"xuất lead Facebook tháng này, tách sheet theo phụ trách\").",
       spec: null,
     };
   }
@@ -37,39 +52,28 @@ export function parseExportRequestLocally(
   const filters: ExportSpec["filters"] = {};
   const described: string[] = [];
 
-  const iso = (d: Date) => toDateInputValue(d.toISOString());
-
-  if (/thang nay/.test(q)) {
-    filters.dateFrom = iso(new Date(now.getFullYear(), now.getMonth(), 1));
-    filters.dateTo = iso(now);
-    described.push("tháng này");
-  } else if (/thang truoc/.test(q)) {
-    filters.dateFrom = iso(new Date(now.getFullYear(), now.getMonth() - 1, 1));
-    filters.dateTo = iso(new Date(now.getFullYear(), now.getMonth(), 0));
-    described.push("tháng trước");
-  } else if (/hom nay/.test(q)) {
-    filters.dateFrom = iso(now);
-    filters.dateTo = iso(now);
-    described.push("hôm nay");
-  } else {
-    const days = /(\d+)\s*ngay/.exec(q);
-    if (days) {
-      const from = new Date(now);
-      from.setDate(from.getDate() - (Number(days[1]) - 1));
-      filters.dateFrom = iso(from);
-      filters.dateTo = iso(now);
-      described.push(`${days[1]} ngày gần nhất`);
-    }
-    const month = /thang\s*(\d{1,2})/.exec(q);
-    if (month) {
-      const m = Number(month[1]) - 1;
-      filters.dateFrom = iso(new Date(now.getFullYear(), m, 1));
-      filters.dateTo = iso(new Date(now.getFullYear(), m + 1, 0));
-      described.push(`tháng ${month[1]}`);
-    }
+  const time = parseTimeRange(raw, now);
+  if (time.hasExplicitTime && !time.clearsDate) {
+    filters.dateFrom = time.dateFrom;
+    filters.dateTo = time.dateTo;
+    if (time.label) described.push(time.label);
+  } else if (!time.clearsDate && (context?.lastStats?.dateFrom || context?.lastStats?.dateTo)) {
+    filters.dateFrom = context.lastStats.dateFrom;
+    filters.dateTo = context.lastStats.dateTo;
+    described.push(periodLabel(filters.dateFrom ?? null, filters.dateTo ?? null).toLowerCase());
+  } else if (!time.clearsDate && (context?.lastSpec?.filters?.dateFrom || context?.lastSpec?.filters?.dateTo)) {
+    filters.dateFrom = context.lastSpec.filters.dateFrom;
+    filters.dateTo = context.lastSpec.filters.dateTo;
+    described.push(periodLabel(filters.dateFrom ?? null, filters.dateTo ?? null).toLowerCase());
   }
 
-  const sources = SOURCE_OPTIONS.filter((o) => q.includes(o.label.toLowerCase())).map((o) => o.value);
+  if (mentions.length > 0) {
+    described.push(mentions.map((m) => `@${m.label}`).join(", "));
+  }
+
+  const sources = SOURCE_OPTIONS.filter((o) => q.includes(fold(o.label)) || q.includes(fold(o.value))).map(
+    (o) => o.value,
+  );
   if (sources.length) {
     filters.sources = sources;
     described.push(`nguồn ${sources.join(", ")}`);
@@ -123,9 +127,9 @@ export function parseExportRequestLocally(
   let splitSheetsBy: ExportSpec["splitSheetsBy"] = null;
   if (/tach.*(sheet|cot)|moi .* mot sheet/.test(q)) {
     if (/phu trach|nhan vien|sale/.test(q)) splitSheetsBy = "assignee";
-    else if (/dong xe|san pham/.test(q) || q.includes(productWord)) splitSheetsBy = "product";
+    else if (/dong xe|san pham|loai san pham/.test(q) || q.includes(productWord)) splitSheetsBy = "product";
     else if (/nguon|kenh/.test(q)) splitSheetsBy = "source";
-    else if (/showroom|dia diem|chi nhanh/.test(q) || q.includes(locationWord)) splitSheetsBy = "location";
+    else if (/dai ly|showroom|dia diem|chi nhanh/.test(q) || q.includes(locationWord)) splitSheetsBy = "location";
     else if (/trang thai|phan loai/.test(q)) splitSheetsBy = "category";
   }
 
@@ -134,7 +138,7 @@ export function parseExportRequestLocally(
     : "Xuất toàn bộ danh sách lead.";
 
   return {
-    reply: `Mình đang chạy chế độ không có API key nên hiểu theo từ khóa. ${summary} Bạn kiểm tra lại bộ lọc bên dưới rồi bấm tải nhé.`,
+    reply: `${summary} Bạn kiểm tra lại bộ lọc bên dưới rồi bấm tải nhé.`,
     spec: {
       title: "danh-sach-lead",
       summary,
@@ -148,3 +152,4 @@ export function parseExportRequestLocally(
     },
   };
 }
+

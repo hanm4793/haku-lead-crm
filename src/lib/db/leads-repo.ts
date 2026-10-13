@@ -1,15 +1,26 @@
-import { and, asc, desc, eq, gte, inArray, lte, ne, sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, ne, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
 import { listAttrFields, type AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import { getDb } from "@/lib/db/client";
 import { activityLogs, appUsers, brands, leads, locations, products } from "@/lib/db/schema";
 import { getCatalogLabels, getDefaultProject, getProjectById, toProjectInfo } from "@/lib/db/project-repo";
-import { canEditLead, dataScope, type UserRole } from "@/lib/auth/roles";
+import {
+  canCreateLead,
+  canEditLead,
+  canEditLeadProfile,
+  canImportLeads,
+  dataScope,
+  resolveManualLeadAssignee,
+  type UserRole,
+} from "@/lib/auth/roles";
 import type {
   ActivityLog,
   BrandCode,
   CatalogLabels,
+  ChannelDetail,
+  FailReason,
   Lead,
+  LeadCategory,
   LeadFilters,
   LeadKpis,
   ProjectInfo,
@@ -163,9 +174,15 @@ export function scopeConditions(viewer: ViewerScope): SQL[] {
     parts.push(eq(leads.projectId, viewer.activeProjectId));
   }
   const scope = dataScope(viewer);
-  if (scope === "none") return [sql`false`];
+  if (scope === "none") {
+    if (viewer.activeProjectId) {
+      parts.push(eq(leads.source, "MANUAL"));
+      return parts;
+    }
+    return [sql`false`];
+  }
   if (scope === "granted-pages") {
-    parts.push(inArray(leads.facebookPageId, viewer.pageIds));
+    parts.push(or(inArray(leads.facebookPageId, viewer.pageIds), eq(leads.source, "MANUAL"))!);
   }
   return parts;
 }
@@ -468,6 +485,7 @@ export interface LeadPatch {
   location?: string | null;
   careNote?: string | null;
   callbackAt?: string | null;
+  contactCount?: number;
   /** Giá trị field phụ đã validate; key không thuộc định nghĩa active giữ nguyên từ DB. */
   attrs?: Record<string, string>;
 }
@@ -538,17 +556,24 @@ export async function updateLead(
 
   const values: Record<string, unknown> = { updatedAt: new Date() };
 
-  if (patch.name !== undefined) {
+  const projectId = await resolveLeadProjectId(id);
+
+  if (patch.name !== undefined && patch.name !== current.name) {
+    if (!canEditLeadProfile(viewer, current)) {
+      throw new Error("Chỉ được sửa tên và số điện thoại với lead tạo thủ công hoặc import.");
+    }
     const name = patch.name?.trim() ?? "";
     if (name.length > 120) throw new Error("Họ tên tối đa 120 ký tự.");
     values.name = name || null;
   }
-  if (patch.phone !== undefined) {
+  if (patch.phone !== undefined && patch.phone !== current.phone) {
+    if (!canEditLeadProfile(viewer, current)) {
+      throw new Error("Chỉ được sửa tên và số điện thoại với lead tạo thủ công hoặc import.");
+    }
     const problem = validatePhone(patch.phone);
     if (problem) throw new Error(problem);
     const phone = normalizePhone(patch.phone);
     if (phoneKey(phone) !== phoneKey(current.phone)) {
-      const projectId = await resolveLeadProjectId(id);
       const duplicate = await findLeadByPhone(projectId, phone, id);
       if (duplicate) {
         throw new Error(
@@ -564,6 +589,9 @@ export async function updateLead(
   if (patch.failReason !== undefined) values.failReason = patch.failReason;
   if (patch.source !== undefined) values.source = patch.source;
   if (patch.channelDetail !== undefined) values.channelDetail = patch.channelDetail;
+  if (patch.contactCount !== undefined) {
+    values.contactCount = Math.max(0, patch.contactCount);
+  }
   if (patch.careNote !== undefined) values.careNote = patch.careNote;
   if (patch.callbackAt !== undefined) {
     values.callbackAt = patch.callbackAt ? new Date(patch.callbackAt) : null;
@@ -576,18 +604,17 @@ export async function updateLead(
   let brandCode: BrandCode | null = current.brand;
   if (patch.brand !== undefined) {
     brandCode = patch.brand;
-    values.brandId = patch.brand ? await resolveBrandId(patch.brand) : null;
+    values.brandId = patch.brand ? await resolveBrandId(patch.brand, projectId) : null;
     // Đổi brand mà không nói gì về product thì bỏ product cũ (thuộc brand khác).
     if (patch.product === undefined && patch.brand !== current.brand) values.productId = null;
   }
   if (patch.product !== undefined) {
-    values.productId = patch.product ? await resolveProductId(patch.product, brandCode) : null;
+    values.productId = patch.product ? await resolveProductId(patch.product, brandCode, projectId) : null;
   }
   if (patch.location !== undefined) {
-    values.locationId = patch.location ? await resolveLocationId(patch.location) : null;
+    values.locationId = patch.location ? await resolveLocationId(patch.location, projectId) : null;
   }
   if (patch.attrs !== undefined) {
-    const projectId = await resolveLeadProjectId(id);
     if (!projectId) throw new Error("Lead chưa gắn project.");
     values.attrs = await mergeLeadAttrs(projectId, current.attrs ?? {}, patch.attrs);
   }
@@ -616,12 +643,12 @@ export async function updateLead(
 }
 
 /** Lead khác cùng project có cùng SĐT (so sánh theo khóa đã bỏ ký tự thừa và đầu số 84). */
-async function findLeadByPhone(projectId: string | null, phone: string, excludeId: string) {
+export async function findLeadByPhone(projectId: string | null, phone: string, excludeId?: string) {
   const key = phoneKey(phone);
-  const conditions = [
+  const conditions: SQL[] = [
     sql`regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^84', '0') = ${key}`,
-    ne(leads.id, excludeId),
   ];
+  if (excludeId) conditions.push(ne(leads.id, excludeId));
   if (projectId) conditions.push(eq(leads.projectId, projectId));
   const [row] = await getDb()
     .select({ name: leads.name, createdAt: leads.createdAt })
@@ -631,12 +658,50 @@ async function findLeadByPhone(projectId: string | null, phone: string, excludeI
   return row ?? null;
 }
 
+/** Lead khác cùng project có cùng email trong attrs (không phân biệt hoa thường). */
+export async function findLeadByEmail(projectId: string | null, email: string, excludeId?: string) {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return null;
+  const conditions: SQL[] = [
+    sql`lower(trim(coalesce(${leads.attrs}->>'email', ''))) = ${normalized}`,
+  ];
+  if (excludeId) conditions.push(ne(leads.id, excludeId));
+  if (projectId) conditions.push(eq(leads.projectId, projectId));
+  const [row] = await getDb()
+    .select({ name: leads.name, createdAt: leads.createdAt })
+    .from(leads)
+    .where(and(...conditions))
+    .limit(1);
+  return row ?? null;
+}
+
+export interface ExistingLeadUniqueEntry {
+  name: string | null;
+  phone: string;
+  email: string | null;
+}
+
+/** Đọc danh sách SĐT và email đang có trong project để kiểm tra trùng hàng loạt khi import. */
+export async function listExistingPhonesAndEmails(
+  projectId: string | null,
+): Promise<ExistingLeadUniqueEntry[]> {
+  const rows = await getDb()
+    .select({
+      name: leads.name,
+      phone: leads.phone,
+      email: sql<string | null>`nullif(trim(coalesce(${leads.attrs}->>'email', '')), '')`,
+    })
+    .from(leads)
+    .where(projectId ? eq(leads.projectId, projectId) : undefined);
+  return rows;
+}
+
 async function resolveLeadProjectId(leadId: string): Promise<string | null> {
   const [row] = await getDb().select({ projectId: leads.projectId }).from(leads).where(eq(leads.id, leadId)).limit(1);
   return row?.projectId ?? null;
 }
 
-function validateAttrValue(def: AttrFieldRow, raw: string): string {
+export function validateAttrValue(def: AttrFieldRow, raw: string): string {
   const value = raw.trim();
   if (!value) {
     if (def.required) throw new Error(`Field "${def.label}" là bắt buộc.`);
@@ -645,8 +710,54 @@ function validateAttrValue(def: AttrFieldRow, raw: string): string {
   if (def.fieldType === "number" && Number.isNaN(Number(value))) {
     throw new Error(`Field "${def.label}" phải là số.`);
   }
-  if (def.fieldType === "select" && !def.options.includes(value)) {
+  if (def.fieldType === "date") {
+    const mIso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    const mVn = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value);
+    if (mIso) {
+      const d = new Date(`${value}T00:00:00Z`);
+      if (Number.isNaN(d.getTime())) throw new Error(`Field "${def.label}" không đúng ngày tháng.`);
+      return value;
+    }
+    if (mVn) {
+      const dd = mVn[1].padStart(2, "0");
+      const mm = mVn[2].padStart(2, "0");
+      const yyyy = mVn[3];
+      const iso = `${yyyy}-${mm}-${dd}`;
+      const d = new Date(`${iso}T00:00:00Z`);
+      if (Number.isNaN(d.getTime())) throw new Error(`Field "${def.label}" không đúng ngày tháng.`);
+      return iso;
+    }
+    throw new Error(`Field "${def.label}" phải có định dạng ngày yyyy-MM-dd hoặc dd/MM/yyyy.`);
+  }
+  if (def.fieldType === "boolean") {
+    const lower = value.toLowerCase();
+    if (lower === "true" || lower === "1" || lower === "có" || lower === "co" || lower === "yes") {
+      return "true";
+    }
+    if (lower === "false" || lower === "0" || lower === "không" || lower === "khong" || lower === "no") {
+      return "false";
+    }
     throw new Error(`Giá trị không hợp lệ cho "${def.label}".`);
+  }
+  if (def.fieldType === "select") {
+    if (!def.options.includes(value)) {
+      throw new Error(`Giá trị không hợp lệ cho "${def.label}".`);
+    }
+    return value;
+  }
+  if (def.fieldType === "multiselect") {
+    const picked = value
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (picked.length === 0) {
+      if (def.required) throw new Error(`Field "${def.label}" là bắt buộc.`);
+      return "";
+    }
+    if (picked.some((item) => !def.options.includes(item))) {
+      throw new Error(`Giá trị không hợp lệ cho "${def.label}".`);
+    }
+    return picked.join(", ");
   }
   return value;
 }
@@ -682,11 +793,11 @@ async function resolveAssigneeId(fullName: string) {
   return rows[0]?.id ?? null;
 }
 
-/** Brand theo mã, trong project mặc định. */
-export async function resolveBrandId(code: BrandCode): Promise<string | null> {
-  const project = await getDefaultProject();
+/** Brand theo mã, trong project hiện tại hoặc project mặc định. */
+export async function resolveBrandId(code: BrandCode, projectId?: string | null): Promise<string | null> {
+  const resolvedProjectId = projectId ?? (await getDefaultProject())?.id ?? null;
   const conditions = [eq(brands.code, code)];
-  if (project) conditions.push(eq(brands.projectId, project.id));
+  if (resolvedProjectId) conditions.push(eq(brands.projectId, resolvedProjectId));
   const rows = await getDb()
     .select({ id: brands.id })
     .from(brands)
@@ -699,33 +810,237 @@ export async function resolveBrandId(code: BrandCode): Promise<string | null> {
  * Tên sản phẩm chỉ unique trong phạm vi một brand, nên ưu tiên khớp theo brand
  * của lead rồi mới nới ra khớp theo tên.
  */
-export async function resolveProductId(name: string, brandCode: BrandCode | null): Promise<string | null> {
+export async function resolveProductId(
+  name: string,
+  brandCode: BrandCode | null,
+  projectId?: string | null,
+): Promise<string | null> {
   const db = getDb();
+  const resolvedProjectId = projectId ?? (await getDefaultProject())?.id ?? null;
   if (brandCode) {
+    const conditions = [eq(products.name, name), eq(brands.code, brandCode)];
+    if (resolvedProjectId) conditions.push(eq(products.projectId, resolvedProjectId));
     const exact = await db
       .select({ id: products.id })
       .from(products)
       .innerJoin(brands, eq(products.brandId, brands.id))
-      .where(and(eq(products.name, name), eq(brands.code, brandCode)))
+      .where(and(...conditions))
       .limit(1);
     if (exact[0]) return exact[0].id;
   }
 
-  const fallback = await db.select({ id: products.id }).from(products).where(eq(products.name, name)).limit(1);
+  const fallbackConditions = [eq(products.name, name)];
+  if (resolvedProjectId) fallbackConditions.push(eq(products.projectId, resolvedProjectId));
+  const fallback = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(and(...fallbackConditions))
+    .limit(1);
   return fallback[0]?.id ?? null;
 }
 
-/** Location theo tên, trong project mặc định. */
-export async function resolveLocationId(name: string): Promise<string | null> {
-  const project = await getDefaultProject();
+/** Location theo tên, trong project hiện tại hoặc project mặc định. */
+export async function resolveLocationId(name: string, projectId?: string | null): Promise<string | null> {
+  const resolvedProjectId = projectId ?? (await getDefaultProject())?.id ?? null;
   const conditions = [eq(locations.name, name)];
-  if (project) conditions.push(eq(locations.projectId, project.id));
+  if (resolvedProjectId) conditions.push(eq(locations.projectId, resolvedProjectId));
   const rows = await getDb()
     .select({ id: locations.id })
     .from(locations)
     .where(and(...conditions))
     .limit(1);
   return rows[0]?.id ?? null;
+}
+
+export interface CreateManualLeadInput {
+  name: string;
+  phone: string;
+  email?: string | null;
+  brand?: BrandCode | null;
+  product?: string | null;
+  location?: string | null;
+  channelDetail?: ChannelDetail;
+  category?: LeadCategory;
+  failReason?: FailReason | null;
+  assignee?: string | null;
+  careNote?: string | null;
+  callbackAt?: string | null;
+  attrs?: Record<string, string>;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Tạo lead thủ công (`source = "MANUAL"`), kiểm tra trùng SĐT & email và áp quy tắc phụ trách theo vai trò. */
+export async function createManualLead(
+  input: CreateManualLeadInput,
+  viewer: ViewerScope,
+  actor: Actor,
+): Promise<Lead> {
+  if (!canCreateLead(viewer.role)) {
+    throw new Error("Bạn không có quyền tạo lead.");
+  }
+
+  const name = input.name.trim();
+  if (!name) throw new Error("Họ tên khách hàng không được để trống.");
+  if (name.length > 120) throw new Error("Họ tên tối đa 120 ký tự.");
+
+  const phoneProblem = validatePhone(input.phone);
+  if (phoneProblem) throw new Error(phoneProblem);
+  const phone = normalizePhone(input.phone);
+
+  const projectId = viewer.activeProjectId ?? (await getDefaultProject())?.id ?? null;
+  if (!projectId) throw new Error("Chưa xác định được dự án đang làm việc.");
+
+  const duplicatePhone = await findLeadByPhone(projectId, phone);
+  if (duplicatePhone) {
+    throw new Error(
+      `Số điện thoại ${phone} đã tồn tại ở lead «${duplicatePhone.name?.trim() || "Khách chưa có tên"}» (tạo ${duplicatePhone.createdAt.toLocaleDateString("vi-VN")}).`,
+    );
+  }
+
+  const rawEmail = (input.email ?? input.attrs?.email ?? "").trim();
+  if (rawEmail) {
+    if (!EMAIL_RE.test(rawEmail)) {
+      throw new Error("Email không đúng định dạng.");
+    }
+    const duplicateEmail = await findLeadByEmail(projectId, rawEmail);
+    if (duplicateEmail) {
+      throw new Error(
+        `Email ${rawEmail} đã tồn tại ở lead «${duplicateEmail.name?.trim() || "Khách chưa có tên"}» (tạo ${duplicateEmail.createdAt.toLocaleDateString("vi-VN")}).`,
+      );
+    }
+  }
+
+  const requestedAssigneeId = input.assignee ? await resolveAssigneeId(input.assignee) : null;
+  const assigneeId = resolveManualLeadAssignee(viewer, requestedAssigneeId);
+
+  const brandId = input.brand ? await resolveBrandId(input.brand, projectId) : null;
+  const productId = input.product ? await resolveProductId(input.product, input.brand ?? null, projectId) : null;
+  const locationId = input.location ? await resolveLocationId(input.location, projectId) : null;
+
+  const baseAttrs: Record<string, string> = {};
+  if (rawEmail) baseAttrs.email = rawEmail;
+  const mergedAttrs = await mergeLeadAttrs(projectId, baseAttrs, input.attrs ?? {});
+  if (rawEmail && !mergedAttrs.email) mergedAttrs.email = rawEmail;
+
+  const category = input.category ?? "CHUA_PHAN_LOAI";
+  const failReason = category === "FAIL" ? (input.failReason ?? null) : null;
+
+  let createdId = "";
+  await getDb().transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(leads)
+      .values({
+        name,
+        phone,
+        source: "MANUAL",
+        channelDetail: input.channelDetail ?? "FORM",
+        contactStatus: "CHUA_LIEN_HE",
+        category,
+        failReason,
+        projectId,
+        brandId,
+        productId,
+        locationId,
+        assigneeId,
+        careNote: input.careNote?.trim() || null,
+        callbackAt: input.callbackAt ? new Date(input.callbackAt) : null,
+        attrs: mergedAttrs,
+      })
+      .returning({ id: leads.id });
+
+    createdId = inserted.id;
+    await tx.insert(activityLogs).values({
+      leadId: createdId,
+      kind: "CREATE",
+      message: "Tạo lead thủ công.",
+      actorId: actor.appUserId ?? null,
+      actorName: actor.fullName,
+      byAi: false,
+    });
+  });
+
+  const lead = await getLeadById(createdId, viewer);
+  if (!lead) throw new Error("Không tải được lead vừa tạo.");
+  return lead;
+}
+
+/** Ghi hàng loạt các dòng lead hợp lệ từ file import vào DB. */
+export async function insertImportedLeads(
+  rows: CreateManualLeadInput[],
+  viewer: ViewerScope,
+  actor: Actor,
+): Promise<{ importedCount: number }> {
+  if (!canImportLeads(viewer.role)) {
+    throw new Error("Bạn không có quyền import lead.");
+  }
+  if (rows.length === 0) return { importedCount: 0 };
+
+  const projectId = viewer.activeProjectId ?? (await getDefaultProject())?.id ?? null;
+  if (!projectId) throw new Error("Chưa xác định được dự án đang làm việc.");
+
+  let importedCount = 0;
+  for (const row of rows) {
+    const phone = normalizePhone(row.phone);
+    if (!phone || validatePhone(phone)) continue;
+    const dupPhone = await findLeadByPhone(projectId, phone);
+    if (dupPhone) continue;
+
+    const rawEmail = (row.email ?? row.attrs?.email ?? "").trim();
+    if (rawEmail) {
+      if (!EMAIL_RE.test(rawEmail)) continue;
+      const dupEmail = await findLeadByEmail(projectId, rawEmail);
+      if (dupEmail) continue;
+    }
+
+    const requestedAssigneeId = row.assignee ? await resolveAssigneeId(row.assignee) : null;
+    const assigneeId = resolveManualLeadAssignee(viewer, requestedAssigneeId);
+
+    const brandId = row.brand ? await resolveBrandId(row.brand, projectId) : null;
+    const productId = row.product ? await resolveProductId(row.product, row.brand ?? null, projectId) : null;
+    const locationId = row.location ? await resolveLocationId(row.location, projectId) : null;
+
+    const attrs: Record<string, string> = { ...(row.attrs ?? {}) };
+    if (rawEmail) attrs.email = rawEmail;
+
+    const category = row.category ?? "CHUA_PHAN_LOAI";
+    const failReason = category === "FAIL" ? (row.failReason ?? null) : null;
+
+    await getDb().transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(leads)
+        .values({
+          name: row.name?.trim() || null,
+          phone,
+          source: "MANUAL",
+          channelDetail: row.channelDetail ?? "FORM",
+          contactStatus: "CHUA_LIEN_HE",
+          category,
+          failReason,
+          projectId,
+          brandId,
+          productId,
+          locationId,
+          assigneeId,
+          careNote: row.careNote?.trim() || null,
+          callbackAt: row.callbackAt ? new Date(row.callbackAt) : null,
+          attrs,
+        })
+        .returning({ id: leads.id });
+
+      await tx.insert(activityLogs).values({
+        leadId: inserted.id,
+        kind: "CREATE",
+        message: "Import lead từ file Excel.",
+        actorId: actor.appUserId ?? null,
+        actorName: actor.fullName,
+        byAi: false,
+      });
+    });
+    importedCount += 1;
+  }
+
+  return { importedCount };
 }
 
 export interface BrandOption {

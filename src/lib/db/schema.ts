@@ -75,6 +75,7 @@ export const leadSourceEnum = pgEnum(
     ZALO: true,
     WEBSITE: true,
     HOTLINE: true,
+    MANUAL: true,
   }),
 );
 
@@ -103,7 +104,14 @@ export const metaSyncKindEnum = pgEnum("meta_sync_kind", ["leads", "insights"]);
 export const metaSyncStatusEnum = pgEnum("meta_sync_status", ["ok", "error"]);
 /** Tài khoản ads/leads ngoài Meta Page — lưu kết nối theo project (sync đầy đủ làm sau). */
 export const adPlatformEnum = pgEnum("ad_platform", ["google", "tiktok", "zalo"]);
-export const attrFieldTypeEnum = pgEnum("attr_field_type", ["text", "number", "select", "date"]);
+export const attrFieldTypeEnum = pgEnum("attr_field_type", [
+  "text",
+  "number",
+  "select",
+  "multiselect",
+  "boolean",
+  "date",
+]);
 
 /** Project cấu hình nhãn 3 catalog dimension. Phase B: một project active. */
 export const projects = pgTable("projects", {
@@ -111,8 +119,8 @@ export const projects = pgTable("projects", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   brandLabel: text("brand_label").notNull().default("Thương hiệu"),
-  productLabel: text("product_label").notNull().default("Sản phẩm"),
-  locationLabel: text("location_label").notNull().default("Địa điểm"),
+  productLabel: text("product_label").notNull().default("Loại sản phẩm"),
+  locationLabel: text("location_label").notNull().default("Đại lý"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -392,6 +400,28 @@ export const activityLogs = pgTable(
   (table) => [index("activity_logs_lead_at_idx").on(table.leadId, table.at.desc())],
 );
 
+export const leadComments = pgTable(
+  "lead_comments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => appUsers.id, { onDelete: "set null" }),
+    userName: text("user_name").notNull(),
+    userRole: userRoleEnum("user_role"),
+    content: text("content").notNull(),
+    parentId: uuid("parent_id").references((): AnyPgColumn => leadComments.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("lead_comments_lead_idx").on(table.leadId),
+    index("lead_comments_parent_idx").on(table.parentId),
+    index("lead_comments_created_at_idx").on(table.createdAt.asc()),
+  ],
+);
+
 export const leadsRelations = relations(leads, ({ one, many }) => ({
   project: one(projects, { fields: [leads.projectId], references: [projects.id] }),
   brand: one(brands, { fields: [leads.brandId], references: [brands.id] }),
@@ -399,6 +429,20 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
   location: one(locations, { fields: [leads.locationId], references: [locations.id] }),
   assignee: one(appUsers, { fields: [leads.assigneeId], references: [appUsers.id] }),
   logs: many(activityLogs),
+  comments: many(leadComments),
+}));
+
+export const leadCommentsRelations = relations(leadComments, ({ one, many }) => ({
+  lead: one(leads, { fields: [leadComments.leadId], references: [leads.id] }),
+  user: one(appUsers, { fields: [leadComments.userId], references: [appUsers.id] }),
+  parent: one(leadComments, {
+    fields: [leadComments.parentId],
+    references: [leadComments.id],
+    relationName: "lead_comment_replies",
+  }),
+  replies: many(leadComments, {
+    relationName: "lead_comment_replies",
+  }),
 }));
 
 export const activityLogsRelations = relations(activityLogs, ({ one }) => ({

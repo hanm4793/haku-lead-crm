@@ -9,7 +9,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 
 export const ROLE_HINTS: Record<UserRole, string> = {
   SUPER_ADMIN: "Toàn quyền trên mọi fanpage",
-  PARTNER_ADMIN: "Lead và marketing của các fanpage được gán",
+  PARTNER_ADMIN: "Lead và báo cáo của các fanpage được gán",
   STAFF: "Xem lead của fanpage được gán, chỉ sửa lead của mình",
 };
 
@@ -23,7 +23,7 @@ export function canManageUsers(role: UserRole): boolean {
 }
 
 export function canViewMarketing(role: UserRole): boolean {
-  return role === "SUPER_ADMIN" || role === "PARTNER_ADMIN";
+  return role === "SUPER_ADMIN";
 }
 
 export function canViewReports(role: UserRole): boolean {
@@ -120,12 +120,13 @@ export function isPageInProjectScope(
   return Boolean(pageId && projectPageIds.includes(pageId));
 }
 
-/** Marketing / ads: grant fanpage ∩ fanpage của project đang xem. */
+/** Marketing / ads: chỉ super admin và thuộc fanpage của project đang xem. */
 export function isMarketingRowVisible(
   viewer: { role: UserRole; pageIds: readonly string[] },
   pageId: string | null | undefined,
   projectPageIds: readonly string[] | null,
 ): boolean {
+  if (!canViewMarketing(viewer.role)) return false;
   return isPageVisible(viewer, pageId) && isPageInProjectScope(pageId, projectPageIds);
 }
 
@@ -263,3 +264,52 @@ export function canEditLead(
   }
   return viewer.role === "SUPER_ADMIN" || viewer.role === "PARTNER_ADMIN";
 }
+
+/**
+ * Quyền bình luận trên lead (thêm comment, trả lời):
+ * Super admin và partner-admin bình luận được trên mọi lead trong phạm vi xem.
+ * Nhân viên chỉ bình luận trên lead được giao cho mình.
+ */
+export function canCommentLead(
+  viewer: { role: UserRole; appUserId?: string | null },
+  lead: { assigneeId?: string | null },
+): boolean {
+  return canEditLead(viewer, lead);
+}
+
+/** Mọi vai trò đã đăng nhập đều được tạo lead thủ công và import lead. */
+export function canCreateLead(role: UserRole): boolean {
+  return role === "SUPER_ADMIN" || role === "PARTNER_ADMIN" || role === "STAFF";
+}
+
+export function canImportLeads(role: UserRole): boolean {
+  return canCreateLead(role);
+}
+
+/**
+ * Khi tạo lead thủ công / import:
+ * - Nhân viên (STAFF): luôn lấy phụ trách là chính tài khoản đó (`viewer.appUserId`).
+ * - Admin (SUPER_ADMIN / PARTNER_ADMIN): mặc định để chưa giao (`null`), hoặc lấy nhân viên được chọn.
+ */
+export function resolveManualLeadAssignee(
+  viewer: { role: UserRole; appUserId?: string | null },
+  requestedAssigneeId?: string | null,
+): string | null {
+  if (viewer.role === "STAFF") {
+    return viewer.appUserId ?? null;
+  }
+  return requestedAssigneeId ?? null;
+}
+
+/**
+ * Chỉ lead tạo thủ công / import (`source === "MANUAL"`) mới được sửa tên và số điện thoại.
+ * Các loại lead kéo tự động từ nguồn khác (như Facebook Meta) không cho sửa tên và SĐT.
+ */
+export function canEditLeadProfile(
+  viewer: { role: UserRole; appUserId?: string | null },
+  lead: { assigneeId?: string | null; source?: string | null },
+): boolean {
+  if (!canEditLead(viewer, lead)) return false;
+  return lead.source === "MANUAL";
+}
+

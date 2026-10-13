@@ -9,6 +9,7 @@ import {
   createAttrField,
   deleteAttrField,
   getAttrField,
+  isListAttrFieldType,
   updateAttrField,
   type AttrFieldType,
 } from "@/lib/db/attr-fields-repo";
@@ -16,7 +17,7 @@ import { assertCanAccessProject, resolveActiveProject, toProjectViewer } from "@
 
 export type AttrFieldActionResult = { ok: true } | { ok: false; error: string };
 
-const fieldTypeSchema = z.enum(["text", "number", "select", "date"]);
+const fieldTypeSchema = z.enum(["text", "number", "select", "multiselect", "boolean", "date"]);
 
 async function requireAttrFieldAdmin(explicitProjectId?: string): Promise<{ projectId: string } | { error: string }> {
   const viewer = await getScopedViewer();
@@ -77,12 +78,20 @@ const createSchema = scopedSchema.extend({
   label: z.string().min(1).max(120),
   key: z.string().max(64).optional(),
   fieldType: fieldTypeSchema.default("text"),
+  options: z.array(z.string().max(200)).optional(),
   optionsCsv: z.string().max(2000).optional(),
   required: z.boolean().optional(),
 });
 
-function parseOptionsCsv(csv: string | undefined, fieldType: AttrFieldType): string[] {
-  if (fieldType !== "select") return [];
+function resolveOptions(
+  options: string[] | undefined,
+  csv: string | undefined,
+  fieldType: AttrFieldType,
+): string[] {
+  if (!isListAttrFieldType(fieldType)) return [];
+  if (options) {
+    return options.map((s) => s.trim()).filter(Boolean);
+  }
   if (!csv?.trim()) return [];
   return csv
     .split(/[,;\n]/)
@@ -93,10 +102,10 @@ function parseOptionsCsv(csv: string | undefined, fieldType: AttrFieldType): str
 export async function createAttrFieldAction(input: unknown): Promise<AttrFieldActionResult> {
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Dữ liệu field không hợp lệ." };
-  const { projectId, label, key, fieldType, optionsCsv, required } = parsed.data;
-  const options = parseOptionsCsv(optionsCsv, fieldType);
-  if (fieldType === "select" && options.length === 0) {
-    return { ok: false, error: "Field select cần ít nhất một lựa chọn." };
+  const { projectId, label, key, fieldType, options: rawOptions, optionsCsv, required } = parsed.data;
+  const options = resolveOptions(rawOptions, optionsCsv, fieldType);
+  if (isListAttrFieldType(fieldType) && options.length === 0) {
+    return { ok: false, error: "Field danh sách cần ít nhất một lựa chọn." };
   }
   return run(
     (pid) =>
@@ -117,6 +126,7 @@ const updateSchema = scopedSchema.extend({
   id: idSchema,
   label: z.string().min(1).max(120).optional(),
   fieldType: fieldTypeSchema.optional(),
+  options: z.array(z.string().max(200)).optional(),
   optionsCsv: z.string().max(2000).optional(),
   required: z.boolean().optional(),
 });
@@ -124,7 +134,7 @@ const updateSchema = scopedSchema.extend({
 export async function updateAttrFieldAction(input: unknown): Promise<AttrFieldActionResult> {
   const parsed = updateSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Dữ liệu field không hợp lệ." };
-  const { id, projectId, label, fieldType, optionsCsv, required } = parsed.data;
+  const { id, projectId, label, fieldType, options: rawOptions, optionsCsv, required } = parsed.data;
   return run(async (pid) => {
     const existing = await getAttrField(id);
     if (!existing || existing.projectId !== pid) throw new Error("Không tìm thấy field.");
@@ -133,11 +143,11 @@ export async function updateAttrFieldAction(input: unknown): Promise<AttrFieldAc
     if (label !== undefined) patch.label = label;
     if (fieldType !== undefined) patch.fieldType = fieldType;
     if (required !== undefined) patch.required = required;
-    if (optionsCsv !== undefined || fieldType !== undefined) {
-      patch.options = parseOptionsCsv(optionsCsv ?? existing.options.join(", "), nextType);
+    if (rawOptions !== undefined || optionsCsv !== undefined || fieldType !== undefined) {
+      patch.options = resolveOptions(rawOptions, optionsCsv ?? existing.options.join(", "), nextType);
     }
-    if (nextType === "select" && (patch.options?.length ?? existing.options.length) === 0) {
-      throw new Error("Field select cần ít nhất một lựa chọn.");
+    if (isListAttrFieldType(nextType) && (patch.options?.length ?? existing.options.length) === 0) {
+      throw new Error("Field danh sách cần ít nhất một lựa chọn.");
     }
     await updateAttrField(id, patch);
   }, "Cập nhật field thất bại.", projectId);

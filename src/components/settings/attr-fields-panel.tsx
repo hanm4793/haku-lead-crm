@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -29,10 +29,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { AttrFieldRow, AttrFieldType } from "@/lib/db/attr-fields-repo";
 import { useToast } from "@/components/providers/toast-provider";
 
+function isListAttrFieldType(type: AttrFieldType): boolean {
+  return type === "select" || type === "multiselect";
+}
+
 const TYPE_LABELS: Record<AttrFieldType, string> = {
   text: "Văn bản",
   number: "Số",
-  select: "Chọn một",
+  select: "Danh sách (chọn 1)",
+  multiselect: "Danh sách (chọn nhiều)",
+  boolean: "Có / Không",
   date: "Ngày tháng",
 };
 
@@ -41,8 +47,36 @@ const TYPE_FILTER = [
   ...(Object.entries(TYPE_LABELS) as [AttrFieldType, string][]).map(([value, label]) => ({ value, label })),
 ];
 
-type FormState = { label: string; key: string; fieldType: AttrFieldType; optionsCsv: string; required: boolean };
-const EMPTY_FORM: FormState = { label: "", key: "", fieldType: "text", optionsCsv: "", required: false };
+type FormState = {
+  label: string;
+  key: string;
+  fieldType: AttrFieldType;
+  options: string[];
+  optionDraft: string;
+  required: boolean;
+};
+
+const EMPTY_FORM: FormState = {
+  label: "",
+  key: "",
+  fieldType: "text",
+  options: [],
+  optionDraft: "",
+  required: false,
+};
+
+function mergeOptions(existing: string[], rawDraft: string): string[] {
+  const additions = rawDraft
+    .split(/[,;\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (additions.length === 0) return existing;
+  const next = [...existing];
+  for (const item of additions) {
+    if (!next.includes(item)) next.push(item);
+  }
+  return next;
+}
 
 export function AttrFieldsPanel({
   fields,
@@ -97,14 +131,20 @@ export function AttrFieldsPanel({
       label: field.label,
       key: field.key,
       fieldType: field.fieldType,
-      optionsCsv: field.options.join(", "),
+      options: [...field.options],
+      optionDraft: "",
       required: field.required,
     });
     setDialogOpen(true);
   };
 
+  const resolvedOptions = React.useMemo(
+    () => mergeOptions(form.options, form.optionDraft),
+    [form.options, form.optionDraft],
+  );
+
   const submit = async () => {
-    const optionsCsv = form.fieldType === "select" ? form.optionsCsv : undefined;
+    const options = isListAttrFieldType(form.fieldType) ? resolvedOptions : undefined;
     const ok = await run(
       () =>
         editing
@@ -113,7 +153,7 @@ export function AttrFieldsPanel({
               id: editing.id,
               label: form.label,
               fieldType: form.fieldType,
-              optionsCsv,
+              options,
               required: form.required,
             })
           : createAttrFieldAction({
@@ -121,7 +161,7 @@ export function AttrFieldsPanel({
               label: form.label,
               key: form.key.trim() || undefined,
               fieldType: form.fieldType,
-              optionsCsv,
+              options,
               required: form.required,
             }),
       editing ? `Đã cập nhật field «${form.label.trim()}».` : `Đã thêm field «${form.label.trim()}».`,
@@ -154,9 +194,16 @@ export function AttrFieldsPanel({
       cell: (f) => (
         <div>
           <Badge variant="info">{TYPE_LABELS[f.fieldType]}</Badge>
-          {f.fieldType === "select" && f.options.length > 0 && (
-            <div className="mt-1 max-w-xs truncate text-[11px] text-muted-foreground" title={f.options.join(", ")}>
-              {f.options.join(", ")}
+          {isListAttrFieldType(f.fieldType) && f.options.length > 0 && (
+            <div className="mt-1.5 flex max-w-sm flex-wrap gap-1">
+              {f.options.map((opt) => (
+                <span
+                  key={opt}
+                  className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-600"
+                >
+                  {opt}
+                </span>
+              ))}
             </div>
           )}
         </div>
@@ -239,7 +286,7 @@ export function AttrFieldsPanel({
         description="Trường thông tin tùy chỉnh cho lead của dự án này."
         submitLabel={editing ? "Lưu thay đổi" : "Thêm field"}
         pending={pending}
-        disabled={!form.label.trim() || (form.fieldType === "select" && !form.optionsCsv.trim())}
+        disabled={!form.label.trim() || (isListAttrFieldType(form.fieldType) && resolvedOptions.length === 0)}
         onSubmit={() => void submit()}
       >
         <FormField label="Nhãn hiển thị" required>
@@ -273,13 +320,83 @@ export function AttrFieldsPanel({
             </SelectContent>
           </Select>
         </FormField>
-        {form.fieldType === "select" && (
-          <FormField label="Các lựa chọn" required hint="Phân cách bằng dấu phẩy.">
-            <Input
-              value={form.optionsCsv}
-              onChange={(e) => setForm((f) => ({ ...f, optionsCsv: e.target.value }))}
-              placeholder="VD: Dưới 1 tỷ, 1 - 2 tỷ, Trên 2 tỷ"
-            />
+        {isListAttrFieldType(form.fieldType) && (
+          <FormField
+            label="Danh sách lựa chọn"
+            required
+            hint={
+              form.fieldType === "multiselect"
+                ? "Nhập lựa chọn rồi nhấn Enter hoặc bấm Thêm. Màn chi tiết lead sẽ cho phép tích chọn nhiều mục."
+                : "Nhập lựa chọn rồi nhấn Enter hoặc bấm Thêm. Màn chi tiết lead sẽ cho phép chọn 1 mục."
+            }
+          >
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={form.optionDraft}
+                  onChange={(e) => setForm((f) => ({ ...f, optionDraft: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      setForm((f) => ({
+                        ...f,
+                        options: mergeOptions(f.options, f.optionDraft),
+                        optionDraft: "",
+                      }));
+                    }
+                  }}
+                  placeholder="Nhập lựa chọn (VD: Dưới 500 triệu)..."
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 shrink-0 gap-1 px-3"
+                  disabled={!form.optionDraft.trim()}
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      options: mergeOptions(f.options, f.optionDraft),
+                      optionDraft: "",
+                    }))
+                  }
+                >
+                  <Plus className="size-3.5" />
+                  Thêm
+                </Button>
+              </div>
+
+              {form.options.length > 0 ? (
+                <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-border bg-slate-50/70 p-2">
+                  {form.options.map((opt) => (
+                    <span
+                      key={opt}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-2xs"
+                    >
+                      {opt}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm((f) => ({
+                            ...f,
+                            options: f.options.filter((item) => item !== opt),
+                          }))
+                        }
+                        className="rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-rose-600"
+                        title={`Xóa "${opt}"`}
+                        aria-label={`Xóa "${opt}"`}
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-md border border-dashed border-border py-2.5 text-center text-xs text-muted-foreground">
+                  Chưa có lựa chọn nào. Hãy nhập và bấm Thêm ở trên.
+                </p>
+              )}
+            </div>
           </FormField>
         )}
         <div className="flex items-center gap-2">

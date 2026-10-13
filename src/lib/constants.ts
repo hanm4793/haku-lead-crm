@@ -74,6 +74,7 @@ export const SOURCE_OPTIONS: Option<LeadSource>[] = [
   { value: "ZALO", label: "Zalo" },
   { value: "WEBSITE", label: "Website" },
   { value: "HOTLINE", label: "Hotline" },
+  { value: "MANUAL", label: "Thủ công" },
 ];
 
 export const CHANNEL_DETAIL_OPTIONS: Option<ChannelDetail>[] = [
@@ -92,8 +93,8 @@ export const DEFAULT_PROJECT_NAME = "Semtop Auto";
 /** Nhãn 3 dimension cho project mặc định — fallback khi chưa đọc được DB. */
 export const DEFAULT_CATALOG_LABELS: CatalogLabels = {
   brand: "Thương hiệu",
-  product: "Dòng xe",
-  location: "Showroom",
+  product: "Loại sản phẩm",
+  location: "Đại lý",
 };
 
 export const DEFAULT_BRAND_SEED: { code: BrandCode; name: string }[] = [

@@ -83,15 +83,15 @@ export function ProjectOverviewForm({
           <>
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">Nhãn thương hiệu</Label>
-              <Input value={brand} onChange={(e) => setBrand(e.target.value)} />
+              <Input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="VD: Thương hiệu" />
             </div>
             <div className="space-y-1">
-              <Label className="text-[11px] text-muted-foreground">Nhãn sản phẩm</Label>
-              <Input value={product} onChange={(e) => setProduct(e.target.value)} />
+              <Label className="text-[11px] text-muted-foreground">Nhãn loại sản phẩm</Label>
+              <Input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="VD: Loại sản phẩm" />
             </div>
             <div className="space-y-1">
-              <Label className="text-[11px] text-muted-foreground">Nhãn địa điểm</Label>
-              <Input value={location} onChange={(e) => setLocation(e.target.value)} />
+              <Label className="text-[11px] text-muted-foreground">Nhãn đại lý / chi nhánh</Label>
+              <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="VD: Đại lý" />
             </div>
           </>
         )}

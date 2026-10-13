@@ -26,11 +26,11 @@ export function ContactStatusCell({
   const chip = (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium",
         contacted ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700",
       )}
     >
-      {contacted ? <Check className="size-3" /> : <PhoneOff className="size-3" />}
+      {contacted ? <Check className="size-3 shrink-0" /> : <PhoneOff className="size-3 shrink-0" />}
       {contacted ? "Đã liên hệ" : "Chưa liên hệ"}
     </span>
   );
@@ -40,15 +40,15 @@ export function ContactStatusCell({
       <DropdownMenuTrigger
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+          "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
           contacted
             ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
             : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100",
         )}
       >
-        {contacted ? <Check className="size-3" /> : <PhoneOff className="size-3" />}
+        {contacted ? <Check className="size-3 shrink-0" /> : <PhoneOff className="size-3 shrink-0" />}
         {contacted ? "Đã liên hệ" : "Chưa liên hệ"}
-        <ChevronDown className="size-3 opacity-60" />
+        <ChevronDown className="size-3 shrink-0 opacity-60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuLabel>Trạng thái liên hệ</DropdownMenuLabel>
@@ -88,7 +88,7 @@ export function CategoryCell({
   const option = CATEGORY_OPTIONS.find((o) => o.value === value);
   if (!editable) {
     return (
-      <span className={cn("inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium", CATEGORY_CHIP_CLASS[value])}>
+      <span className={cn("inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium", CATEGORY_CHIP_CLASS[value])}>
         {option?.label ?? "—"}
       </span>
     );
@@ -99,12 +99,12 @@ export function CategoryCell({
       <DropdownMenuTrigger
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+          "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
           CATEGORY_CHIP_CLASS[value],
         )}
       >
         {option?.label ?? "—"}
-        <ChevronDown className="size-3 opacity-60" />
+        <ChevronDown className="size-3 shrink-0 opacity-60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-60" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuLabel>Phân loại khách</DropdownMenuLabel>

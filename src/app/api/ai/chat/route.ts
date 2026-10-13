@@ -10,8 +10,23 @@ import type { ExportPreview } from "@/lib/ai/export-preview";
 import { estimateCostUsd, resolveModel } from "@/lib/ai/model";
 import { buildSystemPrompt } from "@/lib/ai/prompt";
 import { refineSpec } from "@/lib/ai/refine-spec";
-import { parseStatsQuestion, mergeStats, applyMentions, blankStats, statsFromModel, statsQuerySchema, type ChatMention } from "@/lib/ai/stats-query";
-import { canUseAi } from "@/lib/auth/roles";
+import {
+  applyMentions,
+  blankStats,
+  fold,
+  inheritStatsQuery,
+  lastStatsSchema,
+  mergeContextMentions,
+  mergeStats,
+  parseStatsQuestion,
+  statsFromLastStats,
+  statsFromModel,
+  statsQuerySchema,
+  stripMentionLabels,
+  type ChatMention,
+  type StatsQuery,
+} from "@/lib/ai/stats-query";
+import { canUseAi, canViewMarketing } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import { getReferenceData, type ViewerScope } from "@/lib/db/leads-repo";
 import { queryReportKpis, querySheetCounts } from "@/lib/db/report-queries";
@@ -31,7 +46,7 @@ const requestSchema = z.object({
   messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() })).min(1),
   mentions: z.array(mentionSchema).max(8).optional(),
   lastSpec: exportSpecSchema.nullable().optional(),
-  lastStats: statsQuerySchema.nullable().optional(),
+  lastStats: lastStatsSchema.nullable().optional(),
   lastMentions: z.array(mentionSchema).max(8).optional(),
 });
 
@@ -41,6 +56,17 @@ const responseSchema = z.object({
   spec: exportSpecSchema.nullable().optional(),
   stats: statsQuerySchema.nullable().optional(),
 });
+
+function defaultSuggestions(viewer: ViewerScope, mentions: ChatMention[] = []) {
+  const allowMarketing = canViewMarketing(viewer.role);
+  return [
+    { label: "Tháng này có bao nhiêu lead?", prompt: "Tháng này có bao nhiêu lead?", mentions },
+    allowMarketing
+      ? { label: "Chi tiêu và CPL theo fanpage", prompt: "Chi tiêu và CPL theo fanpage tháng này", mentions }
+      : { label: "Tỷ lệ liên hệ và KHQT theo nhân viên", prompt: "Tỷ lệ liên hệ và KHQT theo nhân viên tháng này", mentions },
+    { label: "Xuất file Excel tháng này", prompt: "Xuất lead tháng này ra excel", mentions },
+  ];
+}
 
 async function buildPreview(spec: ExportSpec, viewer: ViewerScope, now: Date): Promise<ExportPreview> {
   // Preview chỉ cần số liệu — dùng SQL aggregation, không kéo từng dòng lead.
@@ -81,33 +107,47 @@ async function fallbackResponse(
   now: Date,
   catalog: AiCatalog,
   mentions: ChatMention[] = [],
+  lastStats: StatsQuery | null = null,
+  lastSpec: ExportSpec | null = null,
   note?: string,
 ) {
-  const parsedQuestion = parseStatsQuestion(text, now);
-  const base = parsedQuestion ?? (mentions.length ? blankStats() : null);
-  if (base && (parsedQuestion || mentions.length)) {
-    const stats = applyMentions(base, mentions);
-    const statsRes = await answerFromStats(stats, viewer, now, text, catalog, mentions);
-    return NextResponse.json({
-      mode: "fallback",
-      action: "STATS",
-      reply: note ? `${note}\n\n${statsRes.reply}` : statsRes.reply,
-      spec: null,
-      preview: null,
-      breakdown: statsRes.leadBreakdown ?? null,
-      marketingRows: statsRes.marketingRows ?? null,
-      suggestions: statsRes.suggestions,
-      activeMentions: mentions,
-    });
+  const cleanText = stripMentionLabels(text, mentions);
+  const isExportIntent = /(xuat|export|tai ve|file excel|excel|csv)/.test(fold(cleanText));
+
+  if (!isExportIntent) {
+    const parsedQuestion = parseStatsQuestion(cleanText, now, { lastStats, mentions });
+    const base =
+      parsedQuestion ??
+      (mentions.length > 0 ? inheritStatsQuery(blankStats(), lastStats, cleanText, now) : null);
+
+    if (base && (parsedQuestion || mentions.length > 0)) {
+      const stats = applyMentions(base, mentions);
+      const statsRes = await answerFromStats(stats, viewer, now, cleanText, catalog, mentions);
+      return NextResponse.json({
+        mode: "fallback",
+        action: "STATS",
+        reply: note ? `${note}\n\n${statsRes.reply}` : statsRes.reply,
+        spec: null,
+        stats: statsRes.resolvedQuery,
+        preview: null,
+        breakdown: statsRes.leadBreakdown ?? null,
+        marketingRows: statsRes.marketingRows ?? null,
+        suggestions: statsRes.suggestions,
+        activeMentions: statsRes.resolvedMentions,
+      });
+    }
   }
 
-  const local = parseExportRequestLocally(text, now, catalog);
-  const spec = local.spec ? refineSpec(local.spec, text, catalog) : null;
+  const local = parseExportRequestLocally(text, now, catalog, { mentions, lastStats, lastSpec });
+  const spec = local.spec
+    ? refineSpec(local.spec, text, catalog, { mentions, lastStats, lastSpec, now })
+    : null;
   return NextResponse.json({
     mode: "fallback",
     action: spec ? "EXPORT" : "ANSWER",
     reply: note ? `${note}\n\n${local.reply}` : local.reply,
     spec,
+    stats: lastStats,
     preview: spec ? await buildPreview(spec, viewer, now) : null,
     suggestions: spec
       ? [
@@ -115,11 +155,7 @@ async function fallbackResponse(
           { label: "Tải file CSV", prompt: "Xuất file CSV", mentions },
           { label: "Áp dụng vào bộ lọc danh sách lead", prompt: "Xem trên danh sách lead", mentions },
         ]
-      : [
-          { label: "Tháng này có bao nhiêu lead?", prompt: "Tháng này có bao nhiêu lead?", mentions: [] },
-          { label: "Chi tiêu và CPL theo fanpage", prompt: "Chi tiêu và CPL theo fanpage tháng này", mentions: [] },
-          { label: "Xuất file Excel tháng này", prompt: "Xuất lead tháng này ra excel", mentions: [] },
-        ],
+      : defaultSuggestions(viewer, mentions),
     activeMentions: mentions,
   });
 }
@@ -136,21 +172,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Yêu cầu không hợp lệ" }, { status: 400 });
   }
 
-  const { messages, mentions = [], lastSpec, lastStats, lastMentions = [] } = parsed.data;
+  const { messages, mentions = [], lastSpec = null, lastStats = null, lastMentions = [] } = parsed.data;
   const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const now = new Date();
   const catalog = await loadCatalog(viewer.activeProjectId ?? undefined);
 
-  // Kế thừa mentions của lượt trước nếu người dùng hỏi tiếp mà không gắn tag mới
-  const effectiveMentions =
-    mentions.length > 0
-      ? mentions
-      : lastMentions.length > 0
-        ? lastMentions
-        : [];
+  // Hợp nhất @mentions của lượt hiện tại với @mentions đang ghim từ lượt trước
+  const effectiveMentions = mergeContextMentions(mentions, lastMentions, lastUserMessage);
+  const previousStats = statsFromLastStats(lastStats);
+  const cleanUserMessage = stripMentionLabels(lastUserMessage, effectiveMentions);
 
   const resolved = resolveModel();
-  if (!resolved) return fallbackResponse(lastUserMessage, viewer, now, catalog, effectiveMentions);
+  if (!resolved) {
+    return fallbackResponse(lastUserMessage, viewer, now, catalog, effectiveMentions, previousStats, lastSpec);
+  }
 
   // Thử lại một lần: lỗi thoáng qua và lỗi schema đều thường qua ở lần hai.
   let lastError: unknown = null;
@@ -159,7 +194,11 @@ export async function POST(request: Request) {
       const result = await generateObject({
         model: resolved.model,
         schema: responseSchema,
-        system: buildSystemPrompt(now, catalog, { lastSpec, lastStats }),
+        system: buildSystemPrompt(now, catalog, {
+          lastSpec,
+          lastStats: previousStats,
+          activeMentions: effectiveMentions,
+        }),
         messages,
         temperature: 0,
       });
@@ -176,26 +215,42 @@ export async function POST(request: Request) {
       };
       console.log("[ai/chat]", JSON.stringify(usage));
 
+      const isExportIntent =
+        object.action === "EXPORT" || /(xuat|export|tai ve|file excel|excel|csv)/.test(fold(cleanUserMessage));
       const modelStats = statsFromModel(object.stats);
-      const localStats = parseStatsQuestion(lastUserMessage, now);
+      const localStats = parseStatsQuestion(cleanUserMessage, now, {
+        lastStats: previousStats,
+        mentions: effectiveMentions,
+      });
       const asksForNumbers =
-        object.action === "STATS" ||
-        (object.action !== "EXPORT" && (localStats !== null || effectiveMentions.length > 0));
+        !isExportIntent &&
+        (object.action === "STATS" || localStats !== null || effectiveMentions.length > 0);
 
       if (asksForNumbers) {
-        const stats = applyMentions(mergeStats(modelStats, localStats) ?? blankStats(), effectiveMentions);
+        const merged =
+          mergeStats(modelStats, localStats, previousStats, cleanUserMessage, now) ??
+          inheritStatsQuery(blankStats(), previousStats, cleanUserMessage, now);
+        const stats = applyMentions(merged, effectiveMentions);
         if (stats) {
-          const statsRes = await answerFromStats(stats, viewer, now, lastUserMessage, catalog, effectiveMentions);
+          const statsRes = await answerFromStats(
+            stats,
+            viewer,
+            now,
+            cleanUserMessage,
+            catalog,
+            effectiveMentions,
+          );
           return NextResponse.json({
             mode: "ai",
             action: "STATS",
             reply: statsRes.reply,
             spec: null,
+            stats: statsRes.resolvedQuery,
             preview: null,
             breakdown: statsRes.leadBreakdown ?? null,
             marketingRows: statsRes.marketingRows ?? null,
             suggestions: statsRes.suggestions,
-            activeMentions: effectiveMentions,
+            activeMentions: statsRes.resolvedMentions,
             usage,
           });
         }
@@ -203,22 +258,38 @@ export async function POST(request: Request) {
 
       const validated = object.spec ? exportSpecSchema.safeParse(object.spec) : null;
 
-      if (object.action === "EXPORT" && validated?.success) {
-        const spec = refineSpec(validated.data, lastUserMessage, catalog);
-        return NextResponse.json({
-          mode: "ai",
-          action: "EXPORT",
-          reply: object.reply,
-          spec,
-          preview: await buildPreview(spec, viewer, now),
-          suggestions: [
-            { label: "Tải file Excel (.xlsx)", prompt: "Xuất file Excel", mentions: effectiveMentions },
-            { label: "Tải file CSV", prompt: "Xuất file CSV", mentions: effectiveMentions },
-            { label: "Áp dụng vào bộ lọc danh sách lead", prompt: "Xem trên danh sách lead", mentions: effectiveMentions },
-          ],
-          activeMentions: effectiveMentions,
-          usage,
-        });
+      if (isExportIntent) {
+        const baseSpec = validated?.success
+          ? validated.data
+          : parseExportRequestLocally(lastUserMessage, now, catalog, {
+              mentions: effectiveMentions,
+              lastStats: previousStats,
+              lastSpec,
+            }).spec;
+
+        if (baseSpec) {
+          const spec = refineSpec(baseSpec, lastUserMessage, catalog, {
+            mentions: effectiveMentions,
+            lastStats: previousStats,
+            lastSpec,
+            now,
+          });
+          return NextResponse.json({
+            mode: "ai",
+            action: "EXPORT",
+            reply: object.reply || spec.summary,
+            spec,
+            stats: previousStats,
+            preview: await buildPreview(spec, viewer, now),
+            suggestions: [
+              { label: "Tải file Excel (.xlsx)", prompt: "Xuất file Excel", mentions: effectiveMentions },
+              { label: "Tải file CSV", prompt: "Xuất file CSV", mentions: effectiveMentions },
+              { label: "Áp dụng vào bộ lọc danh sách lead", prompt: "Xem trên danh sách lead", mentions: effectiveMentions },
+            ],
+            activeMentions: effectiveMentions,
+            usage,
+          });
+        }
       }
 
       if (validated && !validated.success && attempt === 0) {
@@ -234,12 +305,9 @@ export async function POST(request: Request) {
             ? `${object.reply}\n\n(Mình tạo cấu hình chưa hợp lệ, bạn mô tả rõ hơn giúp mình nhé.)`
             : object.reply,
         spec: null,
+        stats: previousStats,
         preview: null,
-        suggestions: [
-          { label: "Tháng này có bao nhiêu lead?", prompt: "Tháng này có bao nhiêu lead?", mentions: [] },
-          { label: "Chi tiêu và CPL theo fanpage", prompt: "Chi tiêu và CPL theo fanpage tháng này", mentions: [] },
-          { label: "Xuất file Excel tháng này", prompt: "Xuất lead tháng này ra excel", mentions: [] },
-        ],
+        suggestions: defaultSuggestions(viewer, effectiveMentions),
         activeMentions: effectiveMentions,
         usage,
       });
@@ -254,7 +322,10 @@ export async function POST(request: Request) {
     viewer,
     now,
     catalog,
-    mentions,
+    effectiveMentions,
+    previousStats,
+    lastSpec,
     `Không gọi được ${resolved.providerLabel} (${detail}). Mình tạm hiểu theo từ khóa:`,
   );
 }
+
