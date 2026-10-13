@@ -82,31 +82,38 @@ export async function resendPasswordEmailAction(userId: string): Promise<MailAct
   if (!viewer) return { ok: false, error: "Phiên đăng nhập đã hết hạn." };
   if (!canManageUsers(viewer.role)) return { ok: false, error: "Bạn không có quyền quản lý tài khoản." };
 
-  const [target] = await getDb()
-    .select({
-      id: appUsers.id,
-      email: appUsers.email,
-      fullName: appUsers.fullName,
-      role: appUsers.role,
-      partnerId: appUsers.partnerId,
-    })
-    .from(appUsers)
-    .where(eq(appUsers.id, userId))
-    .limit(1);
-  if (!target?.email) return { ok: false, error: "Tài khoản này chưa có email." };
-  if (!canEmailAccount(viewer, target)) {
-    return { ok: false, error: "Chỉ gửi được email cho nhân viên của bạn." };
-  }
+  const parsedId = z.string().uuid().safeParse(userId);
+  if (!parsedId.success) return { ok: false, error: "Tài khoản không hợp lệ." };
 
-  const sent = await sendPasswordSetupEmail(target.email, target.fullName, await authRedirectOrigin());
-  if (!sent.ok) return { ok: false, error: sent.error };
-  return {
-    ok: true,
-    notice:
-      sent.sent === "invite"
-        ? "Đã gửi email mời. Người dùng mở link để đặt mật khẩu."
-        : "Đã gửi link đặt lại mật khẩu.",
-  };
+  try {
+    const [target] = await getDb()
+      .select({
+        id: appUsers.id,
+        email: appUsers.email,
+        fullName: appUsers.fullName,
+        role: appUsers.role,
+        partnerId: appUsers.partnerId,
+      })
+      .from(appUsers)
+      .where(eq(appUsers.id, parsedId.data))
+      .limit(1);
+    if (!target?.email) return { ok: false, error: "Tài khoản này chưa có email." };
+    if (!canEmailAccount(viewer, target)) {
+      return { ok: false, error: "Chỉ gửi được email cho nhân viên của bạn." };
+    }
+
+    const sent = await sendPasswordSetupEmail(target.email, target.fullName, await authRedirectOrigin());
+    if (!sent.ok) return { ok: false, error: sent.error };
+    return {
+      ok: true,
+      notice:
+        sent.sent === "invite"
+          ? "Đã gửi email mời. Người dùng mở link để đặt mật khẩu."
+          : "Đã gửi link đặt lại mật khẩu.",
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Gửi email thất bại." };
+  }
 }
 
 export async function updateUserAction(input: unknown): Promise<UserActionResult> {

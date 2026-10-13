@@ -5,7 +5,6 @@ import { z } from "zod";
 
 import { canManageSettings } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
-import { purgeSampleLeads } from "@/lib/facebook/purge-sample-leads";
 import {
   syncFacebookInsights,
   type SyncInsightsResult,
@@ -88,15 +87,9 @@ export async function purgeSampleLeadsAction(): Promise<PurgeSampleLeadsActionRe
   const gate = await requireAdmin();
   if ("error" in gate) return { ok: false, error: gate.error };
 
-  try {
-    const { deleted } = await purgeSampleLeads();
-    revalidateFacebookPages();
-    return { ok: true, deleted };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Xóa lead mẫu thất bại.",
-    };
-  }
+  return {
+    ok: false,
+    error: "Tính năng xóa lead mẫu đã bị vô hiệu hóa để bảo vệ dữ liệu.",
+  };
 }
 

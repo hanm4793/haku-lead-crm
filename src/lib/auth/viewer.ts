@@ -1,4 +1,4 @@
-import { eq, isNull, or } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 
 import { pageGrantUserId } from "@/lib/auth/roles";
 
@@ -9,7 +9,7 @@ import {
   resolveActiveProject,
   toProjectViewer,
 } from "@/lib/db/project-repo";
-import { appUsers, userFacebookPages } from "@/lib/db/schema";
+import { appUsers, facebookPages, userFacebookPages } from "@/lib/db/schema";
 import { createSupabaseServerClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export interface Viewer extends ViewerScope {
@@ -65,7 +65,7 @@ export async function getViewer(): Promise<Viewer | null> {
 
   const viewer = await provisionViewer(user.id, user.email ?? null, fullNameFromMeta);
   if (!viewer) {
-    // Tài khoản bị tắt trong CRM — buộc đăng xuất để tránh vòng redirect login ↔ app.
+    // Tài khoản bị tắt hoặc chưa được cấp quyền trong CRM — buộc đăng xuất để tránh vòng redirect login ↔ app.
     await supabase.auth.signOut();
     return null;
   }
@@ -90,8 +90,9 @@ export const getViewerScope = getViewer;
 
 /**
  * Nhân sự được seed trước khi có tài khoản, nên lần đăng nhập đầu tiên phải nối
- * `auth.users` với dòng `app_users` tương ứng: ưu tiên khớp theo email, không có
- * thì tạo mới.
+ * `auth.users` với dòng `app_users` tương ứng: ưu tiên khớp theo `authUserId`, sau đó
+ * mới khớp theo `email` chưa gắn `authUserId`. Không tự tạo nhân viên mới cho email lạ
+ * trừ khi bật `ENABLE_PUBLIC_SIGNUP=true` hoặc bootstrap super admin đầu tiên.
  */
 async function provisionViewer(
   authUserId: string,
@@ -99,19 +100,24 @@ async function provisionViewer(
   fullNameHint: string | null = null,
 ): Promise<Viewer | null> {
   const db = getDb();
-  const normalizedEmail = email?.toLowerCase() ?? null;
+  const normalizedEmail = email?.trim().toLowerCase() || null;
 
-  const existing = await db
+  const byAuth = await db
     .select()
     .from(appUsers)
-    .where(
-      normalizedEmail
-        ? or(eq(appUsers.authUserId, authUserId), eq(appUsers.email, normalizedEmail))
-        : eq(appUsers.authUserId, authUserId),
-    )
+    .where(eq(appUsers.authUserId, authUserId))
     .limit(1);
 
-  let row = existing[0];
+  let row = byAuth[0];
+
+  if (!row && normalizedEmail) {
+    const byUnlinkedEmail = await db
+      .select()
+      .from(appUsers)
+      .where(and(eq(appUsers.email, normalizedEmail), isNull(appUsers.authUserId)))
+      .limit(1);
+    row = byUnlinkedEmail[0];
+  }
 
   if (row && !row.authUserId) {
     [row] = await db
@@ -122,21 +128,29 @@ async function provisionViewer(
   }
 
   if (!row) {
+    const [{ total }] = await db.select({ total: count() }).from(appUsers);
+    const isFirstBootstrap = Number(total ?? 0) === 0;
     const isAdmin = normalizedEmail !== null && adminEmails().includes(normalizedEmail);
+    const allowPublicSignup = process.env.ENABLE_PUBLIC_SIGNUP === "true";
+
+    if (!isFirstBootstrap && !isAdmin && !allowPublicSignup) {
+      return null;
+    }
+
     [row] = await db
       .insert(appUsers)
       .values({
         authUserId,
         email: normalizedEmail,
         fullName: fullNameHint?.trim() || normalizedEmail?.split("@")[0] || "Người dùng mới",
-        role: isAdmin ? "SUPER_ADMIN" : "STAFF",
+        role: isFirstBootstrap || isAdmin ? "SUPER_ADMIN" : "STAFF",
       })
       .returning();
   } else if (normalizedEmail && adminEmails().includes(normalizedEmail) && row.role !== "SUPER_ADMIN") {
     [row] = await db.update(appUsers).set({ role: "SUPER_ADMIN" }).where(eq(appUsers.id, row.id)).returning();
   }
 
-  if (!row.active) return null;
+  if (!row || !row.active) return null;
 
   let projectId = row.projectId;
   if (row.role === "STAFF" && !projectId && row.partnerId) {
@@ -178,7 +192,8 @@ async function listGrantedPageIds(userId: string): Promise<string[]> {
   const rows = await getDb()
     .select({ facebookPageId: userFacebookPages.facebookPageId })
     .from(userFacebookPages)
-    .where(eq(userFacebookPages.userId, userId));
+    .innerJoin(facebookPages, eq(facebookPages.facebookPageId, userFacebookPages.facebookPageId))
+    .where(and(eq(userFacebookPages.userId, userId), eq(facebookPages.active, true)));
   return rows.map((row) => row.facebookPageId);
 }
 

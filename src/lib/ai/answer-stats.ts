@@ -14,6 +14,7 @@ import { queryMarketingSnapshot, listCampaignNames, type MarketingBreakdownRow }
 import { queryPivot, queryReportKpis } from "@/lib/db/report-queries";
 import { appUsers, brands, facebookPages, leads, locations, products } from "@/lib/db/schema";
 import type { PivotDimension } from "@/lib/metrics";
+import { ratio } from "@/lib/utils";
 
 import type { AiCatalog } from "./catalog-context";
 import {
@@ -60,9 +61,9 @@ async function queryByFanpage(
     .limit(12);
 
   return rows.map((r) => {
-    const contactRate = r.leads > 0 ? r.contacted / r.leads : 0;
-    const khqtRate = r.contacted > 0 ? r.khqt / r.contacted : (r.leads > 0 ? r.khqt / r.leads : 0);
-    const failRate = r.leads > 0 ? r.failed / r.leads : 0;
+    const contactRate = ratio(r.contacted, r.leads);
+    const khqtRate = r.contacted > 0 ? ratio(r.khqt, r.contacted) : ratio(r.khqt, r.leads);
+    const failRate = ratio(r.failed, r.leads);
     return { ...r, contactRate, khqtRate, failRate };
   });
 }
@@ -460,9 +461,9 @@ async function leadSection(
   } else if (query.groupBy && query.groupBy !== "ad") {
     const pivot = await queryPivot(filters, viewer, now, query.groupBy as PivotDimension, null, extra);
     breakdown = pivot.rows.slice(0, 12).map((row) => {
-      const contactRate = row.leads > 0 ? row.contacted / row.leads : 0;
-      const khqtRate = row.contacted > 0 ? row.khqt / row.contacted : (row.leads > 0 ? row.khqt / row.leads : 0);
-      const failRate = row.leads > 0 ? row.failed / row.leads : 0;
+      const contactRate = row.contactRate ?? ratio(row.contacted, row.leads);
+      const khqtRate = row.contacted > 0 ? ratio(row.khqt, row.contacted) : ratio(row.khqt, row.leads);
+      const failRate = row.failRate ?? ratio(row.failed, row.leads);
       return {
         key: row.key,
         leads: row.leads,

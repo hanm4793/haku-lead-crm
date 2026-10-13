@@ -96,9 +96,29 @@ export function CreateLeadDialog({
     setAttrs({});
   }, []);
 
+  const dirty =
+    Boolean(name.trim()) ||
+    Boolean(phone.trim()) ||
+    Boolean(email.trim()) ||
+    brand !== null ||
+    product !== null ||
+    location !== null ||
+    assignee !== null ||
+    channelDetail !== "FORM" ||
+    category !== "CHUA_PHAN_LOAI" ||
+    failReason !== null ||
+    Boolean(callbackAt) ||
+    Boolean(careNote.trim()) ||
+    Object.values(attrs).some((v) => Boolean(v?.trim()));
+
   const handleOpenChange = (next: boolean) => {
     if (submitting) return;
-    if (!next) resetForm();
+    if (!next) {
+      if (dirty && !window.confirm("Bạn đang nhập thông tin lead mới. Đóng và bỏ thông tin đã nhập?")) {
+        return;
+      }
+      resetForm();
+    }
     onOpenChange(next);
   };
 
@@ -113,6 +133,12 @@ export function CreateLeadDialog({
     if (!phone.trim()) {
       toast.error("Thiếu thông tin", "Vui lòng nhập số điện thoại.");
       return;
+    }
+    for (const field of attrFields) {
+      if (field.required && !(attrs[field.key] ?? "").trim()) {
+        toast.error("Thiếu thông tin mở rộng", `Vui lòng nhập trường bắt buộc: ${field.label}.`);
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -341,6 +367,7 @@ export function CreateLeadDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="CHUA_PHAN_LOAI">Chưa phân loại</SelectItem>
                       {CATEGORY_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>
                           {o.label}
@@ -375,7 +402,7 @@ export function CreateLeadDialog({
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Hẹn gọi lại</Label>
                   <Input
-                    type="date"
+                    type="datetime-local"
                     value={callbackAt}
                     onChange={(e) => setCallbackAt(e.target.value)}
                     className="h-8 bg-white"
@@ -483,7 +510,7 @@ export function CreateLeadDialog({
               variant="outline"
               size="sm"
               disabled={submitting}
-              onClick={() => onOpenChange(false)}
+              onClick={() => handleOpenChange(false)}
             >
               Hủy
             </Button>

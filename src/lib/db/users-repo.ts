@@ -10,8 +10,13 @@ import {
 } from "@/lib/auth/roles";
 import type { ViewerScope } from "@/lib/db/leads-repo";
 import { getDb } from "@/lib/db/client";
-import { addProjectMember } from "@/lib/db/project-repo";
-import { appUsers, userFacebookPages } from "@/lib/db/schema";
+import {
+  addProjectMember,
+  assignPartnerAndStaffToProject,
+  removePartnerAndStaffFromProject,
+  removeProjectMember,
+} from "@/lib/db/project-repo";
+import { appUsers, projectMembers, userFacebookPages } from "@/lib/db/schema";
 
 const partnerUser = alias(appUsers, "partner_user");
 
@@ -26,6 +31,8 @@ export interface ManagedUser {
   aiEnabled: boolean;
   partnerId: string | null;
   partnerName: string | null;
+  projectId: string | null;
+  projectIds: string[];
   pageIds: string[];
 }
 
@@ -110,6 +117,7 @@ export async function listManagedUsers(actor: ViewerScope): Promise<ManagedUser[
       aiEnabled: appUsers.aiEnabled,
       partnerId: appUsers.partnerId,
       partnerName: partnerUser.fullName,
+      projectId: appUsers.projectId,
     })
     .from(appUsers)
     .leftJoin(partnerUser, eq(appUsers.partnerId, partnerUser.id))
@@ -117,16 +125,26 @@ export async function listManagedUsers(actor: ViewerScope): Promise<ManagedUser[
     .orderBy(asc(appUsers.fullName));
 
   const ids = rows.map((row) => row.id);
-  const grants =
+  const [grants, memberships] =
     ids.length === 0
-      ? []
-      : await db
-          .select({
-            userId: userFacebookPages.userId,
-            facebookPageId: userFacebookPages.facebookPageId,
-          })
-          .from(userFacebookPages)
-          .where(inArray(userFacebookPages.userId, ids));
+      ? [[], []]
+      : await Promise.all([
+          db
+            .select({
+              userId: userFacebookPages.userId,
+              facebookPageId: userFacebookPages.facebookPageId,
+            })
+            .from(userFacebookPages)
+            .where(inArray(userFacebookPages.userId, ids)),
+          db
+            .select({
+              userId: projectMembers.userId,
+              projectId: projectMembers.projectId,
+            })
+            .from(projectMembers)
+            .where(inArray(projectMembers.userId, ids)),
+        ]);
+
   const pagesByUser = new Map<string, string[]>();
   for (const grant of grants) {
     const list = pagesByUser.get(grant.userId) ?? [];
@@ -134,19 +152,34 @@ export async function listManagedUsers(actor: ViewerScope): Promise<ManagedUser[
     pagesByUser.set(grant.userId, list);
   }
 
-  return rows.map((row) => ({
-    id: row.id,
-    fullName: row.fullName,
-    email: row.email,
-    role: row.role,
-    active: row.active,
-    hasAuth: Boolean(row.hasAuth),
-    assignedLeadCount: Number(row.assignedLeadCount ?? 0),
-    aiEnabled: row.aiEnabled,
-    partnerId: row.partnerId,
-    partnerName: row.partnerName,
-    pageIds: pagesByUser.get(row.id) ?? [],
-  }));
+  const projectsByUser = new Map<string, string[]>();
+  for (const member of memberships) {
+    const list = projectsByUser.get(member.userId) ?? [];
+    list.push(member.projectId);
+    projectsByUser.set(member.userId, list);
+  }
+
+  return rows.map((row) => {
+    const memberProjectIds = projectsByUser.get(row.id) ?? [];
+    const projectIds = row.projectId
+      ? [row.projectId, ...memberProjectIds.filter((id) => id !== row.projectId)]
+      : memberProjectIds;
+    return {
+      id: row.id,
+      fullName: row.fullName,
+      email: row.email,
+      role: row.role,
+      active: row.active,
+      hasAuth: Boolean(row.hasAuth),
+      assignedLeadCount: Number(row.assignedLeadCount ?? 0),
+      aiEnabled: row.aiEnabled,
+      partnerId: row.partnerId,
+      partnerName: row.partnerName,
+      projectId: row.projectId,
+      projectIds,
+      pageIds: pagesByUser.get(row.id) ?? [],
+    };
+  });
 }
 
 async function countActiveSuperAdmins(excludeId?: string) {
@@ -281,7 +314,7 @@ export async function updateManagedUser(
     if (nextRole === "STAFF") {
       if (!nextPartnerId) throw new Error("Nhân viên phải thuộc một partner admin.");
       await assertPartner(nextPartnerId);
-      if (!nextProjectId && nextPartnerId) {
+      if ((!nextProjectId || nextPartnerId !== row.partnerId) && nextPartnerId) {
         const [partner] = await db
           .select({ projectId: appUsers.projectId })
           .from(appUsers)
@@ -316,11 +349,14 @@ export async function updateManagedUser(
     otherActiveSuperAdmins,
   });
 
+  const emailChanged = nextEmail !== row.email;
+
   await db
     .update(appUsers)
     .set({
       fullName: nextFullName,
       email: nextEmail,
+      ...(emailChanged ? { authUserId: null } : {}),
       role: nextRole,
       partnerId: nextPartnerId,
       projectId: nextProjectId,
@@ -335,8 +371,19 @@ export async function updateManagedUser(
   if (nextRole !== "PARTNER_ADMIN") {
     await db.delete(userFacebookPages).where(eq(userFacebookPages.userId, row.id));
   }
-  if (nextProjectId && (nextRole === "PARTNER_ADMIN" || nextRole === "STAFF")) {
-    await addProjectMember(nextProjectId, row.id);
+
+  if (nextRole === "PARTNER_ADMIN" && nextProjectId) {
+    if (row.projectId && row.projectId !== nextProjectId) {
+      await removePartnerAndStaffFromProject(row.id, row.projectId);
+    }
+    await assignPartnerAndStaffToProject(row.id, nextProjectId);
+  } else if (nextRole === "STAFF") {
+    if (row.projectId && row.projectId !== nextProjectId) {
+      await removeProjectMember(row.projectId, row.id);
+    }
+    if (nextProjectId) {
+      await addProjectMember(nextProjectId, row.id);
+    }
   }
 
   const users = await listManagedUsers(actor);

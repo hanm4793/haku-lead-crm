@@ -92,7 +92,7 @@ const CATEGORY_META: Record<
   },
   brand: {
     label: "Thương hiệu",
-    desc: "Hãng / Thương hiệu (Kia, Mazda, Peugeot, BMW...)",
+    desc: "Thương hiệu / Nhãn hàng",
     icon: Tag,
     color: "text-purple-600 bg-purple-50 border-purple-200",
   },

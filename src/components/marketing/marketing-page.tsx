@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowDown, ArrowUp, MousePointerClick, RefreshCw, Search, Wallet, X } from "lucide-react";
 import {
   Bar,
@@ -20,11 +20,11 @@ import { DateRangePicker, type DateRange, type PresetId } from "@/components/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
-import type { AdInsightRow, InsightRow } from "@/lib/db/insights-repo";
+import type { AdInsightRow, CrmAttributionRow, InsightRow } from "@/lib/db/insights-repo";
 import { adsManagerUrl } from "@/lib/facebook/ads-manager-url";
 import {
   attachEfficiency,
-  CAMPAIGN_BRANDS,
+  buildCampaignBrands,
   dashboardTotals,
   EFFICIENCY_LABEL,
   efficiencyRank,
@@ -36,6 +36,7 @@ import {
   summarizeAds,
   summarizeCampaigns,
   summarizeCampaignsFromAds,
+  summarizeCrmAttribution,
   summarizePages,
   type CampaignBrandId,
   type CampaignSummary,
@@ -84,6 +85,8 @@ function compareCampaigns(left: RatedSummary, right: RatedSummary, key: SortKey,
 export function MarketingPage({
   rows,
   adRows,
+  crmRows = [],
+  brandOptions = [],
   pages,
   hasSynced,
   configured,
@@ -94,6 +97,8 @@ export function MarketingPage({
 }: {
   rows: InsightRow[];
   adRows: AdInsightRow[];
+  crmRows?: CrmAttributionRow[];
+  brandOptions?: Array<{ code: string; name: string }>;
   pages: MarketingPageOption[];
   hasSynced: boolean;
   configured: boolean;
@@ -104,6 +109,7 @@ export function MarketingPage({
   canSync?: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
   const [pending, setPending] = React.useState(false);
   const [preset, setPreset] = React.useState<PresetId>("ALL");
@@ -111,12 +117,25 @@ export function MarketingPage({
   const [campaignIds, setCampaignIds] = React.useState<string[]>([]);
   const [pageIds, setPageIds] = React.useState<string[]>([]);
   const [brands, setBrands] = React.useState<CampaignBrandId[]>([]);
-  const [query, setQuery] = React.useState("");
+  const urlSearch = searchParams?.get("search") ?? null;
+  const [query, setQuery] = React.useState(() => urlSearch ?? "");
+  const [lastUrlSearch, setLastUrlSearch] = React.useState<string | null>(urlSearch);
+  if (urlSearch !== lastUrlSearch) {
+    setLastUrlSearch(urlSearch);
+    if (urlSearch !== null) {
+      setQuery(urlSearch);
+    }
+  }
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sort, setSort] = React.useState<{ key: SortKey; direction: "asc" | "desc" }>({
     key: "spend",
     direction: "desc",
   });
+
+  const campaignBrands = React.useMemo(
+    () => buildCampaignBrands(brandOptions, rows.map((row) => row.objectName)),
+    [brandOptions, rows],
+  );
 
   const span = React.useMemo(() => storedSpan(rows), [rows]);
   const pageCampaignIds = React.useMemo(() => {
@@ -166,30 +185,40 @@ export function MarketingPage({
 
   const adScope = React.useMemo(
     () =>
-      filterAdRows(adRows, {
-        from: range.from,
-        to: range.to,
-        campaignIds,
-        brands,
-        query,
-        pageIds: [],
-      }),
-    [adRows, range.from, range.to, campaignIds, brands, query],
+      filterAdRows(
+        adRows,
+        {
+          from: range.from,
+          to: range.to,
+          campaignIds,
+          brands,
+          query,
+          pageIds: [],
+        },
+        campaignBrands,
+      ),
+    [adRows, range.from, range.to, campaignIds, brands, query, campaignBrands],
   );
   const visibleAds = pageIds.length === 0 ? adScope : adScope.filter((row) => pageIds.includes(row.pageId ?? ""));
   const filteredCampaigns = React.useMemo(
     () =>
-      filterInsightRows(rows, {
-        from: range.from,
-        to: range.to,
-        campaignIds,
-        brands,
-        query,
-      }),
-    [rows, range.from, range.to, campaignIds, brands, query],
+      filterInsightRows(
+        rows,
+        {
+          from: range.from,
+          to: range.to,
+          campaignIds,
+          brands,
+          query,
+        },
+        campaignBrands,
+      ),
+    [rows, range.from, range.to, campaignIds, brands, query, campaignBrands],
   );
   const campaignSummaries = (
-    pageIds.length > 0 ? summarizeCampaignsFromAds(visibleAds) : summarizeCampaigns(filteredCampaigns)
+    pageIds.length > 0
+      ? summarizeCampaignsFromAds(visibleAds, campaignBrands)
+      : summarizeCampaigns(filteredCampaigns, campaignBrands)
   ).filter((campaign) => !pageCampaignIds || pageCampaignIds.has(campaign.objectId));
   if (pageCampaignIds && campaignIds.some((id) => !pageCampaignIds.has(id))) {
     setCampaignIds(campaignIds.filter((id) => pageCampaignIds.has(id)));
@@ -202,13 +231,14 @@ export function MarketingPage({
     ? visibleAds.filter((row) => (activeId ? row.campaignId === activeId : true))
     : filteredCampaigns.filter((row) => (activeId ? row.objectId === activeId : true));
   const totals = dashboardTotals(chartRows);
+  const crmTotals = summarizeCrmAttribution(crmRows, { from: range.from, to: range.to, pageIds }, totals.spend);
   const series = seriesByDate(chartRows);
   const campaigns = ratedCampaigns.items.sort((left, right) => compareCampaigns(left, right, sort.key, sort.direction));
   const maxSpend = Math.max(...campaigns.map((campaign) => campaign.spend), 1);
   const selected = campaigns.find((campaign) => campaign.objectId === activeId) ?? null;
-  const ratedPages = attachEfficiency(summarizePages(adScope));
+  const ratedPages = attachEfficiency(summarizePages(adScope, crmRows, range));
   const adsInCampaign = selected
-    ? attachEfficiency(summarizeAds(visibleAds.filter((row) => row.campaignId === selected.objectId)))
+    ? attachEfficiency(summarizeAds(visibleAds.filter((row) => row.campaignId === selected.objectId), campaignBrands))
     : null;
   const dailyRows = selected
     ? seriesByDate(chartRows).slice().sort((left, right) => right.date.localeCompare(left.date))
@@ -330,7 +360,7 @@ export function MarketingPage({
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        {CAMPAIGN_BRANDS.map((brand) => {
+        {campaignBrands.map((brand) => {
           const active = brands.includes(brand.id);
           return (
             <button
@@ -367,8 +397,16 @@ export function MarketingPage({
             <Kpi label="Hiển thị" value={totals.impressions === null ? "—" : formatNumber(totals.impressions)} />
             <Kpi label="Lượt click" value={totals.clicks === null ? "—" : formatNumber(totals.clicks)} icon={MousePointerClick} />
             <Kpi label="CTR" value={totals.ctr === null ? "—" : formatPercent(totals.ctr)} />
-            <Kpi label="Lead" value={totals.leads === null ? "—" : formatNumber(totals.leads)} />
-            <Kpi label="CPL" value={totals.cpl === null ? "—" : formatCurrency(totals.cpl)} />
+            <Kpi label="Lead (Meta)" value={totals.leads === null ? "—" : formatNumber(totals.leads)} />
+            <Kpi label="CPL (Meta)" value={totals.cpl === null ? "—" : formatCurrency(totals.cpl)} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            <Kpi label="Lead thực (CRM)" value={formatNumber(crmTotals.crmLeads)} />
+            <Kpi label="KHQT" value={formatNumber(crmTotals.khqt)} />
+            <Kpi label="KHD (Chốt)" value={formatNumber(crmTotals.khd)} />
+            <Kpi label="CPQL (Chi / KHQT)" value={crmTotals.cpql === null ? "—" : formatCurrency(crmTotals.cpql)} />
+            <Kpi label="CPS (Chi / KHD)" value={crmTotals.cps === null ? "—" : formatCurrency(crmTotals.cps)} />
           </div>
 
           <section className="rounded-lg border border-border bg-card p-4 shadow-xs">
@@ -450,14 +488,19 @@ export function MarketingPage({
               </p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-left text-[13px]">
+                <table className="w-full min-w-[920px] text-left text-[13px]">
                   <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2.5 font-medium">Fanpage</th>
                       <th className="px-3 py-2.5 text-right font-medium">Chi tiêu</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Lead</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Lead (Meta)</th>
                       <th className="px-3 py-2.5 text-right font-medium">CPL</th>
                       <th className="px-3 py-2.5 text-right font-medium">CTR</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Lead CRM</th>
+                      <th className="px-3 py-2.5 text-right font-medium">KHQT</th>
+                      <th className="px-3 py-2.5 text-right font-medium">KHD</th>
+                      <th className="px-3 py-2.5 text-right font-medium">CPQL</th>
+                      <th className="px-3 py-2.5 text-right font-medium">CPS</th>
                       <th className="px-3 py-2.5 text-right font-medium">Hiệu quả</th>
                     </tr>
                   </thead>
@@ -486,6 +529,15 @@ export function MarketingPage({
                             </td>
                             <td className="px-3 py-2.5 text-right tabular-nums">
                               {page.ctr === null ? "—" : formatPercent(page.ctr)}
+                            </td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(page.crmLeads)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(page.khqt)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(page.khd)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">
+                              {page.cpql === null ? "—" : formatCurrency(page.cpql)}
+                            </td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">
+                              {page.cps === null ? "—" : formatCurrency(page.cps)}
                             </td>
                             <td className="px-3 py-2.5 text-right">
                               <EfficiencyBadge value={page.efficiency} />

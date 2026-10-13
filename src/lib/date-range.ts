@@ -1,4 +1,4 @@
-import { addDays, toDateInputValue } from "@/lib/utils";
+import { toVnParts } from "@/lib/utils";
 
 export interface DateRange {
   from: string | null;
@@ -56,25 +56,38 @@ export function previousCalendarRange(from: string, to: string): DateRange {
   };
 }
 
-export function resolvePreset(preset: PresetId, now: Date = new Date()): DateRange {
-  const iso = (d: Date) => toDateInputValue(d.toISOString());
+export function resolvePreset(
+  preset: PresetId | "YESTERDAY" | "THIS_WEEK",
+  now: Date = new Date(),
+): DateRange {
+  const vn = toVnParts(now);
+  const ymd = (y: number, m: number, d: number) => formatUtcDate(Date.UTC(y, m, d));
+  const today = ymd(vn.year, vn.month, vn.day);
   switch (preset) {
     case "TODAY":
-      return { from: iso(now), to: iso(now) };
-    case "LAST_7":
-      return { from: iso(addDays(now, -6)), to: iso(now) };
-    case "LAST_30":
-      return { from: iso(addDays(now, -29)), to: iso(now) };
-    case "THIS_MONTH":
-      return { from: iso(new Date(now.getFullYear(), now.getMonth(), 1)), to: iso(now) };
-    case "LAST_MONTH": {
-      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const last = new Date(now.getFullYear(), now.getMonth(), 0);
-      return { from: iso(first), to: iso(last) };
+      return { from: today, to: today };
+    case "YESTERDAY": {
+      const yesterday = ymd(vn.year, vn.month, vn.day - 1);
+      return { from: yesterday, to: yesterday };
     }
+    case "THIS_WEEK": {
+      const dayOfWeek = (vn.dayOfWeek + 6) % 7;
+      return { from: ymd(vn.year, vn.month, vn.day - dayOfWeek), to: today };
+    }
+    case "LAST_7":
+      return { from: ymd(vn.year, vn.month, vn.day - 6), to: today };
+    case "LAST_30":
+      return { from: ymd(vn.year, vn.month, vn.day - 29), to: today };
+    case "THIS_MONTH":
+      return { from: ymd(vn.year, vn.month, 1), to: today };
+    case "LAST_MONTH":
+      return {
+        from: ymd(vn.year, vn.month - 1, 1),
+        to: ymd(vn.year, vn.month, 0),
+      };
     case "THIS_QUARTER": {
-      const q = Math.floor(now.getMonth() / 3);
-      return { from: iso(new Date(now.getFullYear(), q * 3, 1)), to: iso(now) };
+      const q = Math.floor(vn.month / 3);
+      return { from: ymd(vn.year, q * 3, 1), to: today };
     }
     default:
       return { from: null, to: null };

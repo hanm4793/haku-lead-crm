@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 
 import { getDb } from "./client";
-import { facebookPages, metaAdInsights, metaSyncRuns } from "./schema";
+import { facebookPages, leads, metaAdInsights, metaSyncRuns } from "./schema";
 
 export type InsightRow = {
   objectId: string;
@@ -20,6 +20,15 @@ export type AdInsightRow = InsightRow & {
   adsetId: string | null;
   adsetName: string | null;
   pageId: string | null;
+};
+
+export type CrmAttributionRow = {
+  pageId: string;
+  date: string;
+  crmLeads: number;
+  contacted: number;
+  khqt: number;
+  khd: number;
 };
 
 export type InsightTotals = {
@@ -73,11 +82,35 @@ function utcDate(value: string, label: string): Date {
   return date;
 }
 
-export async function listCampaignInsights(range?: {
-  from: string;
-  to: string;
-}): Promise<InsightRow[]> {
+export async function listCampaignInsights(
+  range?: {
+    from: string;
+    to: string;
+  },
+  pageIds?: string[] | null,
+): Promise<InsightRow[]> {
+  if (pageIds && pageIds.length === 0) return [];
   const bounds = range ? boundedRange(range) : null;
+  const parts = [eq(metaAdInsights.level, "campaign")];
+  if (bounds) {
+    parts.push(
+      gte(metaAdInsights.dateStart, bounds.from),
+      lte(metaAdInsights.dateStart, bounds.to),
+    );
+  }
+  if (pageIds) {
+    const campaignSubquery = getDb()
+      .selectDistinct({ campaignId: metaAdInsights.campaignId })
+      .from(metaAdInsights)
+      .where(
+        and(
+          eq(metaAdInsights.level, "ad"),
+          inArray(metaAdInsights.pageId, pageIds),
+          sql`${metaAdInsights.campaignId} is not null`,
+        ),
+      );
+    parts.push(inArray(metaAdInsights.objectId, campaignSubquery));
+  }
   const rows = await getDb()
     .select({
       objectId: metaAdInsights.objectId,
@@ -90,15 +123,7 @@ export async function listCampaignInsights(range?: {
       costPerLead: metaAdInsights.costPerLead,
     })
     .from(metaAdInsights)
-    .where(
-      bounds
-        ? and(
-            eq(metaAdInsights.level, "campaign"),
-            gte(metaAdInsights.dateStart, bounds.from),
-            lte(metaAdInsights.dateStart, bounds.to),
-          )
-        : eq(metaAdInsights.level, "campaign"),
-    )
+    .where(and(...parts))
     .orderBy(desc(metaAdInsights.dateStart), asc(metaAdInsights.objectName));
 
   return rows.map(({ dateStart, ...row }) => ({
@@ -107,8 +132,22 @@ export async function listCampaignInsights(range?: {
   }));
 }
 
-export async function listAdInsights(range?: { from: string; to: string }): Promise<AdInsightRow[]> {
+export async function listAdInsights(
+  range?: { from: string; to: string },
+  pageIds?: string[] | null,
+): Promise<AdInsightRow[]> {
+  if (pageIds && pageIds.length === 0) return [];
   const bounds = range ? boundedRange(range) : null;
+  const parts = [eq(metaAdInsights.level, "ad")];
+  if (bounds) {
+    parts.push(
+      gte(metaAdInsights.dateStart, bounds.from),
+      lte(metaAdInsights.dateStart, bounds.to),
+    );
+  }
+  if (pageIds) {
+    parts.push(inArray(metaAdInsights.pageId, pageIds));
+  }
   const rows = await getDb()
     .select({
       objectId: metaAdInsights.objectId,
@@ -126,15 +165,7 @@ export async function listAdInsights(range?: { from: string; to: string }): Prom
       costPerLead: metaAdInsights.costPerLead,
     })
     .from(metaAdInsights)
-    .where(
-      bounds
-        ? and(
-            eq(metaAdInsights.level, "ad"),
-            gte(metaAdInsights.dateStart, bounds.from),
-            lte(metaAdInsights.dateStart, bounds.to),
-          )
-        : eq(metaAdInsights.level, "ad"),
-    )
+    .where(and(...parts))
     .orderBy(desc(metaAdInsights.dateStart), asc(metaAdInsights.objectName));
 
   return rows.map(({ dateStart, ...row }) => ({
@@ -444,3 +475,47 @@ export async function hasSyncedInsights(): Promise<boolean> {
     Boolean(lastRun?.status === "ok" && lastRun.imported + lastRun.updated > 0)
   );
 }
+
+export async function queryCrmAttributionByPage(input?: {
+  projectId?: string | null;
+  pageIds?: string[] | null;
+  from?: string | null;
+  to?: string | null;
+}): Promise<CrmAttributionRow[]> {
+  if (input?.pageIds && input.pageIds.length === 0) return [];
+  const parts = [or(eq(leads.source, "FACEBOOK"), sql`${leads.facebookPageId} is not null`)!];
+  if (input?.projectId) parts.push(eq(leads.projectId, input.projectId));
+  if (input?.pageIds) parts.push(inArray(leads.facebookPageId, input.pageIds));
+  if (input?.from) {
+    parts.push(gte(leads.createdAt, new Date(`${input.from}T00:00:00+07:00`)));
+  }
+  if (input?.to) {
+    parts.push(lte(leads.createdAt, new Date(`${input.to}T23:59:59.999+07:00`)));
+  }
+
+  const pageIdExpr = sql<string>`coalesce(${leads.facebookPageId}, '')`;
+  const dateExpr = sql<string>`to_char(${leads.createdAt} at time zone 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD')`;
+
+  const rows = await getDb()
+    .select({
+      pageId: pageIdExpr,
+      date: dateExpr,
+      crmLeads: sql<number>`count(*)::int`,
+      contacted: sql<number>`count(*) filter (where ${leads.contactStatus} = 'DA_LIEN_HE')::int`,
+      khqt: sql<number>`count(*) filter (where ${leads.category} in ('KHQT', 'GDTD', 'KHD'))::int`,
+      khd: sql<number>`count(*) filter (where ${leads.category} = 'KHD')::int`,
+    })
+    .from(leads)
+    .where(and(...parts))
+    .groupBy(pageIdExpr, dateExpr);
+
+  return rows.map((row) => ({
+    pageId: row.pageId,
+    date: row.date,
+    crmLeads: asNumber(row.crmLeads),
+    contacted: asNumber(row.contacted),
+    khqt: asNumber(row.khqt),
+    khd: asNumber(row.khd),
+  }));
+}
+

@@ -67,7 +67,7 @@ function toForm(user: ManagedUser | null, actorRole: UserRole): FormState {
     email: user.email ?? "",
     role: user.role === "PARTNER_ADMIN" ? "PARTNER_ADMIN" : "STAFF",
     partnerId: user.partnerId,
-    projectId: null,
+    projectId: user.projectIds?.[0] ?? user.projectId ?? null,
     pageIds: user.pageIds,
     aiEnabled: user.aiEnabled,
     active: user.active,
@@ -198,6 +198,7 @@ export function UsersAdmin({
   };
 
   const submit = async () => {
+    if (!form.fullName.trim()) return;
     setPending(true);
     const payload = {
       fullName: form.fullName,
@@ -319,100 +320,112 @@ export function UsersAdmin({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3">
-            <Field label="Họ tên">
-              <Input value={form.fullName} onChange={(event) => setForm((f) => ({ ...f, fullName: event.target.value }))} />
-            </Field>
-            <Field label="Email đăng nhập">
-              <Input
-                type="email"
-                value={form.email}
-                onChange={(event) => setForm((f) => ({ ...f, email: event.target.value }))}
-              />
-            </Field>
-            {form.role === "STAFF" && actorRole === "SUPER_ADMIN" && (
-              <Field label="Thuộc partner">
-                <Select
-                  value={form.partnerId ?? ""}
-                  onValueChange={(value) => setForm((f) => ({ ...f, partnerId: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn partner admin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {partners.map((partner) => (
-                      <SelectItem key={partner.id} value={partner.id}>
-                        {partner.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            )}
-            {form.role === "PARTNER_ADMIN" && actorRole === "SUPER_ADMIN" && (
-              <Field label="Project">
-                <Select
-                  value={form.projectId ?? ""}
-                  onValueChange={(value) => setForm((f) => ({ ...f, projectId: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            )}
-            {form.role === "PARTNER_ADMIN" && (
-              <Field label="Fanpage">
-                <MultiSelect
-                  options={pages}
-                  selected={form.pageIds}
-                  onChange={(pageIds) => setForm((f) => ({ ...f, pageIds }))}
-                  searchable={pages.length > 6}
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submit();
+            }}
+          >
+            <div className="space-y-3">
+              <Field label="Họ tên">
+                <Input
+                  value={form.fullName}
+                  onChange={(event) => setForm((f) => ({ ...f, fullName: event.target.value }))}
+                  required
                 />
               </Field>
-            )}
-            {form.role === "PARTNER_ADMIN" && actorRole === "SUPER_ADMIN" && (
+              <Field label="Email đăng nhập">
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(event) => setForm((f) => ({ ...f, email: event.target.value }))}
+                />
+              </Field>
+              {form.role === "STAFF" && actorRole === "SUPER_ADMIN" && (
+                <Field label="Thuộc partner">
+                  <Select
+                    value={form.partnerId ?? ""}
+                    onValueChange={(value) => setForm((f) => ({ ...f, partnerId: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chọn partner admin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {partners.map((partner) => (
+                        <SelectItem key={partner.id} value={partner.id}>
+                          {partner.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+              {form.role === "PARTNER_ADMIN" && actorRole === "SUPER_ADMIN" && (
+                <Field label="Project">
+                  <Select
+                    value={form.projectId ?? ""}
+                    onValueChange={(value) => setForm((f) => ({ ...f, projectId: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chọn project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {projects.map((project) => (
+                        <SelectItem key={project.id} value={project.id}>
+                          {project.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+              {form.role === "PARTNER_ADMIN" && (
+                <Field label="Fanpage">
+                  <MultiSelect
+                    options={pages}
+                    selected={form.pageIds}
+                    onChange={(pageIds) => setForm((f) => ({ ...f, pageIds }))}
+                    searchable={pages.length > 6}
+                  />
+                </Field>
+              )}
+              {form.role === "PARTNER_ADMIN" && actorRole === "SUPER_ADMIN" && (
+                <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                  <div>
+                    <div className="text-sm font-medium">Trợ lý AI</div>
+                    <div className="text-[12px] text-muted-foreground">Chỉ super admin bật được quyền này.</div>
+                  </div>
+                  <Switch checked={form.aiEnabled} onCheckedChange={(aiEnabled) => setForm((f) => ({ ...f, aiEnabled }))} />
+                </div>
+              )}
               <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
                 <div>
-                  <div className="text-sm font-medium">Trợ lý AI</div>
-                  <div className="text-[12px] text-muted-foreground">Chỉ super admin bật được quyền này.</div>
+                  <div className="text-sm font-medium">Đang hoạt động</div>
+                  <div className="text-[12px] text-muted-foreground">Tắt để thu hồi đăng nhập. Lead đã giao vẫn giữ tên.</div>
                 </div>
-                <Switch checked={form.aiEnabled} onCheckedChange={(aiEnabled) => setForm((f) => ({ ...f, aiEnabled }))} />
+                <Switch
+                  checked={form.active}
+                  onCheckedChange={(active) => setForm((f) => ({ ...f, active }))}
+                  disabled={editing?.id === currentUserId}
+                />
               </div>
-            )}
-            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-              <div>
-                <div className="text-sm font-medium">Đang hoạt động</div>
-                <div className="text-[12px] text-muted-foreground">Tắt để thu hồi đăng nhập. Lead đã giao vẫn giữ tên.</div>
-              </div>
-              <Switch
-                checked={form.active}
-                onCheckedChange={(active) => setForm((f) => ({ ...f, active }))}
-                disabled={editing?.id === currentUserId}
-              />
+              {editing?.email && (
+                <Button type="button" variant="outline" onClick={() => void resendMail()} disabled={pending}>
+                  Gửi lại email đặt mật khẩu
+                </Button>
+              )}
             </div>
-            {editing?.email && (
-              <Button type="button" variant="outline" onClick={() => void resendMail()} disabled={pending}>
-                Gửi lại email đặt mật khẩu
-              </Button>
-            )}
-          </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={close} disabled={pending}>
-              Hủy
-            </Button>
-            <Button onClick={() => void submit()} disabled={pending}>
-              {pending ? "Đang lưu…" : "Lưu"}
-            </Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={close} disabled={pending}>
+                Hủy
+              </Button>
+              <Button type="submit" disabled={pending || !form.fullName.trim()}>
+                {pending ? "Đang lưu…" : "Lưu"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

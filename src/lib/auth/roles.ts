@@ -265,6 +265,12 @@ export function canEditLead(
   return viewer.role === "SUPER_ADMIN" || viewer.role === "PARTNER_ADMIN";
 }
 
+/** Chỉ super admin và partner-admin được giao hoặc đổi người phụ trách lead. */
+export function canAssignLead(roleOrViewer: UserRole | { role: UserRole }): boolean {
+  const role = typeof roleOrViewer === "string" ? roleOrViewer : roleOrViewer.role;
+  return role === "SUPER_ADMIN" || role === "PARTNER_ADMIN";
+}
+
 /**
  * Quyền bình luận trên lead (thêm comment, trả lời):
  * Super admin và partner-admin bình luận được trên mọi lead trong phạm vi xem.

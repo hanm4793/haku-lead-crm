@@ -1,14 +1,27 @@
-/** Chuẩn hóa SĐT để lưu: giữ dấu "+" đầu, bỏ mọi ký tự không phải số. */
+/** Chuẩn hóa SĐT để lưu: chuẩn hóa đầu số +84/84 của VN về 0..., bỏ ký tự thừa. */
 export function normalizePhone(raw: string): string {
   const trimmed = raw.trim();
   const digits = trimmed.replace(/\D/g, "");
   if (!digits) return "";
+  if (/^840\d{9}$/.test(digits)) {
+    return `0${digits.slice(3)}`;
+  }
+  if (/^84\d{9}$/.test(digits)) {
+    return `0${digits.slice(2)}`;
+  }
   return trimmed.startsWith("+") ? `+${digits}` : digits;
 }
 
-/** Khóa so sánh trùng: chỉ giữ chữ số, đầu số 84 đổi thành 0 (+84901… ≡ 0901…). */
+/** Khóa so sánh trùng: chỉ giữ chữ số, đầu số 840 (12 số) hoặc 84 (11 số) đổi thành 0. */
 export function phoneKey(raw: string): string {
-  return raw.replace(/\D/g, "").replace(/^84/, "0");
+  const digits = raw.replace(/\D/g, "");
+  if (/^840\d{9}$/.test(digits)) {
+    return `0${digits.slice(3)}`;
+  }
+  if (/^84\d{9}$/.test(digits)) {
+    return `0${digits.slice(2)}`;
+  }
+  return digits;
 }
 
 /** Trả về lời báo lỗi, hoặc null nếu SĐT hợp lệ (9–15 chữ số). */

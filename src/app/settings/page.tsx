@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { FacebookSyncPanel } from "@/components/settings/facebook-sync-panel";
@@ -36,7 +36,8 @@ export default async function Page() {
   const dbConfigured = isDatabaseConfigured();
   const authConfigured = isSupabaseConfigured();
   const viewer = await getScopedViewer();
-  if (viewer && !canManageSettings(viewer.role)) redirect("/leads");
+  if (!viewer) redirect("/login?next=%2Fsettings");
+  if (!canManageSettings(viewer.role)) redirect("/leads");
 
   const unlinked = dbConfigured ? await listUnlinkedUsers().catch(() => []) : [];
   const facebookConfig = getFacebookConfig();

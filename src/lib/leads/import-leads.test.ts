@@ -229,4 +229,46 @@ describe("lead import template & validator", () => {
     });
     expect(adminReport.rows[0].payload?.assignee).toBeNull();
   });
+
+  it("blocks rows with empty name or missing required custom fields and rejects invalid calendar dates", async () => {
+    const requiredAttr: AttrFieldRow = {
+      id: "f-req",
+      projectId: "proj-1",
+      key: "cmnd",
+      label: "CCCD",
+      fieldType: "text",
+      options: [],
+      required: true,
+      sortOrder: 0,
+      active: true,
+    };
+
+    const buffer = await makeWorkbookBuffer(
+      ["Họ tên *", "Số điện thoại *", "CCCD *", "Hẹn gọi lại (yyyy-MM-dd)"],
+      [
+        ["", "0911222333", "012345678901", "2026-10-25"],
+        ["Nguyễn Văn C", "0911222444", "", "2026-02-31"],
+        ["Nguyễn Văn D", "0911222555", "012345678902", "2026-02-31"],
+      ],
+    );
+
+    const report = await parseAndValidateImportWorkbook(buffer, {
+      catalog: DEFAULT_LEAD_CATALOG,
+      attrFields: [requiredAttr],
+      assignees: [],
+      existingLeads: [],
+      viewer: { role: "SUPER_ADMIN", appUserId: "admin-1" },
+    });
+
+    expect(report.totalRows).toBe(3);
+    expect(report.rows[0].canImport).toBe(false);
+    expect(report.rows[0].blockingError).toMatch(/Họ tên/);
+
+    expect(report.rows[1].canImport).toBe(false);
+    expect(report.rows[1].blockingError).toMatch(/CCCD/);
+
+    expect(report.rows[2].canImport).toBe(true);
+    expect(report.rows[2].status).toBe("partial");
+    expect(report.rows[2].payload?.callbackAt).toBeNull();
+  });
 });

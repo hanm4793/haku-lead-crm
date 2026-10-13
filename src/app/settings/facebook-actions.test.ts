@@ -68,13 +68,14 @@ describe("Facebook settings actions", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings");
   });
 
-  it("purges sample leads for admins", async () => {
+  it("blocks purging sample leads even for admins to protect manual and imported leads", async () => {
     mocks.getScopedViewer.mockResolvedValue({ role: "SUPER_ADMIN" });
-    mocks.purgeSampleLeads.mockResolvedValue({ deleted: 4 });
 
-    await expect(purgeSampleLeadsAction()).resolves.toEqual({ ok: true, deleted: 4 });
-    expect(mocks.revalidatePath).toHaveBeenCalledWith("/leads");
-    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings");
+    await expect(purgeSampleLeadsAction()).resolves.toEqual({
+      ok: false,
+      error: "Tính năng xóa lead mẫu đã bị vô hiệu hóa để bảo vệ dữ liệu.",
+    });
+    expect(mocks.purgeSampleLeads).not.toHaveBeenCalled();
   });
 
   it("rejects Insights sync for non-admin viewers", async () => {

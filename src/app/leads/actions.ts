@@ -2,14 +2,17 @@
 
 import { z } from "zod";
 
-import { canCreateLead, canImportLeads } from "@/lib/auth/roles";
+import { canCommentLead, canCreateLead, canImportLeads } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import { catalogOptionsFromReference, DEFAULT_LEAD_CATALOG } from "@/lib/catalog";
 import { listAttrFields } from "@/lib/db/attr-fields-repo";
 import { createLeadComment } from "@/lib/db/lead-comments-repo";
 import {
   appendActivityLog,
+  autoAssignLeadsRoundRobin,
+  bulkUpdateLeads,
   createManualLead,
+  getLeadById,
   getReferenceData,
   insertImportedLeads,
   listExistingPhonesAndEmails,
@@ -46,6 +49,7 @@ const ACTIVITY_KINDS = [
 const patchSchema = z.object({
   name: z.string().max(120, "Họ tên tối đa 120 ký tự.").nullable().optional(),
   phone: z.string().max(30, "Số điện thoại quá dài.").optional(),
+  createdAt: z.string().optional(),
   contactStatus: z.enum(["CHUA_LIEN_HE", "DA_LIEN_HE"]).optional(),
   category: enumOf([...CATEGORY_OPTIONS.map((o) => o.value), "CHUA_PHAN_LOAI"]).optional(),
   failReason: enumOf(FAIL_REASON_OPTIONS.map((o) => o.value)).nullable().optional(),
@@ -156,6 +160,11 @@ export async function addLeadCommentAction(input: unknown): Promise<AddLeadComme
   }
 
   try {
+    const lead = await getLeadById(parsed.data.leadId, viewer);
+    if (!lead || !canCommentLead(viewer, { assigneeId: lead.assigneeId })) {
+      return { ok: false, error: "Bạn không có quyền bình luận trên lead này." };
+    }
+
     const comment = await createLeadComment(parsed.data, viewer);
     return { ok: true, comment };
   } catch (error) {
@@ -226,11 +235,16 @@ export async function validateLeadImportAction(formData: FormData): Promise<Vali
 
   try {
     const arrayBuffer = await file.arrayBuffer();
-    const projectId = viewer.activeProjectId ?? (await getDefaultProject())?.id ?? null;
+    const projectId =
+      viewer.activeProjectId ??
+      (viewer.role === "SUPER_ADMIN" ? ((await getDefaultProject())?.id ?? null) : null);
+    if (!projectId) {
+      return { ok: false, error: "Chưa xác định được dự án đang làm việc." };
+    }
 
     const [reference, attrFields, assignees, existingLeads] = await Promise.all([
-      getReferenceData(projectId ?? undefined).catch(() => null),
-      projectId ? listAttrFields(projectId, { activeOnly: true }).catch(() => []) : Promise.resolve([]),
+      getReferenceData(projectId, viewer).catch(() => null),
+      listAttrFields(projectId, { activeOnly: true }).catch(() => []),
       listAssignableStaff(viewer).catch(() => []),
       listExistingPhonesAndEmails(projectId),
     ]);
@@ -290,4 +304,73 @@ export async function commitLeadImportAction(input: unknown): Promise<CommitLead
     };
   }
 }
+
+const bulkUpdateSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(500),
+  patch: z.object({
+    assignee: z.string().max(120).nullable().optional(),
+    contactStatus: z.enum(["CHUA_LIEN_HE", "DA_LIEN_HE"]).optional(),
+    category: enumOf([...CATEGORY_OPTIONS.map((o) => o.value), "CHUA_PHAN_LOAI"]).optional(),
+    failReason: enumOf(FAIL_REASON_OPTIONS.map((o) => o.value)).nullable().optional(),
+  }),
+});
+
+export type BulkUpdateLeadsResult =
+  | { ok: true; updatedCount: number }
+  | { ok: false; error: string };
+
+export async function bulkUpdateLeadsAction(input: unknown): Promise<BulkUpdateLeadsResult> {
+  const viewer = await getScopedViewer();
+  if (!viewer) return { ok: false, error: "Phiên đăng nhập đã hết hạn." };
+
+  const parsed = bulkUpdateSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Dữ liệu cập nhật hàng loạt không hợp lệ." };
+  }
+
+  try {
+    const res = await bulkUpdateLeads(parsed.data.ids, parsed.data.patch, viewer, {
+      appUserId: viewer.appUserId,
+      fullName: viewer.fullName,
+    });
+    return { ok: true, updatedCount: res.updatedCount };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Cập nhật hàng loạt thất bại.",
+    };
+  }
+}
+
+const autoAssignSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(500),
+});
+
+export type AutoAssignLeadsResult =
+  | { ok: true; assignedCount: number; staffCount: number }
+  | { ok: false; error: string };
+
+export async function autoAssignLeadsAction(input: unknown): Promise<AutoAssignLeadsResult> {
+  const viewer = await getScopedViewer();
+  if (!viewer) return { ok: false, error: "Phiên đăng nhập đã hết hạn." };
+
+  const parsed = autoAssignSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Danh sách lead cần phân bổ không hợp lệ." };
+  }
+
+  try {
+    const res = await autoAssignLeadsRoundRobin(parsed.data.ids, viewer, {
+      appUserId: viewer.appUserId,
+      fullName: viewer.fullName,
+    });
+    return { ok: true, assignedCount: res.assignedCount, staffCount: res.staffCount };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Phân bổ tự động thất bại.",
+    };
+  }
+}
+
 

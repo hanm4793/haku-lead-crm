@@ -4,7 +4,7 @@ import * as React from "react";
 import { BarChart3 } from "lucide-react";
 
 import type { StatsBreakdownRow } from "@/lib/ai/stats-query";
-import { formatNumber, formatPercent } from "@/lib/utils";
+import { formatNumber, formatPercent, ratio } from "@/lib/utils";
 
 export function MiniBreakdownCard({ rows }: { rows: StatsBreakdownRow[] }) {
   if (!rows || rows.length === 0) return null;
@@ -22,10 +22,10 @@ export function MiniBreakdownCard({ rows }: { rows: StatsBreakdownRow[] }) {
       <div className="mt-2 space-y-2">
         {displayRows.map((row) => {
           const widthPct = Math.max(8, Math.round((row.leads / maxLeads) * 100));
-          const contactRate = row.contactRate ?? (row.leads > 0 ? row.contacted / row.leads : 0);
+          const contactRate = row.contactRate ?? ratio(row.contacted, row.leads);
           const khqtRate =
             row.khqtRate ??
-            (row.contacted > 0 ? row.khqt / row.contacted : row.leads > 0 ? row.khqt / row.leads : 0);
+            (row.contacted > 0 ? ratio(row.khqt, row.contacted) : ratio(row.khqt, row.leads));
 
           return (
             <div key={row.key} className="space-y-0.5">

@@ -18,7 +18,7 @@ import {
   assignPartnerAndStaffToProject,
   assertCanAccessProject,
   listProjectIdsForViewer,
-  removeProjectMember,
+  removePartnerAndStaffFromProject,
   toProjectViewer,
 } from "@/lib/db/project-repo";
 import {
@@ -93,6 +93,39 @@ const createProjectSchema = z.object({
   locationLabel: z.string().trim().max(40).optional(),
 });
 
+const updateProjectSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().min(1).max(120).optional(),
+  brandLabel: z.string().trim().max(40).optional(),
+  productLabel: z.string().trim().max(40).optional(),
+  locationLabel: z.string().trim().max(40).optional(),
+  active: z.boolean().optional(),
+});
+
+const assignPageSchema = z.object({
+  pageId: z.string().uuid(),
+  projectId: z.string().uuid().nullable(),
+});
+
+const setActiveSchema = z.object({
+  id: z.string().uuid(),
+  active: z.boolean(),
+});
+
+const partnerProjectSchema = z.object({
+  partnerId: z.string().uuid(),
+  projectId: z.string().uuid(),
+});
+
+const adPlatformSchema = z.enum(["google", "tiktok", "zalo"]);
+
+const upsertAdAccountSchema = z.object({
+  projectId: z.string().uuid(),
+  platform: adPlatformSchema,
+  externalAccountId: z.string().trim().min(1).max(120),
+  name: z.string().trim().max(120).nullable().optional(),
+});
+
 export async function createProjectAction(input: unknown): Promise<
   { ok: true; project: ProjectRow } | { ok: false; error: string }
 > {
@@ -119,32 +152,32 @@ export async function updateProjectAction(input: {
 }): Promise<{ ok: true; project: ProjectRow } | { ok: false; error: string }> {
   const gate = await requireViewer();
   if ("error" in gate) return { ok: false, error: gate.error };
-  const id = z.string().uuid().safeParse(input.id);
-  if (!id.success) return { ok: false, error: "Project không hợp lệ." };
+  const parsed = updateProjectSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Dữ liệu project không hợp lệ." };
 
   const isSuper = canManageProjects(gate.viewer.role);
-  const canLabels = canManageCatalogsInProject(gate.viewer, id.data);
+  const canLabels = canManageCatalogsInProject(gate.viewer, parsed.data.id);
   if (!isSuper && !canLabels) {
     return { ok: false, error: "Bạn không có quyền sửa project này." };
   }
   try {
-    await assertCanAccessProject(toProjectViewer(gate.viewer), id.data);
+    await assertCanAccessProject(toProjectViewer(gate.viewer), parsed.data.id);
     const patch = isSuper
       ? {
-          name: input.name,
-          brandLabel: input.brandLabel,
-          productLabel: input.productLabel,
-          locationLabel: input.locationLabel,
-          active: input.active,
+          name: parsed.data.name,
+          brandLabel: parsed.data.brandLabel,
+          productLabel: parsed.data.productLabel,
+          locationLabel: parsed.data.locationLabel,
+          active: parsed.data.active,
         }
       : {
-          brandLabel: input.brandLabel,
-          productLabel: input.productLabel,
-          locationLabel: input.locationLabel,
+          brandLabel: parsed.data.brandLabel,
+          productLabel: parsed.data.productLabel,
+          locationLabel: parsed.data.locationLabel,
         };
-    const project = await updateProject(id.data, patch);
+    const project = await updateProject(parsed.data.id, patch);
     revalidateAll();
-    revalidatePath(`/projects/${id.data}`);
+    revalidatePath(`/projects/${parsed.data.id}`);
     return { ok: true, project };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Cập nhật thất bại." };
@@ -157,8 +190,10 @@ export async function assignPageToProjectAction(input: {
 }): Promise<ProjectActionResult> {
   const gate = await requireProjectAdmin();
   if ("error" in gate) return { ok: false, error: gate.error };
+  const parsed = assignPageSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Dữ liệu fanpage không hợp lệ." };
   try {
-    await assignFacebookPageToProject(input.pageId, input.projectId);
+    await assignFacebookPageToProject(parsed.data.pageId, parsed.data.projectId);
     revalidateAll();
     return { ok: true };
   } catch (error) {
@@ -277,8 +312,10 @@ export async function setProjectPageActiveAction(input: {
 }): Promise<ProjectActionResult> {
   const gate = await requireProjectAdmin();
   if ("error" in gate) return { ok: false, error: gate.error };
+  const parsed = setActiveSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Dữ liệu fanpage không hợp lệ." };
   try {
-    await setFacebookPageActive(input.id, input.active);
+    await setFacebookPageActive(parsed.data.id, parsed.data.active);
     revalidateAll();
     return { ok: true };
   } catch (error) {
@@ -292,9 +329,12 @@ export async function assignPartnerToProjectAction(input: {
 }): Promise<ProjectActionResult> {
   const gate = await requireProjectAdmin();
   if ("error" in gate) return { ok: false, error: gate.error };
+  const parsed = partnerProjectSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Dữ liệu gán partner không hợp lệ." };
   try {
-    await assignPartnerAndStaffToProject(input.partnerId, input.projectId);
+    await assignPartnerAndStaffToProject(parsed.data.partnerId, parsed.data.projectId);
     revalidatePath("/users");
+    revalidatePath(`/projects/${parsed.data.projectId}`);
     revalidateAll();
     return { ok: true };
   } catch (error) {
@@ -308,17 +348,18 @@ export async function removePartnerFromProjectAction(input: {
 }): Promise<ProjectActionResult> {
   const gate = await requireProjectAdmin();
   if ("error" in gate) return { ok: false, error: gate.error };
+  const parsed = partnerProjectSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Dữ liệu gỡ partner không hợp lệ." };
   try {
-    await removeProjectMember(input.projectId, input.partnerId);
+    await removePartnerAndStaffFromProject(parsed.data.partnerId, parsed.data.projectId);
     revalidatePath("/users");
+    revalidatePath(`/projects/${parsed.data.projectId}`);
     revalidateAll();
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Bỏ gán thất bại." };
   }
 }
-
-const adPlatformSchema = z.enum(["google", "tiktok", "zalo"]);
 
 export async function upsertAdAccountAction(input: {
   projectId: string;
@@ -328,16 +369,17 @@ export async function upsertAdAccountAction(input: {
 }): Promise<{ ok: true; account: ProjectAdAccountRow } | { ok: false; error: string }> {
   const gate = await requireProjectAdmin();
   if ("error" in gate) return { ok: false, error: gate.error };
-  const platform = adPlatformSchema.safeParse(input.platform);
-  if (!platform.success) return { ok: false, error: "Nền tảng không hợp lệ." };
+  const parsed = upsertAdAccountSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Dữ liệu tài khoản ads không hợp lệ." };
   try {
     const account = await upsertAdAccount({
-      projectId: input.projectId,
-      platform: platform.data,
-      externalAccountId: input.externalAccountId,
-      name: input.name,
+      projectId: parsed.data.projectId,
+      platform: parsed.data.platform,
+      externalAccountId: parsed.data.externalAccountId,
+      name: parsed.data.name,
     });
     revalidatePath("/projects");
+    revalidatePath(`/projects/${parsed.data.projectId}`);
     return { ok: true, account };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Lưu tài khoản ads thất bại." };
@@ -350,9 +392,12 @@ export async function setAdAccountActiveAction(input: {
 }): Promise<ProjectActionResult> {
   const gate = await requireProjectAdmin();
   if ("error" in gate) return { ok: false, error: gate.error };
+  const parsed = setActiveSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Dữ liệu tài khoản ads không hợp lệ." };
   try {
-    await setAdAccountActive(input.id, input.active);
+    await setAdAccountActive(parsed.data.id, parsed.data.active);
     revalidatePath("/settings");
+    revalidatePath("/projects");
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Cập nhật thất bại." };
@@ -362,9 +407,12 @@ export async function setAdAccountActiveAction(input: {
 export async function removeAdAccountAction(id: string): Promise<ProjectActionResult> {
   const gate = await requireProjectAdmin();
   if ("error" in gate) return { ok: false, error: gate.error };
+  const parsedId = z.string().uuid().safeParse(id);
+  if (!parsedId.success) return { ok: false, error: "Tài khoản ads không hợp lệ." };
   try {
-    await removeAdAccount(id);
+    await removeAdAccount(parsedId.data);
     revalidatePath("/settings");
+    revalidatePath("/projects");
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Xóa thất bại." };
@@ -381,6 +429,8 @@ export async function loadProjectsAdminData() {
 export async function loadProjectAdAccounts(projectId: string) {
   const gate = await requireProjectAdmin();
   if ("error" in gate) return { ok: false as const, error: gate.error };
-  const accounts = await listAdAccounts(projectId);
+  const parsedId = z.string().uuid().safeParse(projectId);
+  if (!parsedId.success) return { ok: false as const, error: "Project không hợp lệ." };
+  const accounts = await listAdAccounts(parsedId.data);
   return { ok: true as const, accounts };
 }

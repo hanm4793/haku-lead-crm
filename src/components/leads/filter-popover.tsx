@@ -7,7 +7,13 @@ import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { allProducts, DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/lib/catalog";
-import { ASSIGNEES, CATEGORY_OPTIONS, FAIL_REASON_OPTIONS, SOURCE_OPTIONS } from "@/lib/constants";
+import {
+  ASSIGNEES,
+  CATEGORY_OPTIONS,
+  FAIL_REASON_OPTIONS,
+  SOURCE_OPTIONS,
+  UNASSIGNED_FILTER_VALUE,
+} from "@/lib/constants";
 import { countActiveFilters } from "@/lib/filters";
 import type { FailReason, LeadCategory, LeadFilters, LeadSource } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -35,6 +41,10 @@ export function LeadFilterPopover({
   const activeCount = countActiveFilters(filters);
   const { labels } = catalog;
   const products = allProducts(catalog);
+  const assigneeSelectOptions = [
+    { value: UNASSIGNED_FILTER_VALUE, label: "Chưa giao (Chưa phân bổ)" },
+    ...toOptions(assigneeOptions ?? ASSIGNEES),
+  ];
 
   return (
     <Popover>
@@ -89,7 +99,7 @@ export function LeadFilterPopover({
           </Field>
           <Field label="Phụ trách">
             <MultiSelect
-              options={toOptions(assigneeOptions ?? ASSIGNEES)}
+              options={assigneeSelectOptions}
               selected={filters.assignees}
               onChange={(v) => onChange({ assignees: v })}
             />
@@ -99,7 +109,10 @@ export function LeadFilterPopover({
           </Field>
           <Field label="Phân loại">
             <MultiSelect
-              options={CATEGORY_OPTIONS.map((o) => ({ value: o.value, label: `${o.label} · ${o.hint}` }))}
+              options={[
+                { value: "CHUA_PHAN_LOAI", label: "Chưa phân loại" },
+                ...CATEGORY_OPTIONS.map((o) => ({ value: o.value, label: `${o.label} · ${o.hint}` })),
+              ]}
               selected={filters.categories}
               onChange={(v) => onChange({ categories: v as LeadCategory[] })}
               searchable={false}

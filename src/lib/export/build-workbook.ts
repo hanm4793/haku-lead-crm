@@ -1,4 +1,4 @@
-﻿import ExcelJS from "exceljs";
+import ExcelJS from "exceljs";
 
 import { ATTR_COLUMN_PREFIX, COLUMN_BY_ID, displayValue } from "@/components/leads/columns";
 import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
@@ -8,6 +8,14 @@ import type { Lead } from "@/lib/types";
 import { formatPercent } from "@/lib/utils";
 
 const HEADER_FILL = "FF12479E";
+
+/** Chống formula injection trong Excel / CSV khi chuỗi bắt đầu bằng =, +, -, @. */
+export function sanitizeFormulaText(value: string): string {
+  if (/^[\t\r\n ]*[=+\-@]/.test(value)) {
+    return `'${value}`;
+  }
+  return value;
+}
 
 /** Tiêu đề cột: field phụ lấy nhãn đã cấu hình, không có thì dùng key. */
 function columnHeaderText(id: string, attrFields: AttrFieldRow[]) {
@@ -25,7 +33,9 @@ function writeSheet(sheet: ExcelJS.Worksheet, leads: Lead[], columnIds: string[]
   });
 
   for (const lead of leads) {
-    sheet.addRow(Object.fromEntries(columnIds.map((id) => [id, displayValue(lead, id, attrFields)])));
+    sheet.addRow(
+      Object.fromEntries(columnIds.map((id) => [id, sanitizeFormulaText(displayValue(lead, id, attrFields))])),
+    );
   }
 
   const header = sheet.getRow(1);
@@ -44,7 +54,7 @@ function writeSummarySheet(sheet: ExcelJS.Worksheet, leads: Lead[], spec: Export
   ];
   const kpis = computeKpis(leads);
   const rows: [string, string | number][] = [
-    ["Nội dung export", spec.summary],
+    ["Nội dung export", sanitizeFormulaText(spec.summary)],
     ["Tổng lead", kpis.total],
     ["Đã liên hệ", kpis.contacted],
     ["Tỷ lệ liên hệ", formatPercent(kpis.contactRate)],
@@ -68,11 +78,11 @@ function safeSheetName(name: string, used: Set<string>) {
   const base = name.replace(/[\\/*?:[\]]/g, "-").slice(0, 28).trim() || "Sheet";
   let candidate = base;
   let i = 2;
-  while (used.has(candidate)) {
+  while (used.has(candidate.toLowerCase())) {
     candidate = `${base.slice(0, 25)} (${i})`;
     i += 1;
   }
-  used.add(candidate);
+  used.add(candidate.toLowerCase());
   return candidate;
 }
 
@@ -112,7 +122,10 @@ export async function buildLeadWorkbook(
 }
 
 export function buildLeadCsv(spec: ExportSpec, leads: Lead[], attrFields: AttrFieldRow[] = []): string {
-  const escape = (v: string) => (/[",\n;]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const escape = (v: string) => {
+    const safe = sanitizeFormulaText(v);
+    return /[",\n;]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  };
   const header = spec.columns.map((id) => escape(columnHeaderText(id, attrFields))).join(",");
   const body = leads.map((lead) => spec.columns.map((id) => escape(displayValue(lead, id, attrFields))).join(",")).join("\n");
   // BOM để Excel trên Windows đọc đúng tiếng Việt.

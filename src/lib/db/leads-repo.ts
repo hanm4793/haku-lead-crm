@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, gte, inArray, lte, ne, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
 import { listAttrFields, type AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import { getDb } from "@/lib/db/client";
 import { activityLogs, appUsers, brands, leads, locations, products } from "@/lib/db/schema";
 import { getCatalogLabels, getDefaultProject, getProjectById, toProjectInfo } from "@/lib/db/project-repo";
+import { listAssignableStaff } from "@/lib/db/users-repo";
 import {
   canCreateLead,
   canEditLead,
@@ -18,6 +19,7 @@ import type {
   BrandCode,
   CatalogLabels,
   ChannelDetail,
+  ContactStatus,
   FailReason,
   Lead,
   LeadCategory,
@@ -25,7 +27,12 @@ import type {
   LeadKpis,
   ProjectInfo,
 } from "@/lib/types";
-import { UNASSIGNED_ASSIGNMENT_LABEL } from "@/lib/constants";
+import {
+  CATEGORY_LONG_LABEL,
+  CONTACT_STATUS_LABEL,
+  UNASSIGNED_ASSIGNMENT_LABEL,
+  UNASSIGNED_FILTER_VALUE,
+} from "@/lib/constants";
 import { normalizePhone, phoneKey, validatePhone } from "@/lib/leads/phone";
 import { ratio } from "@/lib/utils";
 
@@ -88,6 +95,31 @@ const TZ = "+07:00";
 const dayStart = (date: string) => new Date(`${date}T00:00:00.000${TZ}`);
 const dayEnd = (date: string) => new Date(`${date}T23:59:59.999${TZ}`);
 
+/**
+ * Chuẩn hóa chuỗi ngày/giờ hẹn gọi lại sang Date:
+ * - "YYYY-MM-DD" (chỉ chọn ngày): hiểu là cuối ngày 23:59:59+07:00 để không bị tính quá hạn lúc sáng sớm.
+ * - "YYYY-MM-DDTHH:mm" (từ <input type="datetime-local">): hiểu theo múi giờ Việt Nam +07:00.
+ * - Các chuỗi ISO có offset sẵn: parse trực tiếp.
+ */
+export function parseCallbackAt(raw: string | null | undefined): Date | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  let d: Date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    d = new Date(`${trimmed}T23:59:59${TZ}`);
+  } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) {
+    d = new Date(`${trimmed}:00${TZ}`);
+  } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+    d = new Date(`${trimmed}${TZ}`);
+  } else {
+    d = new Date(trimmed);
+  }
+
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function normalizeSearch(text: string) {
   return text
     .normalize("NFD")
@@ -107,12 +139,15 @@ export function overdueSql(now: Date) {
     and ${leads.category} not in ('FAIL', 'KHD')`;
 }
 
-/** Hẹn gọi lại trong ngày hôm nay (theo giờ máy server / mốc `now` truyền vào). */
+/** Hẹn gọi lại trong ngày hôm nay (tính theo múi giờ Việt Nam +07:00). */
 export function dueTodaySql(now: Date) {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
+  const vnNow = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  const yyyy = vnNow.getUTCFullYear();
+  const mm = String(vnNow.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(vnNow.getUTCDate()).padStart(2, "0");
+  const todayVn = `${yyyy}-${mm}-${dd}`;
+  const start = dayStart(todayVn);
+  const end = dayEnd(todayVn);
   return sql`${leads.callbackAt} is not null
     and ${leads.callbackAt} >= ${start.toISOString()}
     and ${leads.callbackAt} <= ${end.toISOString()}
@@ -130,8 +165,15 @@ export function criteriaConditions(criteria: LeadCriteria, viewer: ViewerScope, 
 
   const search = normalizeSearch(criteria.search ?? "");
   if (search) {
-    // unaccent để "nguyen" khớp được "Nguyễn" — extension bật ở migration 0001.
-    parts.push(sql`lower(unaccent(coalesce(${leads.name}, '') || ' ' || ${leads.phone})) like ${`%${search}%`}`);
+    const searchDigits = phoneKey(search);
+    if (searchDigits.length >= 3 && /^[\d+\s().-]+$/.test(search)) {
+      parts.push(
+        sql`(lower(unaccent(coalesce(${leads.name}, '') || ' ' || ${leads.phone})) like ${`%${search}%`} or regexp_replace(regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^840(\\d{9})$', '0\\1'), '^84(\\d{9})$', '0\\1') like ${`%${searchDigits}%`})`,
+      );
+    } else {
+      // unaccent để "nguyen" khớp được "Nguyễn" — extension bật ở migration 0001.
+      parts.push(sql`lower(unaccent(coalesce(${leads.name}, '') || ' ' || ${leads.phone})) like ${`%${search}%`}`);
+    }
   }
 
   const dateColumn = DATE_COLUMNS[criteria.dateField ?? "createdAt"];
@@ -144,7 +186,17 @@ export function criteriaConditions(criteria: LeadCriteria, viewer: ViewerScope, 
   if (criteria.categories?.length) parts.push(inArray(leads.category, criteria.categories));
   if (criteria.failReasons?.length) parts.push(inArray(leads.failReason, criteria.failReasons));
   if (criteria.locations?.length) parts.push(inArray(locations.name, criteria.locations));
-  if (criteria.assignees?.length) parts.push(inArray(appUsers.fullName, criteria.assignees));
+  if (criteria.assignees?.length) {
+    const hasUnassigned = criteria.assignees.includes(UNASSIGNED_FILTER_VALUE);
+    const namedAssignees = criteria.assignees.filter((a) => a !== UNASSIGNED_FILTER_VALUE);
+    if (hasUnassigned && namedAssignees.length > 0) {
+      parts.push(or(isNull(leads.assigneeId), inArray(appUsers.fullName, namedAssignees))!);
+    } else if (hasUnassigned) {
+      parts.push(isNull(leads.assigneeId));
+    } else if (namedAssignees.length > 0) {
+      parts.push(inArray(appUsers.fullName, namedAssignees));
+    }
+  }
   if (criteria.assigneeContains) {
     const name = normalizeSearch(criteria.assigneeContains);
     if (name) {
@@ -169,6 +221,9 @@ export function criteriaConditions(criteria: LeadCriteria, viewer: ViewerScope, 
 }
 
 export function scopeConditions(viewer: ViewerScope): SQL[] {
+  if (viewer.role !== "SUPER_ADMIN" && !viewer.activeProjectId) {
+    return [sql`false`];
+  }
   const parts: SQL[] = [];
   if (viewer.activeProjectId) {
     parts.push(eq(leads.projectId, viewer.activeProjectId));
@@ -470,6 +525,8 @@ export interface LeadPatch {
   name?: string | null;
   /** SĐT khách; được chuẩn hóa và kiểm tra trùng trong cùng project. */
   phone?: string;
+  /** Thời gian tạo lead (chỉ cho phép sửa với lead thủ công). */
+  createdAt?: string;
   contactStatus?: Lead["contactStatus"];
   category?: Lead["category"];
   failReason?: Lead["failReason"];
@@ -501,6 +558,14 @@ export interface Actor {
   fullName: string;
 }
 
+async function resolveActiveProjectId(viewer: ViewerScope): Promise<string | null> {
+  if (viewer.activeProjectId) return viewer.activeProjectId;
+  if (viewer.role === "SUPER_ADMIN") {
+    return (await getDefaultProject())?.id ?? null;
+  }
+  return null;
+}
+
 /**
  * Ghi thêm nhật ký mà không đổi trường lead — dùng cho ghi chú tay hoặc thao tác
  * AI không kèm patch. Vẫn kiểm tra quyền xem lead trước khi chèn.
@@ -519,16 +584,43 @@ export async function appendActivityLog(
     throw new Error("Chỉ được sửa lead được phân công cho bạn.");
   }
 
-  await getDb().insert(activityLogs).values(
-    logs.map((log) => ({
-      leadId,
-      kind: log.kind,
-      message: log.message,
-      actorId: actor.appUserId ?? null,
-      actorName: log.byAi ? "Trợ lý AI" : actor.fullName,
-      byAi: log.byAi ?? false,
-    })),
+  const callLogsCount = logs.filter((entry) => entry.kind === "CALL" || entry.kind === "MISSED_CALL").length;
+  const shouldTouchContact = logs.some(
+    (entry) =>
+      entry.kind === "CALL" ||
+      entry.kind === "MISSED_CALL" ||
+      entry.kind === "STATUS_CHANGE" ||
+      (entry.kind as string) === "STATUS",
   );
+
+  await getDb().transaction(async (tx) => {
+    if (shouldTouchContact) {
+      const now = new Date();
+      const leadUpdate: Record<string, unknown> = {
+        lastContactAt: now,
+        updatedAt: now,
+      };
+      if (callLogsCount > 0) {
+        leadUpdate.contactCount = (current.contactCount ?? 0) + callLogsCount;
+        leadUpdate.contactStatus = "DA_LIEN_HE";
+      }
+      await tx
+        .update(leads)
+        .set(leadUpdate)
+        .where(and(eq(leads.id, leadId), ...scopeConditions(viewer)));
+    }
+
+    await tx.insert(activityLogs).values(
+      logs.map((log) => ({
+        leadId,
+        kind: log.kind,
+        message: log.message,
+        actorId: actor.appUserId ?? null,
+        actorName: log.byAi ? "Trợ lý AI" : actor.fullName,
+        byAi: log.byAi ?? false,
+      })),
+    );
+  });
 
   return getActivityLogs(leadId);
 }
@@ -554,7 +646,8 @@ export async function updateLead(
     throw new Error("Chỉ được sửa lead được phân công cho bạn.");
   }
 
-  const values: Record<string, unknown> = { updatedAt: new Date() };
+  const now = new Date();
+  const values: Record<string, unknown> = { updatedAt: now };
 
   const projectId = await resolveLeadProjectId(id);
 
@@ -583,21 +676,60 @@ export async function updateLead(
     }
     values.phone = phone;
   }
+  if (patch.createdAt !== undefined && patch.createdAt !== current.createdAt) {
+    if (!canEditLeadProfile(viewer, current)) {
+      throw new Error("Chỉ được sửa thời gian tạo với lead tạo thủ công hoặc import.");
+    }
+    const parsedCreatedAt = parseCallbackAt(patch.createdAt) ?? new Date(patch.createdAt);
+    if (Number.isNaN(parsedCreatedAt.getTime())) {
+      throw new Error("Thời gian tạo không hợp lệ.");
+    }
+    values.createdAt = parsedCreatedAt;
+  }
 
   if (patch.contactStatus !== undefined) values.contactStatus = patch.contactStatus;
-  if (patch.category !== undefined) values.category = patch.category;
-  if (patch.failReason !== undefined) values.failReason = patch.failReason;
-  if (patch.source !== undefined) values.source = patch.source;
+  if (patch.category !== undefined) {
+    values.category = patch.category;
+    if (patch.category !== "FAIL" && patch.failReason === undefined) {
+      values.failReason = null;
+    }
+  }
+  if (patch.failReason !== undefined) {
+    values.failReason = (patch.category ?? current.category) === "FAIL" ? patch.failReason : null;
+  }
+  if (patch.source !== undefined && patch.source !== current.source) {
+    if (current.source === "MANUAL" || patch.source === "MANUAL") {
+      throw new Error("Không được đổi nguồn của lead thủ công hoặc chuyển lead sang nguồn thủ công.");
+    }
+    values.source = patch.source;
+  }
   if (patch.channelDetail !== undefined) values.channelDetail = patch.channelDetail;
   if (patch.contactCount !== undefined) {
     values.contactCount = Math.max(0, patch.contactCount);
   }
   if (patch.careNote !== undefined) values.careNote = patch.careNote;
   if (patch.callbackAt !== undefined) {
-    values.callbackAt = patch.callbackAt ? new Date(patch.callbackAt) : null;
+    values.callbackAt = parseCallbackAt(patch.callbackAt);
   }
-  if (patch.assignee !== undefined) {
-    values.assigneeId = patch.assignee ? await resolveAssigneeId(patch.assignee) : null;
+  if (patch.assignee !== undefined && patch.assignee !== current.assignee) {
+    if (viewer.role === "STAFF") {
+      throw new Error("Nhân viên không có quyền đổi người phụ trách.");
+    }
+    values.assigneeId = patch.assignee ? await resolveAssigneeId(patch.assignee, viewer) : null;
+  }
+
+  const touchedContact =
+    patch.contactStatus === "DA_LIEN_HE" ||
+    (patch.contactCount !== undefined && patch.contactCount > (current.contactCount ?? 0)) ||
+    logs.some(
+      (entry) =>
+        entry.kind === "CALL" ||
+        entry.kind === "MISSED_CALL" ||
+        entry.kind === "STATUS_CHANGE" ||
+        (entry.kind as string) === "STATUS",
+    );
+  if (touchedContact) {
+    values.lastContactAt = now;
   }
 
   // Brand quyết định tập sản phẩm hợp lệ, nên resolve brand trước rồi mới tới product.
@@ -642,11 +774,11 @@ export async function updateLead(
   return getLeadById(id, viewer);
 }
 
-/** Lead khác cùng project có cùng SĐT (so sánh theo khóa đã bỏ ký tự thừa và đầu số 84). */
+/** Lead khác cùng project có cùng SĐT (so sánh theo khóa đã bỏ ký tự thừa và đầu số 840/84). */
 export async function findLeadByPhone(projectId: string | null, phone: string, excludeId?: string) {
   const key = phoneKey(phone);
   const conditions: SQL[] = [
-    sql`regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^84', '0') = ${key}`,
+    sql`regexp_replace(regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^840(\\d{9})$', '0\\1'), '^84(\\d{9})$', '0\\1') = ${key}`,
   ];
   if (excludeId) conditions.push(ne(leads.id, excludeId));
   if (projectId) conditions.push(eq(leads.projectId, projectId));
@@ -685,6 +817,7 @@ export interface ExistingLeadUniqueEntry {
 export async function listExistingPhonesAndEmails(
   projectId: string | null,
 ): Promise<ExistingLeadUniqueEntry[]> {
+  if (!projectId) return [];
   const rows = await getDb()
     .select({
       name: leads.name,
@@ -692,13 +825,24 @@ export async function listExistingPhonesAndEmails(
       email: sql<string | null>`nullif(trim(coalesce(${leads.attrs}->>'email', '')), '')`,
     })
     .from(leads)
-    .where(projectId ? eq(leads.projectId, projectId) : undefined);
+    .where(eq(leads.projectId, projectId));
   return rows;
 }
 
 async function resolveLeadProjectId(leadId: string): Promise<string | null> {
   const [row] = await getDb().select({ projectId: leads.projectId }).from(leads).where(eq(leads.id, leadId)).limit(1);
   return row?.projectId ?? null;
+}
+
+function isValidCalendarDate(y: number, m: number, day: number): boolean {
+  if (m < 1 || m > 12 || day < 1 || day > 31) return false;
+  const d = new Date(Date.UTC(y, m - 1, day));
+  return (
+    !Number.isNaN(d.getTime()) &&
+    d.getUTCFullYear() === y &&
+    d.getUTCMonth() + 1 === m &&
+    d.getUTCDate() === day
+  );
 }
 
 export function validateAttrValue(def: AttrFieldRow, raw: string): string {
@@ -714,18 +858,25 @@ export function validateAttrValue(def: AttrFieldRow, raw: string): string {
     const mIso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     const mVn = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value);
     if (mIso) {
-      const d = new Date(`${value}T00:00:00Z`);
-      if (Number.isNaN(d.getTime())) throw new Error(`Field "${def.label}" không đúng ngày tháng.`);
+      const y = Number(mIso[1]);
+      const m = Number(mIso[2]);
+      const day = Number(mIso[3]);
+      if (!isValidCalendarDate(y, m, day)) {
+        throw new Error(`Field "${def.label}" không đúng ngày tháng.`);
+      }
       return value;
     }
     if (mVn) {
-      const dd = mVn[1].padStart(2, "0");
-      const mm = mVn[2].padStart(2, "0");
-      const yyyy = mVn[3];
-      const iso = `${yyyy}-${mm}-${dd}`;
-      const d = new Date(`${iso}T00:00:00Z`);
-      if (Number.isNaN(d.getTime())) throw new Error(`Field "${def.label}" không đúng ngày tháng.`);
-      return iso;
+      const day = Number(mVn[1]);
+      const m = Number(mVn[2]);
+      const y = Number(mVn[3]);
+      if (!isValidCalendarDate(y, m, day)) {
+        throw new Error(`Field "${def.label}" không đúng ngày tháng.`);
+      }
+      const dd = String(day).padStart(2, "0");
+      const mm = String(m).padStart(2, "0");
+      const yyyy = String(y);
+      return `${yyyy}-${mm}-${dd}`;
     }
     throw new Error(`Field "${def.label}" phải có định dạng ngày yyyy-MM-dd hoặc dd/MM/yyyy.`);
   }
@@ -762,13 +913,11 @@ export function validateAttrValue(def: AttrFieldRow, raw: string): string {
   return value;
 }
 
-/** Giữ key lạ + field tắt; thay giá trị field đang bật từ client. */
-async function mergeLeadAttrs(
-  projectId: string,
+function mergeLeadAttrsWithDefs(
+  defs: AttrFieldRow[],
   current: Record<string, string>,
   incoming: Record<string, string>,
-): Promise<Record<string, string>> {
-  const defs = await listAttrFields(projectId);
+): Record<string, string> {
   const activeKeys = new Set(defs.filter((d) => d.active).map((d) => d.key));
   const knownKeys = new Set(defs.map((d) => d.key));
 
@@ -778,30 +927,54 @@ async function mergeLeadAttrs(
   }
   for (const def of defs) {
     if (!def.active) continue;
-    const value = validateAttrValue(def, incoming[def.key] ?? "");
+    const raw = incoming[def.key] !== undefined ? incoming[def.key] : (current[def.key] ?? "");
+    const value = validateAttrValue(def, raw);
     if (value) merged[def.key] = value;
   }
   return merged;
 }
 
-async function resolveAssigneeId(fullName: string) {
+/** Giữ key lạ + field tắt; thay giá trị field đang bật từ client (giữ nguyên field không gửi lên). */
+async function mergeLeadAttrs(
+  projectId: string,
+  current: Record<string, string>,
+  incoming: Record<string, string>,
+): Promise<Record<string, string>> {
+  const defs = await listAttrFields(projectId);
+  return mergeLeadAttrsWithDefs(defs, current, incoming);
+}
+
+async function resolveAssigneeId(fullName: string, viewer?: ViewerScope) {
+  const trimmed = fullName.trim();
+  if (!trimmed) return null;
+  if (viewer) {
+    const allowed = await listAssignableStaff(viewer);
+    const matched = allowed.find((name) => name.toLowerCase() === trimmed.toLowerCase());
+    if (!matched) {
+      throw new Error(`Nhân viên phụ trách "${trimmed}" không thuộc phạm vi phân công.`);
+    }
+    const rows = await getDb()
+      .select({ id: appUsers.id })
+      .from(appUsers)
+      .where(and(eq(appUsers.fullName, matched), eq(appUsers.active, true)))
+      .limit(1);
+    return rows[0]?.id ?? null;
+  }
   const rows = await getDb()
     .select({ id: appUsers.id })
     .from(appUsers)
-    .where(eq(appUsers.fullName, fullName))
+    .where(and(eq(appUsers.fullName, trimmed), eq(appUsers.active, true)))
     .limit(1);
   return rows[0]?.id ?? null;
 }
 
-/** Brand theo mã, trong project hiện tại hoặc project mặc định. */
+/** Brand theo mã, trong project hiện tại. */
 export async function resolveBrandId(code: BrandCode, projectId?: string | null): Promise<string | null> {
-  const resolvedProjectId = projectId ?? (await getDefaultProject())?.id ?? null;
-  const conditions = [eq(brands.code, code)];
-  if (resolvedProjectId) conditions.push(eq(brands.projectId, resolvedProjectId));
+  if (!projectId) return null;
   const rows = await getDb()
     .select({ id: brands.id })
     .from(brands)
-    .where(and(...conditions))
+    .where(and(eq(brands.code, code), eq(brands.projectId, projectId)))
     .limit(1);
   return rows[0]?.id ?? null;
 }
@@ -815,39 +988,33 @@ export async function resolveProductId(
   brandCode: BrandCode | null,
   projectId?: string | null,
 ): Promise<string | null> {
+  if (!projectId) return null;
   const db = getDb();
-  const resolvedProjectId = projectId ?? (await getDefaultProject())?.id ?? null;
   if (brandCode) {
-    const conditions = [eq(products.name, name), eq(brands.code, brandCode)];
-    if (resolvedProjectId) conditions.push(eq(products.projectId, resolvedProjectId));
     const exact = await db
       .select({ id: products.id })
       .from(products)
       .innerJoin(brands, eq(products.brandId, brands.id))
-      .where(and(...conditions))
+      .where(and(eq(products.name, name), eq(brands.code, brandCode), eq(products.projectId, projectId)))
       .limit(1);
     if (exact[0]) return exact[0].id;
   }
 
-  const fallbackConditions = [eq(products.name, name)];
-  if (resolvedProjectId) fallbackConditions.push(eq(products.projectId, resolvedProjectId));
   const fallback = await db
     .select({ id: products.id })
     .from(products)
-    .where(and(...fallbackConditions))
+    .where(and(eq(products.name, name), eq(products.projectId, projectId)))
     .limit(1);
   return fallback[0]?.id ?? null;
 }
 
-/** Location theo tên, trong project hiện tại hoặc project mặc định. */
+/** Location theo tên, trong project hiện tại. */
 export async function resolveLocationId(name: string, projectId?: string | null): Promise<string | null> {
-  const resolvedProjectId = projectId ?? (await getDefaultProject())?.id ?? null;
-  const conditions = [eq(locations.name, name)];
-  if (resolvedProjectId) conditions.push(eq(locations.projectId, resolvedProjectId));
+  if (!projectId) return null;
   const rows = await getDb()
     .select({ id: locations.id })
     .from(locations)
-    .where(and(...conditions))
+    .where(and(eq(locations.name, name), eq(locations.projectId, projectId)))
     .limit(1);
   return rows[0]?.id ?? null;
 }
@@ -888,7 +1055,7 @@ export async function createManualLead(
   if (phoneProblem) throw new Error(phoneProblem);
   const phone = normalizePhone(input.phone);
 
-  const projectId = viewer.activeProjectId ?? (await getDefaultProject())?.id ?? null;
+  const projectId = await resolveActiveProjectId(viewer);
   if (!projectId) throw new Error("Chưa xác định được dự án đang làm việc.");
 
   const duplicatePhone = await findLeadByPhone(projectId, phone);
@@ -911,7 +1078,8 @@ export async function createManualLead(
     }
   }
 
-  const requestedAssigneeId = input.assignee ? await resolveAssigneeId(input.assignee) : null;
+  const requestedAssigneeId =
+    viewer.role !== "STAFF" && input.assignee ? await resolveAssigneeId(input.assignee, viewer) : null;
   const assigneeId = resolveManualLeadAssignee(viewer, requestedAssigneeId);
 
   const brandId = input.brand ? await resolveBrandId(input.brand, projectId) : null;
@@ -944,7 +1112,7 @@ export async function createManualLead(
         locationId,
         assigneeId,
         careNote: input.careNote?.trim() || null,
-        callbackAt: input.callbackAt ? new Date(input.callbackAt) : null,
+        callbackAt: parseCallbackAt(input.callbackAt),
         attrs: mergedAttrs,
       })
       .returning({ id: leads.id });
@@ -965,7 +1133,7 @@ export async function createManualLead(
   return lead;
 }
 
-/** Ghi hàng loạt các dòng lead hợp lệ từ file import vào DB. */
+/** Ghi hàng loạt các dòng lead hợp lệ từ file import vào DB trong một transaction. */
 export async function insertImportedLeads(
   rows: CreateManualLeadInput[],
   viewer: ViewerScope,
@@ -976,71 +1144,317 @@ export async function insertImportedLeads(
   }
   if (rows.length === 0) return { importedCount: 0 };
 
-  const projectId = viewer.activeProjectId ?? (await getDefaultProject())?.id ?? null;
+  const projectId = await resolveActiveProjectId(viewer);
   if (!projectId) throw new Error("Chưa xác định được dự án đang làm việc.");
 
-  let importedCount = 0;
+  const db = getDb();
+  const [existingLeads, attrDefs, assignableStaffNames, brandRows, productRows, locationRows] = await Promise.all([
+    listExistingPhonesAndEmails(projectId),
+    listAttrFields(projectId),
+    listAssignableStaff(viewer),
+    db
+      .select({ id: brands.id, code: brands.code })
+      .from(brands)
+      .where(eq(brands.projectId, projectId)),
+    db
+      .select({ id: products.id, name: products.name, brandCode: brands.code })
+      .from(products)
+      .innerJoin(brands, eq(products.brandId, brands.id))
+      .where(eq(products.projectId, projectId)),
+    db
+      .select({ id: locations.id, name: locations.name })
+      .from(locations)
+      .where(eq(locations.projectId, projectId)),
+  ]);
+
+  const staffRows =
+    assignableStaffNames.length > 0
+      ? await db
+          .select({ id: appUsers.id, fullName: appUsers.fullName })
+          .from(appUsers)
+          .where(and(inArray(appUsers.fullName, assignableStaffNames), eq(appUsers.active, true)))
+      : [];
+
+  const seenPhoneKeys = new Set<string>();
+  const seenEmails = new Set<string>();
+  for (const item of existingLeads) {
+    const pKey = phoneKey(item.phone);
+    if (pKey) seenPhoneKeys.add(pKey);
+    const eKey = item.email?.trim().toLowerCase();
+    if (eKey) seenEmails.add(eKey);
+  }
+
+  const brandMap = new Map(brandRows.map((b) => [b.code.toLowerCase(), b.id]));
+  const productByBrandAndName = new Map(
+    productRows.map((p) => [`${p.brandCode.toLowerCase()}::${p.name.toLowerCase()}`, p.id]),
+  );
+  const productByName = new Map(productRows.map((p) => [p.name.toLowerCase(), p.id]));
+  const locationMap = new Map(locationRows.map((l) => [l.name.toLowerCase(), l.id]));
+  const staffMap = new Map(staffRows.map((u) => [u.fullName.toLowerCase(), u.id]));
+
+  const leadsToInsert: (typeof leads.$inferInsert)[] = [];
+
   for (const row of rows) {
+    const name = row.name?.trim() ?? "";
+    if (!name || name.length > 120) continue;
+
     const phone = normalizePhone(row.phone);
     if (!phone || validatePhone(phone)) continue;
-    const dupPhone = await findLeadByPhone(projectId, phone);
-    if (dupPhone) continue;
+    const pKey = phoneKey(phone);
+    if (!pKey || seenPhoneKeys.has(pKey)) continue;
 
     const rawEmail = (row.email ?? row.attrs?.email ?? "").trim();
     if (rawEmail) {
       if (!EMAIL_RE.test(rawEmail)) continue;
-      const dupEmail = await findLeadByEmail(projectId, rawEmail);
-      if (dupEmail) continue;
+      if (seenEmails.has(rawEmail.toLowerCase())) continue;
     }
 
-    const requestedAssigneeId = row.assignee ? await resolveAssigneeId(row.assignee) : null;
+    const baseAttrs: Record<string, string> = {};
+    if (rawEmail) baseAttrs.email = rawEmail;
+
+    let mergedAttrs: Record<string, string>;
+    try {
+      mergedAttrs = mergeLeadAttrsWithDefs(attrDefs, baseAttrs, row.attrs ?? {});
+      if (rawEmail && !mergedAttrs.email) mergedAttrs.email = rawEmail;
+    } catch {
+      continue;
+    }
+
+    seenPhoneKeys.add(pKey);
+    if (rawEmail) seenEmails.add(rawEmail.toLowerCase());
+
+    const requestedAssigneeId =
+      viewer.role !== "STAFF" && row.assignee
+        ? (staffMap.get(row.assignee.trim().toLowerCase()) ?? null)
+        : null;
     const assigneeId = resolveManualLeadAssignee(viewer, requestedAssigneeId);
 
-    const brandId = row.brand ? await resolveBrandId(row.brand, projectId) : null;
-    const productId = row.product ? await resolveProductId(row.product, row.brand ?? null, projectId) : null;
-    const locationId = row.location ? await resolveLocationId(row.location, projectId) : null;
+    const brandCodeLower = row.brand?.trim().toLowerCase() ?? null;
+    const brandId = brandCodeLower ? (brandMap.get(brandCodeLower) ?? null) : null;
 
-    const attrs: Record<string, string> = { ...(row.attrs ?? {}) };
-    if (rawEmail) attrs.email = rawEmail;
+    let productId: string | null = null;
+    const prodNameLower = row.product?.trim().toLowerCase() ?? null;
+    if (prodNameLower) {
+      if (brandCodeLower) {
+        productId = productByBrandAndName.get(`${brandCodeLower}::${prodNameLower}`) ?? null;
+      }
+      if (!productId) {
+        productId = productByName.get(prodNameLower) ?? null;
+      }
+    }
+
+    const locLower = row.location?.trim().toLowerCase() ?? null;
+    const locationId = locLower ? (locationMap.get(locLower) ?? null) : null;
 
     const category = row.category ?? "CHUA_PHAN_LOAI";
     const failReason = category === "FAIL" ? (row.failReason ?? null) : null;
 
-    await getDb().transaction(async (tx) => {
-      const [inserted] = await tx
-        .insert(leads)
-        .values({
-          name: row.name?.trim() || null,
-          phone,
-          source: "MANUAL",
-          channelDetail: row.channelDetail ?? "FORM",
-          contactStatus: "CHUA_LIEN_HE",
-          category,
-          failReason,
-          projectId,
-          brandId,
-          productId,
-          locationId,
-          assigneeId,
-          careNote: row.careNote?.trim() || null,
-          callbackAt: row.callbackAt ? new Date(row.callbackAt) : null,
-          attrs,
-        })
-        .returning({ id: leads.id });
+    leadsToInsert.push({
+      name,
+      phone,
+      source: "MANUAL",
+      channelDetail: row.channelDetail ?? "FORM",
+      contactStatus: "CHUA_LIEN_HE",
+      category,
+      failReason,
+      projectId,
+      brandId,
+      productId,
+      locationId,
+      assigneeId,
+      careNote: row.careNote?.trim() || null,
+      callbackAt: parseCallbackAt(row.callbackAt),
+      attrs: mergedAttrs,
+    });
+  }
 
-      await tx.insert(activityLogs).values({
-        leadId: inserted.id,
-        kind: "CREATE",
-        message: "Import lead từ file Excel.",
+  if (leadsToInsert.length === 0) return { importedCount: 0 };
+
+  await db.transaction(async (tx) => {
+    const insertedRows = await tx
+      .insert(leads)
+      .values(leadsToInsert)
+      .returning({ id: leads.id });
+
+    if (insertedRows.length > 0) {
+      await tx.insert(activityLogs).values(
+        insertedRows.map((ins) => ({
+          leadId: ins.id,
+          kind: "CREATE" as const,
+          message: "Import lead từ file Excel.",
+          actorId: actor.appUserId ?? null,
+          actorName: actor.fullName,
+          byAi: false,
+        })),
+      );
+    }
+  });
+
+  return { importedCount: leadsToInsert.length };
+}
+
+export interface BulkUpdateLeadsPatch {
+  assignee?: string | null;
+  contactStatus?: ContactStatus;
+  category?: LeadCategory;
+  failReason?: FailReason | null;
+}
+
+export async function bulkUpdateLeads(
+  ids: string[],
+  patch: BulkUpdateLeadsPatch,
+  viewer: ViewerScope,
+  actor: Actor,
+): Promise<{ updatedCount: number }> {
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length === 0) return { updatedCount: 0 };
+
+  if (patch.assignee !== undefined && viewer.role !== "SUPER_ADMIN" && viewer.role !== "PARTNER_ADMIN") {
+    throw new Error("Chỉ quản trị viên mới có quyền giao phụ trách hàng loạt.");
+  }
+
+  const resolvedAssigneeId =
+    patch.assignee !== undefined
+      ? patch.assignee
+        ? await resolveAssigneeId(patch.assignee, viewer)
+        : null
+      : undefined;
+
+  const targetRows = await selectLeadRows().where(and(inArray(leads.id, uniqueIds), ...scopeConditions(viewer)));
+  const editableRows = targetRows.map(toLead).filter((lead) => canEditLead(viewer, lead));
+  if (editableRows.length === 0) return { updatedCount: 0 };
+
+  const now = new Date();
+  const values: Record<string, unknown> = { updatedAt: now };
+  if (resolvedAssigneeId !== undefined) values.assigneeId = resolvedAssigneeId;
+  if (patch.contactStatus !== undefined) {
+    values.contactStatus = patch.contactStatus;
+    if (patch.contactStatus === "DA_LIEN_HE") {
+      values.lastContactAt = now;
+    }
+  }
+  if (patch.category !== undefined) {
+    values.category = patch.category;
+    if (patch.category !== "FAIL" && patch.failReason === undefined) {
+      values.failReason = null;
+    }
+  }
+  if (patch.failReason !== undefined) {
+    values.failReason = patch.category === "FAIL" || patch.category === undefined ? patch.failReason : null;
+  }
+
+  const editableIds = editableRows.map((r) => r.id);
+  const logValues: (typeof activityLogs.$inferInsert)[] = [];
+
+  for (const row of editableRows) {
+    if (patch.assignee !== undefined && patch.assignee !== row.assignee) {
+      logValues.push({
+        leadId: row.id,
+        kind: "ASSIGN_CHANGE",
+        message: `Giao phụ trách hàng loạt: ${row.assignee ?? "Chưa giao"} → ${patch.assignee ?? "Chưa giao"}.`,
         actorId: actor.appUserId ?? null,
         actorName: actor.fullName,
         byAi: false,
       });
-    });
-    importedCount += 1;
+    }
+    if (patch.contactStatus !== undefined && patch.contactStatus !== row.contactStatus) {
+      logValues.push({
+        leadId: row.id,
+        kind: "STATUS_CHANGE",
+        message: `Đổi trạng thái hàng loạt: ${CONTACT_STATUS_LABEL[row.contactStatus]} → ${CONTACT_STATUS_LABEL[patch.contactStatus]}.`,
+        actorId: actor.appUserId ?? null,
+        actorName: actor.fullName,
+        byAi: false,
+      });
+    }
+    if (patch.category !== undefined && patch.category !== row.category) {
+      logValues.push({
+        leadId: row.id,
+        kind: "CATEGORY_CHANGE",
+        message: `Đổi phân loại hàng loạt: ${CATEGORY_LONG_LABEL[row.category]} → ${CATEGORY_LONG_LABEL[patch.category]}.`,
+        actorId: actor.appUserId ?? null,
+        actorName: actor.fullName,
+        byAi: false,
+      });
+    }
   }
 
-  return { importedCount };
+  await getDb().transaction(async (tx) => {
+    await tx
+      .update(leads)
+      .set(values)
+      .where(and(inArray(leads.id, editableIds), ...scopeConditions(viewer)));
+
+    if (logValues.length > 0) {
+      await tx.insert(activityLogs).values(logValues);
+    }
+  });
+
+  return { updatedCount: editableIds.length };
+}
+
+export async function autoAssignLeadsRoundRobin(
+  ids: string[],
+  viewer: ViewerScope,
+  actor: Actor,
+): Promise<{ assignedCount: number; staffCount: number }> {
+  if (viewer.role !== "SUPER_ADMIN" && viewer.role !== "PARTNER_ADMIN") {
+    throw new Error("Chỉ quản trị viên mới có quyền phân bổ tự động.");
+  }
+
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length === 0) return { assignedCount: 0, staffCount: 0 };
+
+  const staffNames = await listAssignableStaff(viewer);
+  if (staffNames.length === 0) {
+    throw new Error("Không có nhân viên sale đang hoạt động để phân bổ.");
+  }
+
+  const db = getDb();
+  const staffRows = await db
+    .select({ id: appUsers.id, fullName: appUsers.fullName })
+    .from(appUsers)
+    .where(and(inArray(appUsers.fullName, staffNames), eq(appUsers.active, true), eq(appUsers.role, "STAFF")))
+    .orderBy(asc(appUsers.fullName));
+
+  if (staffRows.length === 0) {
+    throw new Error("Không có nhân viên sale đang hoạt động để phân bổ.");
+  }
+
+  const targetRows = await selectLeadRows().where(and(inArray(leads.id, uniqueIds), ...scopeConditions(viewer)));
+  const rowById = new Map(targetRows.map((r) => [r.id, toLead(r)]));
+  const editableLeads = uniqueIds
+    .map((id) => rowById.get(id))
+    .filter((lead): lead is Lead => Boolean(lead && canEditLead(viewer, lead)));
+
+  if (editableLeads.length === 0) return { assignedCount: 0, staffCount: staffRows.length };
+
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    const logValues: (typeof activityLogs.$inferInsert)[] = [];
+    for (let i = 0; i < editableLeads.length; i++) {
+      const lead = editableLeads[i];
+      const staff = staffRows[i % staffRows.length];
+      await tx
+        .update(leads)
+        .set({ assigneeId: staff.id, updatedAt: now })
+        .where(eq(leads.id, lead.id));
+
+      logValues.push({
+        leadId: lead.id,
+        kind: "ASSIGN_CHANGE",
+        message: `Phân bổ tự động (Round-Robin) cho ${staff.fullName}.`,
+        actorId: actor.appUserId ?? null,
+        actorName: actor.fullName,
+        byAi: false,
+      });
+    }
+    if (logValues.length > 0) {
+      await tx.insert(activityLogs).values(logValues);
+    }
+  });
+
+  return { assignedCount: editableLeads.length, staffCount: staffRows.length };
 }
 
 export interface BrandOption {
@@ -1059,15 +1473,58 @@ export interface ReferenceData {
   attrFields?: AttrFieldRow[];
 }
 
-/** Danh mục cho các dropdown — đọc từ DB theo project (mặc định nếu không truyền). */
-export async function getReferenceData(projectId?: string): Promise<ReferenceData> {
+/** Danh mục cho các dropdown — đọc từ DB theo project và phạm vi người dùng. */
+export async function getReferenceData(projectId?: string | null, viewer?: ViewerScope): Promise<ReferenceData> {
   const db = getDb();
-  const project = projectId
-    ? await getProjectById(projectId)
-    : await getDefaultProject();
+  const effectiveProjectId = projectId ?? viewer?.activeProjectId ?? undefined;
+
+  if (viewer && viewer.role !== "SUPER_ADMIN" && !effectiveProjectId) {
+    return {
+      project: null,
+      labels: getCatalogLabels(null),
+      brands: [],
+      locations: [],
+      assignees: [],
+      productsByBrand: {},
+      attrFields: [],
+    };
+  }
+
+  const project = effectiveProjectId
+    ? await getProjectById(effectiveProjectId)
+    : !viewer || viewer.role === "SUPER_ADMIN"
+      ? await getDefaultProject()
+      : null;
   const resolvedProjectId = project?.id;
 
-  const [brandRows, locationRows, userRows, productRows] = await Promise.all([
+  if (viewer && viewer.role !== "SUPER_ADMIN" && !resolvedProjectId) {
+    return {
+      project: null,
+      labels: getCatalogLabels(null),
+      brands: [],
+      locations: [],
+      assignees: [],
+      productsByBrand: {},
+      attrFields: [],
+    };
+  }
+
+  const assigneesPromise = viewer
+    ? listAssignableStaff(viewer)
+    : db
+        .select({ name: appUsers.fullName })
+        .from(appUsers)
+        .where(
+          and(
+            eq(appUsers.active, true),
+            eq(appUsers.role, "STAFF"),
+            resolvedProjectId ? eq(appUsers.projectId, resolvedProjectId) : undefined,
+          ),
+        )
+        .orderBy(asc(appUsers.fullName))
+        .then((rows) => rows.map((r) => r.name));
+
+  const [brandRows, locationRows, assignees, productRows] = await Promise.all([
     db
       .select({ code: brands.code, name: brands.name })
       .from(brands)
@@ -1078,11 +1535,7 @@ export async function getReferenceData(projectId?: string): Promise<ReferenceDat
       .from(locations)
       .where(and(eq(locations.active, true), resolvedProjectId ? eq(locations.projectId, resolvedProjectId) : undefined))
       .orderBy(asc(locations.sortOrder), asc(locations.name)),
-    db
-      .select({ name: appUsers.fullName })
-      .from(appUsers)
-      .where(eq(appUsers.active, true))
-      .orderBy(asc(appUsers.fullName)),
+    assigneesPromise,
     db
       .select({ brand: brands.code, name: products.name })
       .from(products)
@@ -1103,7 +1556,7 @@ export async function getReferenceData(projectId?: string): Promise<ReferenceDat
     labels: getCatalogLabels(project),
     brands: brandRows,
     locations: locationRows.map((r) => r.name),
-    assignees: userRows.map((r) => r.name),
+    assignees,
     productsByBrand,
     attrFields,
   };

@@ -4,6 +4,7 @@ import * as React from "react";
 import { ArrowDown, ArrowUp, ChevronsUpDown, Download, Loader2 } from "lucide-react";
 
 import { ColumnVisibilityPopover } from "@/components/common/column-visibility";
+import { useToast } from "@/components/providers/toast-provider";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -62,6 +63,7 @@ export function PivotTab({
   /** Nhãn brand / sản phẩm / location theo project. */
   labels?: CatalogLabels;
 }) {
+  const toast = useToast();
   const PIVOT_DIMENSIONS = React.useMemo(() => pivotDimensionLabels(labels), [labels]);
   const [metrics, setMetrics] = React.useState<string[]>(DEFAULT_METRICS);
   const [sortBy, setSortBy] = React.useState<keyof PivotRow>("leads");
@@ -122,6 +124,10 @@ export function PivotTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: `bao-cao-${groupBy}`, sheets }),
       });
+      if (!response.ok) {
+        toast.error("Xuất báo cáo thất bại");
+        return;
+      }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -129,6 +135,8 @@ export function PivotTab({
       anchor.download = `bao-cao-chi-tiet.xlsx`;
       anchor.click();
       URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Xuất báo cáo thất bại");
     } finally {
       setExporting(false);
     }

@@ -4,6 +4,8 @@ import * as React from "react";
 import {
   ArrowRightLeft,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   FileText,
   History,
@@ -64,6 +66,31 @@ const CATEGORY_VALUES: LeadCategory[] = ["CHUA_PHAN_LOAI", "KHQT", "GDTD", "KHD"
 /** Sentinel cho "chưa chọn" — Radix Select không nhận value rỗng. */
 const NONE = "__NONE__";
 
+/** Chuyển chuỗi ISO sang định dạng YYYY-MM-DDTHH:mm theo giờ Việt Nam (+07:00) cho input datetime-local. */
+function toDateTimeLocalValue(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const vnMs = d.getTime() + 7 * 60 * 60 * 1000;
+  return new Date(vnMs).toISOString().slice(0, 16);
+}
+
+/** Chuyển giá trị từ input datetime-local (YYYY-MM-DDTHH:mm) sang ISO UTC theo múi giờ +07:00. */
+function fromDateTimeLocalValue(val: string): string | null {
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) {
+    const d = new Date(`${trimmed}:00+07:00`);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const d = new Date(`${trimmed}T23:59:59+07:00`);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  const d = new Date(trimmed);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 interface DraftState {
   source: LeadSource;
   channelDetail: ChannelDetail;
@@ -96,7 +123,7 @@ function toDraft(lead: Lead): DraftState {
     location: locationOf(lead),
     contactCount: lead.contactCount ?? 0,
     careNote: lead.careNote ?? "",
-    callbackAt: toDateInputValue(lead.callbackAt),
+    callbackAt: toDateTimeLocalValue(lead.callbackAt),
   };
 }
 
@@ -104,8 +131,8 @@ type DetailTab = "care" | "comments" | "details" | "logs";
 
 const CATEGORY_BADGE: Record<LeadCategory, { label: string; className: string }> = {
   KHQT: { label: "Khách quan tâm", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  GDTD: { label: "Giao dịch tự do", className: "border-blue-200 bg-blue-50 text-blue-700" },
-  KHD: { label: "Khách hàng đóng", className: "border-teal-200 bg-teal-50 text-teal-700" },
+  GDTD: { label: "Giao dịch theo dõi", className: "border-blue-200 bg-blue-50 text-blue-700" },
+  KHD: { label: "Ký hợp đồng", className: "border-violet-200 bg-violet-50 text-violet-700" },
   CHUA_LH_DUOC: { label: "Chưa LH được", className: "border-amber-200 bg-amber-50 text-amber-700" },
   FAIL: { label: "Không thành công", className: "border-rose-200 bg-rose-50 text-rose-700" },
   CHUA_PHAN_LOAI: { label: "Chưa phân loại", className: "border-slate-200 bg-slate-100 text-slate-600" },
@@ -133,6 +160,7 @@ const UNSAVED_CONFIRM = "Bạn có thay đổi chưa lưu. Đóng và bỏ các 
 interface LeadDetailDialogProps {
   lead: Lead | null;
   logs: ActivityLog[];
+  logsLoading?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Trả về false khi server từ chối, để dialog giữ nguyên chỗ đang sửa. */
@@ -143,6 +171,10 @@ interface LeadDetailDialogProps {
   readOnly?: boolean;
   /** Chỉ cho phép sửa tên & SĐT khi lead được tạo thủ công / import (`source === "MANUAL"`). */
   canEditProfile?: boolean;
+  canAssign?: boolean;
+  onPrev?: () => void;
+  onNext?: () => void;
+  onLogCall?: (kind: "CALL" | "MISSED_CALL", message: string) => Promise<boolean>;
   assignees?: readonly string[];
   /** Danh mục brand / sản phẩm / location và nhãn theo project. */
   catalog?: LeadCatalogOptions;
@@ -159,11 +191,16 @@ export function LeadDetailDialog({ lead, ...props }: LeadDetailDialogProps) {
 function LeadDetailDialogBody({
   lead,
   logs,
+  logsLoading = false,
   open,
   onOpenChange,
   onSave,
   readOnly = false,
   canEditProfile,
+  canAssign = true,
+  onPrev,
+  onNext,
+  onLogCall,
   assignees = ASSIGNEES,
   catalog = DEFAULT_LEAD_CATALOG,
   attrFields = [],
@@ -178,14 +215,16 @@ function LeadDetailDialogBody({
     setAttrDraft({ ...(lead.attrs ?? {}) });
   }
   const [justSaved, setJustSaved] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [loggingCall, setLoggingCall] = React.useState<"CALL" | "MISSED_CALL" | null>(null);
   const toast = useToast();
   const [editingProfile, setEditingProfile] = React.useState(false);
-  const [profile, setProfile] = React.useState({ name: lead.name ?? "", phone: lead.phone });
+  const [profile, setProfile] = React.useState(() => ({
+    name: lead.name ?? "",
+    phone: lead.phone,
+    createdAt: toDateTimeLocalValue(lead.createdAt),
+  }));
   const [savingProfile, setSavingProfile] = React.useState(false);
-  // Tạm đóng các tính năng gọi AI Copilot (Tóm tắt, Chuẩn hóa) theo yêu cầu:
-  // const [aiLoading, setAiLoading] = React.useState<"summarize" | "suggest_action" | "polish_note" | null>(null);
-  // const [aiResult, setAiResult] = React.useState<{ type: "summarize" | "suggest_action" | "polish_note"; text: string } | null>(null);
-  // const [copied, setCopied] = React.useState(false);
   const [aiPolishedNoteUsed] = React.useState(false);
   const { labels } = catalog;
 
@@ -213,35 +252,13 @@ function LeadDetailDialogBody({
     setJustSaved(false);
   };
 
-  /*
-  const callCopilot = async (action: "summarize" | "suggest_action" | "polish_note") => {
-    setAiLoading(action);
-    setCopied(false);
-    try {
-      const res = await fetch("/api/ai/lead-copilot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          leadId: lead.id,
-          action,
-          draftNote: draft.careNote,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        toast.error("Trợ lý AI chưa xử lý được", data.error ?? "Không thể xử lý lúc này.");
-      } else {
-        setAiResult({ type: action, text: data.result });
-      }
-    } catch {
-      toast.error("Lỗi kết nối tới trợ lý AI", "Kiểm tra mạng rồi thử lại.");
-    } finally {
-      setAiLoading(null);
-    }
-  };
-  */
+  const profileDirty =
+    profileEditable &&
+    (profile.name.trim() !== (lead.name ?? "") ||
+      normalizePhone(profile.phone) !== lead.phone ||
+      profile.createdAt !== toDateTimeLocalValue(lead.createdAt));
 
-  const dirty =
+  const formDirty =
     draft.source !== lead.source ||
     draft.channelDetail !== lead.channelDetail ||
     draft.assignee !== lead.assignee ||
@@ -252,8 +269,10 @@ function LeadDetailDialogBody({
     draft.location !== locationOf(lead) ||
     draft.contactCount !== lead.contactCount ||
     draft.careNote !== (lead.careNote ?? "") ||
-    draft.callbackAt !== toDateInputValue(lead.callbackAt) ||
+    draft.callbackAt !== toDateTimeLocalValue(lead.callbackAt) ||
     attrsDirty(attrFields, attrDraft, lead.attrs ?? {});
+
+  const dirty = formDirty || profileDirty;
 
   /** Chặn đóng nhầm (Esc, click nền, nút X) khi còn chỗ sửa chưa lưu. */
   const handleOpenChange = (next: boolean) => {
@@ -261,8 +280,66 @@ function LeadDetailDialogBody({
     onOpenChange(next);
   };
 
-  const handleSave = async () => {
+  const handleNavigate = (cb?: () => void) => {
+    if (!cb) return;
+    if (!readOnly && dirty && !window.confirm(UNSAVED_CONFIRM)) return;
+    cb();
+  };
+
+  const handleSave = React.useCallback(async () => {
+    if (readOnly || !dirty || saving) return;
+
     const entries: { kind: ActivityKind; message: string; byAi?: boolean }[] = [];
+    const savePatch: Partial<Lead> & { attrs?: Record<string, string> } = {
+      source: draft.source,
+      channelDetail: draft.channelDetail,
+      assignee: draft.assignee,
+      category: draft.category,
+      failReason: draft.category === "FAIL" ? draft.failReason : null,
+      brand: draft.brand,
+      product: draft.product,
+      location: draft.location ?? UNASSIGNED_ASSIGNMENT_LABEL,
+      contactCount: draft.contactCount,
+      careNote: draft.careNote || null,
+      callbackAt: fromDateTimeLocalValue(draft.callbackAt),
+      contactStatus: draft.careNote ? "DA_LIEN_HE" : lead.contactStatus,
+    };
+
+    if (profileDirty) {
+      const trimmedName = profile.name.trim();
+      const normalizedPhone = normalizePhone(profile.phone);
+      const phoneProblem = validatePhone(profile.phone);
+      if (!trimmedName) {
+        toast.error("Không lưu được thông tin khách", "Họ tên không được để trống.");
+        return;
+      }
+      if (trimmedName.length > 120) {
+        toast.error("Không lưu được thông tin khách", "Họ tên tối đa 120 ký tự.");
+        return;
+      }
+      if (phoneProblem) {
+        toast.error("Không lưu được thông tin khách", phoneProblem);
+        return;
+      }
+      if (trimmedName !== (lead.name ?? "")) {
+        savePatch.name = trimmedName;
+        entries.push({ kind: "NOTE", message: `Sửa họ tên: ${lead.name ?? "(trống)"} → ${trimmedName}.` });
+      }
+      if (phoneKey(normalizedPhone) !== phoneKey(lead.phone) || normalizedPhone !== lead.phone) {
+        savePatch.phone = normalizedPhone;
+        entries.push({ kind: "NOTE", message: `Sửa số điện thoại: ${lead.phone || "(trống)"} → ${normalizedPhone}.` });
+      }
+      if (profile.createdAt !== toDateTimeLocalValue(lead.createdAt)) {
+        const nextCreatedIso = fromDateTimeLocalValue(profile.createdAt);
+        if (!nextCreatedIso) {
+          toast.error("Không lưu được thông tin khách", "Thời gian tạo không hợp lệ.");
+          return;
+        }
+        savePatch.createdAt = nextCreatedIso;
+        entries.push({ kind: "NOTE", message: `Cập nhật thời gian tạo: ${formatDateTime(nextCreatedIso)}.` });
+      }
+    }
+
     if (draft.category !== lead.category) {
       entries.push({
         kind: "CATEGORY_CHANGE",
@@ -289,21 +366,6 @@ function LeadDetailDialogBody({
       });
     }
 
-    const savePatch: Partial<Lead> & { attrs?: Record<string, string> } = {
-      source: draft.source,
-      channelDetail: draft.channelDetail,
-      assignee: draft.assignee,
-      category: draft.category,
-      failReason: draft.category === "FAIL" ? draft.failReason : null,
-      brand: draft.brand,
-      product: draft.product,
-      location: draft.location ?? UNASSIGNED_ASSIGNMENT_LABEL,
-      contactCount: draft.contactCount,
-      careNote: draft.careNote || null,
-      callbackAt: draft.callbackAt ? new Date(draft.callbackAt).toISOString() : null,
-      contactStatus: draft.careNote ? "DA_LIEN_HE" : lead.contactStatus,
-    };
-
     if (attrFields.length > 0) {
       const attrsPatch: Record<string, string> = {};
       for (const field of attrFields) {
@@ -312,13 +374,53 @@ function LeadDetailDialogBody({
       savePatch.attrs = attrsPatch;
     }
 
-    const result = await onSave(savePatch, entries);
-    setJustSaved(result !== false);
-  };
+    setSaving(true);
+    try {
+      const result = await onSave(savePatch, entries);
+      if (result !== false) {
+        setJustSaved(true);
+        setEditingProfile(false);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    readOnly,
+    dirty,
+    saving,
+    draft,
+    lead,
+    profileDirty,
+    profile,
+    toast,
+    aiPolishedNoteUsed,
+    attrFields,
+    attrDraft,
+    onSave,
+  ]);
+
+  // Phím tắt Ctrl+S / Cmd+S để lưu nhanh
+  React.useEffect(() => {
+    if (!open || readOnly) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (dirty && !saving) {
+          void handleSave();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, readOnly, dirty, saving, handleSave]);
 
   const startEditProfile = () => {
     if (!profileEditable) return;
-    setProfile({ name: lead.name ?? "", phone: lead.phone });
+    setProfile({
+      name: lead.name ?? "",
+      phone: lead.phone,
+      createdAt: toDateTimeLocalValue(lead.createdAt),
+    });
     setEditingProfile(true);
   };
 
@@ -326,6 +428,10 @@ function LeadDetailDialogBody({
     const name = profile.name.trim();
     const phone = normalizePhone(profile.phone);
     const phoneProblem = validatePhone(profile.phone);
+    if (!name) {
+      toast.error("Không lưu được thông tin khách", "Họ tên không được để trống.");
+      return;
+    }
     if (name.length > 120) {
       toast.error("Không lưu được thông tin khách", "Họ tên tối đa 120 ký tự.");
       return;
@@ -338,12 +444,21 @@ function LeadDetailDialogBody({
     const patchNow: Partial<Lead> = {};
     const entries: { kind: ActivityKind; message: string }[] = [];
     if (name !== (lead.name ?? "")) {
-      patchNow.name = name || null;
-      entries.push({ kind: "NOTE", message: `Sửa họ tên: ${lead.name ?? "(trống)"} → ${name || "(trống)"}.` });
+      patchNow.name = name;
+      entries.push({ kind: "NOTE", message: `Sửa họ tên: ${lead.name ?? "(trống)"} → ${name}.` });
     }
     if (phoneKey(phone) !== phoneKey(lead.phone) || phone !== lead.phone) {
       patchNow.phone = phone;
       entries.push({ kind: "NOTE", message: `Sửa số điện thoại: ${lead.phone || "(trống)"} → ${phone}.` });
+    }
+    if (profile.createdAt !== toDateTimeLocalValue(lead.createdAt)) {
+      const nextCreatedIso = fromDateTimeLocalValue(profile.createdAt);
+      if (!nextCreatedIso) {
+        toast.error("Không lưu được thông tin khách", "Thời gian tạo không hợp lệ.");
+        return;
+      }
+      patchNow.createdAt = nextCreatedIso;
+      entries.push({ kind: "NOTE", message: `Cập nhật thời gian tạo: ${formatDateTime(nextCreatedIso)}.` });
     }
     if (entries.length === 0) {
       setEditingProfile(false);
@@ -360,6 +475,23 @@ function LeadDetailDialogBody({
     }
   };
 
+  const handleQuickLogCall = async (kind: "CALL" | "MISSED_CALL") => {
+    if (!onLogCall || loggingCall) return;
+    setLoggingCall(kind);
+    try {
+      const msg =
+        kind === "CALL"
+          ? "Đã gọi điện trao đổi với khách hàng."
+          : "Gọi điện nhưng khách không nghe máy (Gọi nhỡ).";
+      const ok = await onLogCall(kind, msg);
+      if (ok) {
+        setDraft((d) => ({ ...d, contactCount: d.contactCount + 1 }));
+      }
+    } finally {
+      setLoggingCall(null);
+    }
+  };
+
   const products = (draft.brand ? catalog.productsByBrand[draft.brand] : undefined) ?? [];
   const brandOptions = withCurrent(
     catalog.brands.map((b) => ({ value: b.code, label: b.name })),
@@ -373,6 +505,10 @@ function LeadDetailDialogBody({
     catalog.locations.map((l) => ({ value: l, label: l })),
     draft.location,
   );
+  const allowedSourceOptions =
+    lead.source === "MANUAL"
+      ? SOURCE_OPTIONS.filter((o) => o.value === "MANUAL")
+      : SOURCE_OPTIONS.filter((o) => o.value !== "MANUAL");
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -380,103 +516,199 @@ function LeadDetailDialogBody({
         {/* Header thông tin khách hàng — chừa chỗ bên phải cho nút đóng */}
         <div className="shrink-0 border-b border-border bg-white py-4 pl-6 pr-14">
           <div className="space-y-3">
-            <div className="min-w-0">
-              <DialogTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
-                <span className="truncate">{lead.name ?? "Khách chưa có tên"}</span>
-                {profileEditable && !editingProfile && (
-                  <button
-                    type="button"
-                    title="Sửa tên và số điện thoại"
-                    aria-label="Sửa tên và số điện thoại"
-                    onClick={startEditProfile}
-                    className="shrink-0 rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
-                  >
-                    <Pencil className="size-4" />
-                  </button>
-                )}
-              </DialogTitle>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <DialogTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
+                  <span className="truncate">{lead.name ?? "Khách chưa có tên"}</span>
+                  {profileEditable && !editingProfile && (
+                    <button
+                      type="button"
+                      title="Sửa tên, số điện thoại và ngày tạo"
+                      aria-label="Sửa tên, số điện thoại và ngày tạo"
+                      onClick={startEditProfile}
+                      className="shrink-0 rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
+                    >
+                      <Pencil className="size-4" />
+                    </button>
+                  )}
+                </DialogTitle>
 
-              {editingProfile ? (
-                <DialogDescription asChild>
-                  <form
-                    className="mt-2 space-y-2"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void saveProfile();
-                    }}
-                  >
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <div className="space-y-1">
-                        <Label className="text-[12px] text-muted-foreground">Họ tên</Label>
-                        <Input
-                          value={profile.name}
-                          onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))}
-                          placeholder="Khách chưa có tên"
-                          maxLength={120}
-                          autoFocus
-                          disabled={savingProfile}
-                        />
+                {editingProfile ? (
+                  <DialogDescription asChild>
+                    <form
+                      className="mt-2 space-y-2"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void saveProfile();
+                      }}
+                    >
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="space-y-1">
+                          <Label className="text-[12px] text-muted-foreground">Họ tên</Label>
+                          <Input
+                            value={profile.name}
+                            onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))}
+                            placeholder="Khách chưa có tên"
+                            maxLength={120}
+                            autoFocus
+                            disabled={savingProfile}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[12px] text-muted-foreground">Số điện thoại</Label>
+                          <Input
+                            value={profile.phone}
+                            onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
+                            inputMode="tel"
+                            className="tabular-nums"
+                            disabled={savingProfile}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[12px] text-muted-foreground">Thời gian tạo</Label>
+                          <Input
+                            type="datetime-local"
+                            value={profile.createdAt}
+                            onChange={(e) => setProfile((p) => ({ ...p, createdAt: e.target.value }))}
+                            disabled={savingProfile}
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-[12px] text-muted-foreground">Số điện thoại</Label>
-                        <Input
-                          value={profile.phone}
-                          onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
-                          inputMode="tel"
-                          className="tabular-nums"
-                          disabled={savingProfile}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button type="submit" size="sm" disabled={savingProfile} className="gap-1.5">
-                        {savingProfile ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                        Lưu thông tin khách
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={savingProfile}
-                        onClick={() => setEditingProfile(false)}
-                      >
-                        Hủy
-                      </Button>
-                    </div>
-                  </form>
-                </DialogDescription>
-              ) : (
-                <DialogDescription asChild>
-                  <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
-                    <span className="font-medium text-slate-800 tabular-nums">
-                      {lead.phone || "Chưa có số điện thoại"}
-                    </span>
-                    {lead.phone && (
-                      <div className="flex items-center gap-1.5">
-                        <button
+                      <div className="flex items-center gap-2">
+                        <Button type="submit" size="sm" disabled={savingProfile} className="gap-1.5">
+                          {savingProfile ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                          Lưu thông tin khách
+                        </Button>
+                        <Button
                           type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={savingProfile}
                           onClick={() => {
-                            void navigator.clipboard?.writeText(lead.phone);
-                            toast.info("Đã sao chép số điện thoại");
+                            setProfile({
+                              name: lead.name ?? "",
+                              phone: lead.phone,
+                              createdAt: toDateTimeLocalValue(lead.createdAt),
+                            });
+                            setEditingProfile(false);
                           }}
-                          title="Sao chép số"
-                          className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
                         >
-                          <Copy className="size-3.5" />
-                        </button>
-                        <a
-                          href={`https://zalo.me/${lead.phone}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          title="Nhắn Zalo"
-                          className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
-                        >
-                          <MessageSquare className="size-3.5" />
-                        </a>
+                          Hủy
+                        </Button>
                       </div>
-                    )}
-                  </div>
-                </DialogDescription>
+                    </form>
+                  </DialogDescription>
+                ) : (
+                  <DialogDescription asChild>
+                    <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                      {lead.phone ? (
+                        <a
+                          href={`tel:${lead.phone}`}
+                          className="font-medium text-slate-800 tabular-nums hover:text-primary hover:underline"
+                          title="Gọi trực tiếp"
+                        >
+                          {lead.phone}
+                        </a>
+                      ) : (
+                        <span className="font-medium text-slate-800">Chưa có số điện thoại</span>
+                      )}
+                      {lead.phone && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void navigator.clipboard?.writeText(lead.phone);
+                              toast.info("Đã sao chép số điện thoại");
+                            }}
+                            title="Sao chép số"
+                            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
+                          >
+                            <Copy className="size-3.5" />
+                          </button>
+                          <a
+                            href={`tel:${lead.phone}`}
+                            title="Gọi điện"
+                            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
+                          >
+                            <Phone className="size-3.5" />
+                          </a>
+                          <a
+                            href={`https://zalo.me/${lead.phone}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Nhắn Zalo"
+                            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
+                          >
+                            <MessageSquare className="size-3.5" />
+                          </a>
+                          {!readOnly && onLogCall && (
+                            <div className="ml-1 flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={Boolean(loggingCall)}
+                                onClick={() => void handleQuickLogCall("CALL")}
+                                className="h-6 gap-1 px-2 text-[11px] text-emerald-700 hover:bg-emerald-50"
+                              >
+                                {loggingCall === "CALL" ? (
+                                  <Loader2 className="size-3 animate-spin" />
+                                ) : (
+                                  <PhoneCall className="size-3" />
+                                )}
+                                Ghi cuộc gọi
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={Boolean(loggingCall)}
+                                onClick={() => void handleQuickLogCall("MISSED_CALL")}
+                                className="h-6 gap-1 px-2 text-[11px] text-rose-700 hover:bg-rose-50"
+                              >
+                                {loggingCall === "MISSED_CALL" ? (
+                                  <Loader2 className="size-3 animate-spin" />
+                                ) : (
+                                  <PhoneMissed className="size-3" />
+                                )}
+                                Gọi nhỡ
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </DialogDescription>
+                )}
+              </div>
+
+              {(onPrev || onNext) && (
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!onPrev}
+                    onClick={() => handleNavigate(onPrev)}
+                    title="Lead trước"
+                    className="h-7 gap-1 px-2 text-xs"
+                  >
+                    <ChevronLeft className="size-3.5" />
+                    Trước
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!onNext}
+                    onClick={() => handleNavigate(onNext)}
+                    title="Lead tiếp theo"
+                    className="h-7 gap-1 px-2 text-xs"
+                  >
+                    Tiếp
+                    <ChevronRight className="size-3.5" />
+                  </Button>
+                </div>
               )}
             </div>
 
@@ -564,6 +796,7 @@ function LeadDetailDialogBody({
                         <Select
                           value={draft.assignee ?? NONE}
                           onValueChange={(v) => patch({ assignee: v === NONE ? null : v })}
+                          disabled={readOnly || !canAssign}
                         >
                           <SelectTrigger size="sm" className="w-48 bg-white">
                             <SelectValue />
@@ -587,12 +820,16 @@ function LeadDetailDialogBody({
                     </div>
                     <dl className="space-y-3 text-sm">
                       <RowControl label="Nguồn">
-                        <Select value={draft.source} onValueChange={(v) => patch({ source: v as LeadSource })}>
+                        <Select
+                          value={draft.source}
+                          onValueChange={(v) => patch({ source: v as LeadSource })}
+                          disabled={readOnly || lead.source === "MANUAL"}
+                        >
                           <SelectTrigger size="sm" className="w-48 bg-white">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {SOURCE_OPTIONS.map((o) => (
+                            {allowedSourceOptions.map((o) => (
                               <SelectItem key={o.value} value={o.value}>
                                 {o.label}
                               </SelectItem>
@@ -706,7 +943,7 @@ function LeadDetailDialogBody({
                               {brandOptions.map((o) => (
                                 <SelectItem key={o.value} value={o.value}>
                                   {o.label}
-                                </SelectItem>
+                                                              </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -739,9 +976,9 @@ function LeadDetailDialogBody({
                         </div>
 
                         <div className="space-y-1.5">
-                          <Label className="text-[13px] font-medium">Hẹn ngày gọi lại</Label>
+                          <Label className="text-[13px] font-medium">Hẹn gọi lại</Label>
                           <Input
-                            type="date"
+                            type="datetime-local"
                             value={draft.callbackAt}
                             onChange={(e) => patch({ callbackAt: e.target.value })}
                           />
@@ -754,48 +991,18 @@ function LeadDetailDialogBody({
                           <Label className="text-[13px] font-medium">Ghi chú nội dung đã liên hệ</Label>
                           {!readOnly && (
                             <div className="flex items-center gap-1">
-                              {/* Tạm đóng các nút gọi AI Copilot (Tóm tắt, Chuẩn hóa):
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 gap-1 px-1.5 text-[11px] text-violet-600 hover:bg-violet-50 hover:text-violet-700"
-                                disabled={Boolean(aiLoading)}
-                                onClick={() => callCopilot("summarize")}
-                              >
-                                {aiLoading === "summarize" ? (
-                                  <Loader2 className="size-3 animate-spin" />
-                                ) : (
-                                  <Sparkles className="size-3" />
-                                )}
-                                Tóm tắt
-                              </Button>
-                              */}
                               <SaleNoteTemplatePicker
                                 productLabel={draft.product || draft.brand || labels.product.toLowerCase()}
                                 locationLabel={draft.location || labels.location.toLowerCase()}
                                 customerName={lead.name || "anh/chị"}
-                                onSelectTemplate={(text) => patch({ careNote: text })}
+                                onSelectTemplate={(text) =>
+                                  patch({
+                                    careNote: draft.careNote.trim()
+                                      ? `${draft.careNote.trim()}\n${text}`
+                                      : text,
+                                  })
+                                }
                               />
-                              {/*
-                              {draft.careNote.trim() && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 gap-1 px-1.5 text-[11px] text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
-                                  disabled={Boolean(aiLoading)}
-                                  onClick={() => callCopilot("polish_note")}
-                                >
-                                  {aiLoading === "polish_note" ? (
-                                    <Loader2 className="size-3 animate-spin" />
-                                  ) : (
-                                    <Wand2 className="size-3" />
-                                  )}
-                                  Chuẩn hóa
-                                </Button>
-                              )}
-                              */}
                             </div>
                           )}
                         </div>
@@ -806,14 +1013,6 @@ function LeadDetailDialogBody({
                           placeholder={`VD: Đã tư vấn thông tin ${labels.product.toLowerCase()}, hẹn khách tuần sau ghé ${labels.location.toLowerCase()}...`}
                           className="min-h-24 flex-1 leading-relaxed"
                         />
-
-                        {/* Tạm đóng khung kết quả AI Copilot:
-                        {aiResult && (
-                          <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-2.5 text-[12px] shadow-xs">
-                            ...
-                          </div>
-                        )}
-                        */}
                       </div>
                     </div>
                   </div>
@@ -937,7 +1136,12 @@ function LeadDetailDialogBody({
                   </span>
                 </div>
 
-                {logs.length === 0 ? (
+                {logsLoading ? (
+                  <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border py-10 text-xs text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    Đang tải nhật ký hoạt động...
+                  </div>
+                ) : logs.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">
                     Chưa có nhật ký ghi nhận.
                   </div>
@@ -972,7 +1176,7 @@ function LeadDetailDialogBody({
             {readOnly ? (
               <span className="text-slate-500">Chế độ chỉ xem. Lead này chưa được giao cho bạn.</span>
             ) : dirty ? (
-              <span className="font-medium text-amber-600">• Có thông tin chưa lưu</span>
+              <span className="font-medium text-amber-600">• Có thông tin chưa lưu (Ctrl+S để lưu)</span>
             ) : justSaved ? (
               <span className="font-medium text-emerald-600">✓ Đã lưu tất cả thay đổi</span>
             ) : (
@@ -989,10 +1193,10 @@ function LeadDetailDialogBody({
                 type="button"
                 size="sm"
                 onClick={() => void handleSave()}
-                disabled={!dirty}
+                disabled={!dirty || saving}
                 className="gap-1.5"
               >
-                <Save className="size-4" />
+                {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
                 Lưu thay đổi
               </Button>
             )}

@@ -11,6 +11,12 @@ import { Label } from "@/components/ui/label";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { useToast } from "@/components/providers/toast-provider";
 
+/**
+ * Tạm khóa đăng ký công khai trên giao diện đăng nhập.
+ * Khi cần mở lại đăng ký tự do, đổi hằng số này thành `true` (và đặt `ENABLE_PUBLIC_SIGNUP=true` ở server).
+ */
+const ENABLE_PUBLIC_SIGNUP = false;
+
 export function LoginForm({ configured }: { configured: boolean }) {
   const toast = useToast();
   const router = useRouter();
@@ -23,7 +29,8 @@ export function LoginForm({ configured }: { configured: boolean }) {
 
   const goNext = () => {
     const next = searchParams.get("next");
-    router.replace(next && next.startsWith("/") ? next : "/leads");
+    const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/leads";
+    router.replace(safeNext);
     router.refresh();
   };
 
@@ -47,6 +54,11 @@ export function LoginForm({ configured }: { configured: boolean }) {
       }
 
       if (mode === "signup") {
+        if (!ENABLE_PUBLIC_SIGNUP) {
+          toast.error("Đăng ký công khai đã tắt. Vui lòng liên hệ quản trị viên để được cấp tài khoản.");
+          setMode("signin");
+          return;
+        }
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -90,7 +102,7 @@ export function LoginForm({ configured }: { configured: boolean }) {
         <CardDescription>
           {mode === "forgot"
             ? "Nhập email để nhận link đặt lại mật khẩu."
-            : mode === "signin"
+            : mode === "signin" || !ENABLE_PUBLIC_SIGNUP
               ? "Đăng nhập SEMTOP Marketing CRM."
               : "Tạo tài khoản mới (lần đầu)."}
         </CardDescription>
@@ -105,7 +117,7 @@ export function LoginForm({ configured }: { configured: boolean }) {
           </p>
         ) : (
           <form className="space-y-3" onSubmit={submit}>
-            {mode === "signup" && (
+            {ENABLE_PUBLIC_SIGNUP && mode === "signup" && (
               <div className="space-y-1.5">
                 <Label htmlFor="fullName">Họ tên</Label>
                 <Input
@@ -168,15 +180,29 @@ export function LoginForm({ configured }: { configured: boolean }) {
               </button>
             )}
 
-            <button
-              type="button"
-              className="w-full text-center text-[12px] text-muted-foreground underline-offset-2 hover:underline"
-              onClick={() => {
-                setMode((current) => (current === "signin" ? "signup" : "signin"));
-              }}
-            >
-              {mode === "signin" ? "Chưa có tài khoản? Đăng ký" : "Đã có tài khoản? Đăng nhập"}
-            </button>
+            {mode === "forgot" && (
+              <button
+                type="button"
+                className="w-full text-center text-[12px] text-muted-foreground underline-offset-2 hover:underline"
+                onClick={() => {
+                  setMode("signin");
+                }}
+              >
+                Đã có tài khoản? Đăng nhập
+              </button>
+            )}
+
+            {ENABLE_PUBLIC_SIGNUP && mode !== "forgot" && (
+              <button
+                type="button"
+                className="w-full text-center text-[12px] text-muted-foreground underline-offset-2 hover:underline"
+                onClick={() => {
+                  setMode((current) => (current === "signin" ? "signup" : "signin"));
+                }}
+              >
+                {mode === "signin" ? "Chưa có tài khoản? Đăng ký" : "Đã có tài khoản? Đăng nhập"}
+              </button>
+            )}
           </form>
         )}
       </CardContent>

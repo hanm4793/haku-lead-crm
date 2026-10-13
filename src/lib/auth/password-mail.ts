@@ -3,13 +3,16 @@ import { headers } from "next/headers";
 import { supabaseServiceRoleKey, supabaseUrl } from "@/lib/supabase/env";
 
 export async function authRedirectOrigin() {
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
+  }
   const headerList = await headers();
   const origin = headerList.get("origin");
-  if (origin) return origin;
+  if (origin) return origin.replace(/\/$/, "");
   const host = headerList.get("x-forwarded-host") ?? headerList.get("host");
   const proto = headerList.get("x-forwarded-proto") ?? "http";
   if (host) return `${proto}://${host}`;
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  return "http://localhost:3000";
 }
 
 function adminAuthClient() {

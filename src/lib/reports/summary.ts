@@ -1,11 +1,11 @@
 import type { ViewerScope } from "@/lib/db/leads-repo";
 import {
+  funnelFromKpis,
   queryByProduct,
   queryBySource,
   queryCallList,
   queryCategoryDistribution,
   queryDailySeries,
-  queryFunnel,
   queryPivot,
   queryReportKpis,
 } from "@/lib/db/report-queries";
@@ -73,37 +73,36 @@ export async function buildReportSummary(
     };
   }
 
+  const exportDims = Array.from(new Set<PivotDimension>([groupBy, ...EXPORT_PIVOT_DIMENSIONS]));
+
   const [
     kpis,
     previousKpis,
     daily,
-    funnel,
     distribution,
     bySource,
     byModel,
     callList,
-    currentPivot,
+    splitPivot,
     ...exportPivots
   ] = await Promise.all([
     queryReportKpis(filters, viewer, now),
     previousFilters ? queryReportKpis(previousFilters, viewer, now) : Promise.resolve(null),
     queryDailySeries(filters, viewer, now),
-    queryFunnel(filters, viewer, now),
     queryCategoryDistribution(filters, viewer, now),
     queryBySource(filters, viewer, now),
     queryByProduct(filters, viewer, now, 12),
     queryCallList(filters, viewer, now, 25),
-    queryPivot(filters, viewer, now, groupBy, splitBy),
-    ...Array.from(new Set<PivotDimension>([groupBy, ...EXPORT_PIVOT_DIMENSIONS])).map((dim) =>
-      queryPivot(filters, viewer, now, dim, null),
-    ),
+    splitBy ? queryPivot(filters, viewer, now, groupBy, splitBy) : Promise.resolve(null),
+    ...exportDims.map((dim) => queryPivot(filters, viewer, now, dim, null)),
   ]);
 
-  const exportDims = Array.from(new Set<PivotDimension>([groupBy, ...EXPORT_PIVOT_DIMENSIONS]));
   const byDimension: Record<string, PivotResult> = {};
   exportDims.forEach((dim, index) => {
     byDimension[dim] = exportPivots[index];
   });
+  const currentPivot = splitPivot ?? byDimension[groupBy];
+  const funnel = funnelFromKpis(kpis);
 
   return {
     kpis,

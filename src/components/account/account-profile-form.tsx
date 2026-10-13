@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
 import { updateOwnProfileAction } from "@/app/account/actions";
@@ -20,8 +21,14 @@ export function AccountProfileForm({
   roleLabel: string;
   canEdit: boolean;
 }) {
+  const router = useRouter();
   const toast = useToast();
   const [name, setName] = React.useState(fullName);
+  const [prevFullName, setPrevFullName] = React.useState(fullName);
+  if (fullName !== prevFullName) {
+    setPrevFullName(fullName);
+    setName(fullName);
+  }
   const [pending, setPending] = React.useState(false);
 
   const dirty = name.trim() !== fullName.trim();
@@ -37,6 +44,7 @@ export function AccountProfileForm({
       return;
     }
     toast.success("Đã lưu hồ sơ.");
+    router.refresh();
   };
 
   return (

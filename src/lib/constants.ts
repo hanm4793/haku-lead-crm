@@ -164,6 +164,9 @@ export const UNASSIGNED_MODEL_LABEL = UNASSIGNED_PRODUCT_LABEL;
 /** Location / phòng BH / brand chưa gán (lead Meta hoặc chưa phân bổ). */
 export const UNASSIGNED_ASSIGNMENT_LABEL = "Chưa phân bổ";
 
+/** Giá trị sentinel để lọc các lead chưa giao nhân viên phụ trách. */
+export const UNASSIGNED_FILTER_VALUE = "__UNASSIGNED__";
+
 export const SOURCE_LABEL: Record<LeadSource, string> = Object.fromEntries(
   SOURCE_OPTIONS.map((o) => [o.value, o.label]),
 ) as Record<LeadSource, string>;
@@ -181,7 +184,7 @@ export const CONTACT_STATUS_LABEL: Record<ContactStatus, string> = Object.fromEn
 ) as Record<ContactStatus, string>;
 
 export const CATEGORY_SHORT_LABEL: Record<LeadCategory, string> = {
-  CHUA_PHAN_LOAI: "—",
+  CHUA_PHAN_LOAI: "Chưa phân loại",
   KHQT: "KHQT",
   GDTD: "GDTD",
   KHD: "KHĐ",

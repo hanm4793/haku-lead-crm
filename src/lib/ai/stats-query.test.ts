@@ -188,6 +188,30 @@ describe("parseStatsQuestion", () => {
     expect(query?.filters.sources).toEqual(["MANUAL"]);
     expect(query?.dataset).toBe("leads");
   });
+
+  it("maps source keywords to valid leadSourceEnum values", () => {
+    expect(parseStatsQuestion("Bao nhiêu lead từ TikTok tháng này?", now)?.filters.sources).toEqual(["TIKTOK"]);
+    expect(parseStatsQuestion("Bao nhiêu lead từ Zalo tháng này?", now)?.filters.sources).toEqual(["ZALO"]);
+    expect(parseStatsQuestion("Bao nhiêu lead từ landing page tháng này?", now)?.filters.sources).toEqual(["WEBSITE"]);
+    expect(parseStatsQuestion("Bao nhiêu lead từ website tháng này?", now)?.filters.sources).toEqual(["WEBSITE"]);
+    expect(parseStatsQuestion("Bao nhiêu lead từ Google tháng này?", now)?.filters.sources).toEqual(["GOOGLE"]);
+    expect(parseStatsQuestion("Bao nhiêu lead từ Hotline tháng này?", now)?.filters.sources).toEqual(["HOTLINE"]);
+    expect(parseStatsQuestion("Bao nhiêu lead từ Facebook tháng này?", now)?.filters.sources).toEqual(["FACEBOOK"]);
+    expect(parseStatsQuestion("Bao nhiêu lead nhập tay tháng này?", now)?.filters.sources).toEqual(["MANUAL"]);
+  });
+
+  it("derives current Vietnam date (UTC+7) when server clock is between 00:00 and 06:59 Vietnam time", () => {
+    // 2026-09-25T18:30:00.000Z is 2026-09-26 01:30:00 in Vietnam (UTC+7)
+    const earlyMorningVn = new Date("2026-09-25T18:30:00.000Z");
+    expect(parseTimeRange("hôm nay", earlyMorningVn)).toMatchObject({
+      dateFrom: "2026-09-26",
+      dateTo: "2026-09-26",
+    });
+    expect(parseTimeRange("hôm qua", earlyMorningVn)).toMatchObject({
+      dateFrom: "2026-09-25",
+      dateTo: "2026-09-25",
+    });
+  });
 });
 
 describe("multi-turn conversational inheritance", () => {
@@ -368,7 +392,7 @@ describe("formatStatsReply", () => {
     expect(reply).toContain("Tổng lead: 26");
     expect(reply).toContain("tăng 6");
     expect(reply).toContain("06/08/2026–31/08/2026");
-    expect(reply).toContain("Peugeot Hà Nam: 26 lead");
+    expect(reply).toContain("Peugeot Hà Nam: 26 lead | Đã LH: 38.5% | KHQT: 40.0% | Loại: 11.5%");
   });
 });
 

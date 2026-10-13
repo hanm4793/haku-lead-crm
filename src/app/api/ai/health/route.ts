@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { getModelId, getProvider, isAiConfigured, PROVIDERS } from "@/lib/ai/model";
+import { canManageSettings } from "@/lib/auth/roles";
+import { getScopedViewer } from "@/lib/auth/viewer";
 
 export const runtime = "nodejs";
 
@@ -10,6 +12,11 @@ export const runtime = "nodejs";
  * khác nhau theo thời điểm tạo tài khoản. Không bao giờ trả về giá trị API key.
  */
 export async function GET() {
+  const viewer = await getScopedViewer();
+  if (!viewer || !canManageSettings(viewer.role)) {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  }
+
   const provider = getProvider();
   const modelId = getModelId(provider);
   const configured = isAiConfigured(provider);

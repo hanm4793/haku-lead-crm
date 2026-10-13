@@ -50,6 +50,21 @@ export function AppShell({
   const [collapsed, setCollapsed] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
 
+  React.useEffect(() => {
+    const mql = window.matchMedia("(max-width: 767px)");
+    const raf = window.requestAnimationFrame(() => {
+      if (mql.matches) setCollapsed(true);
+    });
+    const handleChange = (event: MediaQueryListEvent) => {
+      if (event.matches) setCollapsed(true);
+    };
+    mql.addEventListener("change", handleChange);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      mql.removeEventListener("change", handleChange);
+    };
+  }, []);
+
   if (pathname.startsWith("/login")) return <>{children}</>;
 
   const user = viewer ?? {
@@ -68,10 +83,22 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen">
+      {!collapsed && (
+        <>
+          <div className="w-[4.25rem] shrink-0 md:hidden" aria-hidden />
+          <div
+            className="fixed inset-0 z-30 bg-black/40 md:hidden"
+            onClick={() => setCollapsed(true)}
+            aria-hidden
+          />
+        </>
+      )}
       <aside
         className={cn(
           "sticky top-0 flex h-screen shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-200",
-          collapsed ? "w-[4.25rem]" : "w-60",
+          collapsed
+            ? "w-[4.25rem]"
+            : "w-60 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:shadow-xl",
         )}
       >
         <div
@@ -106,6 +133,11 @@ export function AppShell({
                 key={item.href}
                 href={item.href}
                 title={collapsed ? item.label : undefined}
+                onClick={() => {
+                  if (typeof window !== "undefined" && window.innerWidth < 768) {
+                    setCollapsed(true);
+                  }
+                }}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                   active
@@ -123,7 +155,12 @@ export function AppShell({
           {showAi && (
             <button
               type="button"
-              onClick={() => setAiOpen(true)}
+              onClick={() => {
+                if (typeof window !== "undefined" && window.innerWidth < 768) {
+                  setCollapsed(true);
+                }
+                setAiOpen(true);
+              }}
               title={collapsed ? "Trợ lý AI" : undefined}
               className={cn(
                 "mt-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white",

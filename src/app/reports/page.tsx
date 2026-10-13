@@ -1,4 +1,4 @@
-﻿import { redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 
 import { NowProvider } from "@/components/providers/now-provider";
 import { ReportsPage } from "@/components/reports/reports-page";
@@ -70,6 +70,7 @@ export default async function Page() {
         assignees={assignees}
         catalog={catalog}
         attrFields={attrFields}
+        editor={{ role: viewer.role, appUserId: viewer.appUserId }}
       />
     </NowProvider>
   );

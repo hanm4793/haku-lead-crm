@@ -43,7 +43,10 @@ const mentionSchema = z.object({
 });
 
 const requestSchema = z.object({
-  messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() })).min(1),
+  messages: z
+    .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(8000) }))
+    .min(1)
+    .max(60),
   mentions: z.array(mentionSchema).max(8).optional(),
   lastSpec: exportSpecSchema.nullable().optional(),
   lastStats: lastStatsSchema.nullable().optional(),
@@ -72,11 +75,12 @@ async function buildPreview(spec: ExportSpec, viewer: ViewerScope, now: Date): P
   // Preview chỉ cần số liệu — dùng SQL aggregation, không kéo từng dòng lead.
   const filters = exportSpecToFilters(spec);
   if (spec.filters?.overdueOnly) filters.tab = "QUA_HAN";
+  const extra = spec.filters?.dateField ? { dateField: spec.filters.dateField } : undefined;
 
   const [kpis, sheets] = await Promise.all([
-    queryReportKpis(filters, viewer, now),
+    queryReportKpis(filters, viewer, now, extra),
     spec.splitSheetsBy
-      ? querySheetCounts(filters, viewer, now, spec.splitSheetsBy as PivotDimension)
+      ? querySheetCounts(filters, viewer, now, spec.splitSheetsBy as PivotDimension, extra)
       : Promise.resolve([] as { name: string; count: number }[]),
   ]);
 

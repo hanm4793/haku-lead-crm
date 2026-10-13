@@ -1,7 +1,7 @@
-﻿import { redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 
 import { UsersAdmin } from "@/components/users/users-admin";
-import { canManageUsers } from "@/lib/auth/roles";
+import { canManageUsers, isPageVisible } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
@@ -38,7 +38,7 @@ export default async function Page() {
     listFacebookPages(projectId ? { projectId } : undefined),
   ]);
   const pages = facebookPages
-    .filter((page) => page.active)
+    .filter((page) => page.active && isPageVisible(viewer, page.facebookPageId))
     .map((page) => ({
       value: page.facebookPageId,
       label: page.name?.trim() || page.facebookPageId,

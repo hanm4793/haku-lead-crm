@@ -1,14 +1,20 @@
-import type { AdInsightRow, InsightRow } from "@/lib/db/insights-repo";
+import type { AdInsightRow, CrmAttributionRow, InsightRow } from "@/lib/db/insights-repo";
+
+export type CampaignBrandOption = {
+  id: string;
+  label: string;
+  aliases?: readonly string[];
+};
 
 export const CAMPAIGN_BRANDS = [
-  { id: "KIA", label: "Kia" },
-  { id: "MAZDA", label: "Mazda" },
-  { id: "PEUGEOT", label: "Peugeot" },
-  { id: "BMW", label: "BMW" },
-  { id: "OTHER", label: "Khác" },
-] as const;
+  { id: "KIA", label: "Kia", aliases: ["kia"] },
+  { id: "MAZDA", label: "Mazda", aliases: ["mazda"] },
+  { id: "PEUGEOT", label: "Peugeot", aliases: ["peugeot", "peu"] },
+  { id: "BMW", label: "BMW", aliases: ["bmw"] },
+  { id: "OTHER", label: "Khác", aliases: [] },
+] as const satisfies readonly CampaignBrandOption[];
 
-export type CampaignBrandId = (typeof CAMPAIGN_BRANDS)[number]["id"];
+export type CampaignBrandId = (typeof CAMPAIGN_BRANDS)[number]["id"] | (string & {});
 
 export type InsightFilter = {
   from: string | null;
@@ -41,8 +47,83 @@ export type DailyPoint = {
   leads: number;
 };
 
-export function campaignBrand(name: string | null): CampaignBrandId {
+export type CrmAttributionSummary = {
+  crmLeads: number;
+  contacted: number;
+  khqt: number;
+  khd: number;
+  cpql: number | null;
+  cps: number | null;
+};
+
+export function foldText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase();
+}
+
+export function buildCampaignBrands(
+  configuredBrands?: ReadonlyArray<{ code: string; name: string }>,
+  campaignNames?: ReadonlyArray<string | null>,
+): CampaignBrandOption[] {
+  if (configuredBrands && configuredBrands.length > 0) {
+    const items: CampaignBrandOption[] = configuredBrands.map((brand) => {
+      const id = brand.code.trim().toUpperCase();
+      const aliases = new Set<string>([brand.code.trim(), brand.name.trim()]);
+      if (id === "PEUGEOT") aliases.add("peu");
+      return {
+        id,
+        label: brand.name.trim() || id,
+        aliases: [...aliases].filter(Boolean),
+      };
+    });
+    if (!items.some((item) => item.id === "OTHER")) {
+      items.push({ id: "OTHER", label: "Khác", aliases: [] });
+    }
+    return items;
+  }
+
+  if (campaignNames && campaignNames.length > 0) {
+    const detected = new Set<string>();
+    for (const name of campaignNames) {
+      detected.add(campaignBrand(name));
+    }
+    const matching = CAMPAIGN_BRANDS.filter((b) => b.id === "OTHER" || detected.has(b.id));
+    if (matching.length > 1) return [...matching];
+  }
+
+  return [...CAMPAIGN_BRANDS];
+}
+
+function matchesBrandToken(foldedText: string, token: string): boolean {
+  const foldedToken = foldText(token.trim());
+  if (!foldedToken) return false;
+  if (foldedToken.length <= 3) {
+    const escaped = foldedToken.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(foldedText);
+  }
+  return foldedText.includes(foldedToken);
+}
+
+export function campaignBrand(
+  name: string | null,
+  brandOptions?: readonly CampaignBrandOption[],
+): CampaignBrandId {
   const value = name ?? "";
+  if (brandOptions && brandOptions.length > 0) {
+    const folded = foldText(value);
+    for (const option of brandOptions) {
+      if (option.id === "OTHER") continue;
+      const tokens = option.aliases?.length ? option.aliases : [option.id, option.label];
+      if (tokens.some((token) => matchesBrandToken(folded, token))) {
+        return option.id;
+      }
+    }
+    return "OTHER";
+  }
   if (/bmw/i.test(value)) return "BMW";
   if (/mazda/i.test(value)) return "MAZDA";
   if (/kia/i.test(value)) return "KIA";
@@ -50,17 +131,17 @@ export function campaignBrand(name: string | null): CampaignBrandId {
   return "OTHER";
 }
 
-export function foldText(value: string): string {
-  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-}
-
-export function filterInsightRows(rows: InsightRow[], filter: InsightFilter): InsightRow[] {
+export function filterInsightRows(
+  rows: InsightRow[],
+  filter: InsightFilter,
+  brandOptions?: readonly CampaignBrandOption[],
+): InsightRow[] {
   const query = foldText(filter.query.trim());
   return rows.filter((row) => {
     if (filter.from && row.date < filter.from) return false;
     if (filter.to && row.date > filter.to) return false;
     if (filter.campaignIds.length > 0 && !filter.campaignIds.includes(row.objectId)) return false;
-    if (filter.brands.length > 0 && !filter.brands.includes(campaignBrand(row.objectName))) return false;
+    if (filter.brands.length > 0 && !filter.brands.includes(campaignBrand(row.objectName, brandOptions))) return false;
     if (!query) return true;
     return foldText(`${row.objectName ?? ""} ${row.objectId}`).includes(query);
   });
@@ -70,7 +151,10 @@ function amount(value: number | null): number {
   return value ?? 0;
 }
 
-export function summarizeCampaigns(rows: InsightRow[]): CampaignSummary[] {
+export function summarizeCampaigns(
+  rows: InsightRow[],
+  brandOptions?: readonly CampaignBrandOption[],
+): CampaignSummary[] {
   const grouped = new Map<string, CampaignSummary>();
 
   for (const row of rows) {
@@ -79,7 +163,7 @@ export function summarizeCampaigns(rows: InsightRow[]): CampaignSummary[] {
       grouped.set(row.objectId, {
         objectId: row.objectId,
         objectName: row.objectName,
-        brand: campaignBrand(row.objectName),
+        brand: campaignBrand(row.objectName, brandOptions),
         days: 1,
         spend: amount(row.spend),
         impressions: amount(row.impressions),
@@ -98,7 +182,10 @@ export function summarizeCampaigns(rows: InsightRow[]): CampaignSummary[] {
     current.impressions += amount(row.impressions);
     current.clicks += amount(row.clicks);
     current.leads += amount(row.leads);
-    if (row.objectName) current.objectName = row.objectName;
+    if (row.objectName) {
+      current.objectName = row.objectName;
+      current.brand = campaignBrand(row.objectName, brandOptions);
+    }
     if (row.date < current.from) current.from = row.date;
     if (row.date > current.to) current.to = row.date;
   }
@@ -145,6 +232,37 @@ export function dashboardTotals(rows: InsightRow[]) {
   };
 }
 
+export function summarizeCrmAttribution(
+  crmRows: CrmAttributionRow[],
+  filter: { from: string | null; to: string | null; pageIds: string[] },
+  spend: number | null,
+): CrmAttributionSummary {
+  let crmLeads = 0;
+  let contacted = 0;
+  let khqt = 0;
+  let khd = 0;
+
+  for (const row of crmRows) {
+    if (filter.from && row.date < filter.from) continue;
+    if (filter.to && row.date > filter.to) continue;
+    if (filter.pageIds.length > 0 && !filter.pageIds.includes(row.pageId)) continue;
+    crmLeads += row.crmLeads;
+    contacted += row.contacted;
+    khqt += row.khqt;
+    khd += row.khd;
+  }
+
+  const validSpend = spend ?? 0;
+  return {
+    crmLeads,
+    contacted,
+    khqt,
+    khd,
+    cpql: khqt > 0 && validSpend > 0 ? validSpend / khqt : null,
+    cps: khd > 0 && validSpend > 0 ? validSpend / khd : null,
+  };
+}
+
 export type Efficiency = "strong" | "average" | "weak" | "no_lead";
 
 export const EFFICIENCY_LABEL: Record<Efficiency, string> = {
@@ -173,6 +291,12 @@ export type PageSummary = {
   leads: number;
   ctr: number | null;
   cpl: number | null;
+  crmLeads: number;
+  contacted: number;
+  khqt: number;
+  khd: number;
+  cpql: number | null;
+  cps: number | null;
 };
 
 export type AdSummary = CampaignSummary & {
@@ -182,14 +306,18 @@ export type AdSummary = CampaignSummary & {
   pageId: string | null;
 };
 
-export function filterAdRows(rows: AdInsightRow[], filter: AdFilter): AdInsightRow[] {
+export function filterAdRows(
+  rows: AdInsightRow[],
+  filter: AdFilter,
+  brandOptions?: readonly CampaignBrandOption[],
+): AdInsightRow[] {
   const query = foldText(filter.query.trim());
   return rows.filter((row) => {
     if (filter.from && row.date < filter.from) return false;
     if (filter.to && row.date > filter.to) return false;
     if (filter.pageIds.length > 0 && !filter.pageIds.includes(row.pageId ?? "")) return false;
     if (filter.campaignIds.length > 0 && !filter.campaignIds.includes(row.campaignId ?? "")) return false;
-    if (filter.brands.length > 0 && !filter.brands.includes(campaignBrand(row.campaignName))) return false;
+    if (filter.brands.length > 0 && !filter.brands.includes(campaignBrand(row.campaignName, brandOptions))) return false;
     if (!query) return true;
     return foldText(`${row.objectName ?? ""} ${row.campaignName ?? ""} ${row.adsetName ?? ""}`).includes(query);
   });
@@ -203,7 +331,11 @@ function finishRates<T extends { spend: number; impressions: number; clicks: num
   return item;
 }
 
-export function summarizePages(rows: AdInsightRow[]): PageSummary[] {
+export function summarizePages(
+  rows: AdInsightRow[],
+  crmRows?: CrmAttributionRow[],
+  range?: { from: string | null; to: string | null },
+): PageSummary[] {
   const grouped = new Map<string, PageSummary>();
   for (const row of rows) {
     const pageId = row.pageId ?? "";
@@ -215,6 +347,12 @@ export function summarizePages(rows: AdInsightRow[]): PageSummary[] {
       leads: 0,
       ctr: null,
       cpl: null,
+      crmLeads: 0,
+      contacted: 0,
+      khqt: 0,
+      khd: 0,
+      cpql: null,
+      cps: null,
     };
     current.spend += amount(row.spend);
     current.impressions += amount(row.impressions);
@@ -222,10 +360,30 @@ export function summarizePages(rows: AdInsightRow[]): PageSummary[] {
     current.leads += amount(row.leads);
     grouped.set(pageId, current);
   }
-  return [...grouped.values()].map((item) => finishRates(item));
+  if (crmRows) {
+    for (const crm of crmRows) {
+      if (range?.from && crm.date < range.from) continue;
+      if (range?.to && crm.date > range.to) continue;
+      const current = grouped.get(crm.pageId);
+      if (!current) continue;
+      current.crmLeads += crm.crmLeads;
+      current.contacted += crm.contacted;
+      current.khqt += crm.khqt;
+      current.khd += crm.khd;
+    }
+  }
+  return [...grouped.values()].map((item) => {
+    const finished = finishRates(item);
+    finished.cpql = finished.khqt > 0 && finished.spend > 0 ? finished.spend / finished.khqt : null;
+    finished.cps = finished.khd > 0 && finished.spend > 0 ? finished.spend / finished.khd : null;
+    return finished;
+  });
 }
 
-export function summarizeCampaignsFromAds(rows: AdInsightRow[]): CampaignSummary[] {
+export function summarizeCampaignsFromAds(
+  rows: AdInsightRow[],
+  brandOptions?: readonly CampaignBrandOption[],
+): CampaignSummary[] {
   const grouped = new Map<string, CampaignSummary>();
   for (const row of rows) {
     const objectId = row.campaignId ?? "";
@@ -234,7 +392,7 @@ export function summarizeCampaignsFromAds(rows: AdInsightRow[]): CampaignSummary
       grouped.set(objectId, {
         objectId,
         objectName: row.campaignName,
-        brand: campaignBrand(row.campaignName),
+        brand: campaignBrand(row.campaignName, brandOptions),
         days: 1,
         spend: amount(row.spend),
         impressions: amount(row.impressions),
@@ -252,14 +410,20 @@ export function summarizeCampaignsFromAds(rows: AdInsightRow[]): CampaignSummary
     current.impressions += amount(row.impressions);
     current.clicks += amount(row.clicks);
     current.leads += amount(row.leads);
-    if (row.campaignName) current.objectName = row.campaignName;
+    if (row.campaignName) {
+      current.objectName = row.campaignName;
+      current.brand = campaignBrand(row.campaignName, brandOptions);
+    }
     if (row.date < current.from) current.from = row.date;
     if (row.date > current.to) current.to = row.date;
   }
   return [...grouped.values()].map((item) => finishRates(item));
 }
 
-export function summarizeAds(rows: AdInsightRow[]): AdSummary[] {
+export function summarizeAds(
+  rows: AdInsightRow[],
+  brandOptions?: readonly CampaignBrandOption[],
+): AdSummary[] {
   const grouped = new Map<string, AdSummary>();
   for (const row of rows) {
     const current = grouped.get(row.objectId);
@@ -267,7 +431,7 @@ export function summarizeAds(rows: AdInsightRow[]): AdSummary[] {
       grouped.set(row.objectId, {
         objectId: row.objectId,
         objectName: row.objectName,
-        brand: campaignBrand(row.campaignName),
+        brand: campaignBrand(row.campaignName, brandOptions),
         days: 1,
         spend: amount(row.spend),
         impressions: amount(row.impressions),

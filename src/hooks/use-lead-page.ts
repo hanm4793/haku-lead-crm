@@ -74,7 +74,11 @@ export function useLeadPage(
   }, [data]);
 
   const patchRows = React.useCallback((patches: { id: string; patch: Partial<Lead> }[]) => {
-    const before = snapshot.current;
+    const previousById = new Map<string, Lead>();
+    for (const { id } of patches) {
+      const existing = snapshot.current.rows.find((row) => row.id === id);
+      if (existing) previousById.set(id, existing);
+    }
 
     setData((current) => {
       const byId = new Map(patches.map((p) => [p.id, p.patch]));
@@ -87,7 +91,12 @@ export function useLeadPage(
       };
     });
 
-    return () => setData(before);
+    return () => {
+      setData((current) => ({
+        ...current,
+        rows: current.rows.map((row) => previousById.get(row.id) ?? row),
+      }));
+    };
   }, []);
 
   const refetch = React.useCallback(() => setReloadToken((n) => n + 1), []);

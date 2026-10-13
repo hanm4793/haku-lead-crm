@@ -49,9 +49,9 @@ export const LEAD_COLUMNS: LeadColumn[] = [
     sortable: true,
     value: (l) => l.location || UNASSIGNED_ASSIGNMENT_LABEL,
   },
-  { id: "assignee", header: "Phụ trách", width: 160, sortable: true, value: (l) => l.assignee },
+  { id: "assignee", header: "Phụ trách", width: 165, sortable: true, value: (l) => l.assignee },
   { id: "careNote", header: "Nội dung chăm sóc", width: 260, value: (l) => l.careNote },
-  { id: "callbackAt", header: "Hẹn gọi lại", width: 130, sortable: true, value: (l) => l.callbackAt },
+  { id: "callbackAt", header: "Hẹn gọi lại", width: 150, sortable: true, value: (l) => l.callbackAt },
   { id: "channelDetail", header: "Chi tiết kênh", width: 130, value: (l) => CHANNEL_LABEL[l.channelDetail] },
   { id: "contactCount", header: "Số lần LH", width: 100, align: "right", sortable: true, value: (l) => l.contactCount },
   { id: "lastContactAt", header: "Liên hệ gần nhất", width: 160, sortable: true, value: (l) => l.lastContactAt },
@@ -135,8 +135,9 @@ export function displayValue(lead: Lead, columnId: string, attrFields?: AttrFiel
   }
   const raw = column.value(lead);
   if (raw === null || raw === undefined || raw === "") return "";
-  if (columnId === "createdAt" || columnId === "lastContactAt") return formatDateTime(String(raw));
-  if (columnId === "callbackAt") return formatDate(String(raw));
+  if (columnId === "createdAt" || columnId === "lastContactAt" || columnId === "callbackAt") {
+    return formatDateTime(String(raw));
+  }
   if (columnId === "costPerLead") return new Intl.NumberFormat("vi-VN").format(Number(raw));
   return String(raw);
 }

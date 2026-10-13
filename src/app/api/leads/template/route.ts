@@ -21,7 +21,7 @@ export async function GET() {
 
   const projectId = viewer.activeProjectId ?? undefined;
   const [reference, attrFields, assignees] = await Promise.all([
-    getReferenceData(projectId).catch(() => null),
+    getReferenceData(projectId, viewer).catch(() => null),
     projectId ? listAttrFields(projectId, { activeOnly: true }).catch(() => []) : Promise.resolve([]),
     listAssignableStaff(viewer).catch(() => []),
   ]);

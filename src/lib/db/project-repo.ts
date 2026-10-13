@@ -319,19 +319,59 @@ export async function assignUserToProject(userId: string, projectId: string | nu
 
 /** Gán partner (và staff) vào project — thêm membership, giữ project_id làm primary. */
 export async function assignPartnerAndStaffToProject(partnerId: string, projectId: string) {
-  await addProjectMember(projectId, partnerId);
-  await assignUserToProject(partnerId, projectId);
-  const staffRows = await getDb()
-    .select({ id: appUsers.id })
-    .from(appUsers)
-    .where(and(eq(appUsers.partnerId, partnerId), eq(appUsers.role, "STAFF")));
-  for (const staff of staffRows) {
-    await addProjectMember(projectId, staff.id);
-  }
-  await getDb()
-    .update(appUsers)
-    .set({ projectId })
-    .where(and(eq(appUsers.partnerId, partnerId), eq(appUsers.role, "STAFF")));
+  await assertPartnerAssignable(partnerId);
+  await getDb().transaction(async (tx) => {
+    await tx
+      .insert(projectMembers)
+      .values({ projectId, userId: partnerId })
+      .onConflictDoNothing();
+    await tx
+      .update(appUsers)
+      .set({ projectId })
+      .where(eq(appUsers.id, partnerId));
+
+    const staffRows = await tx
+      .select({ id: appUsers.id })
+      .from(appUsers)
+      .where(and(eq(appUsers.partnerId, partnerId), eq(appUsers.role, "STAFF")));
+
+    if (staffRows.length > 0) {
+      await tx
+        .insert(projectMembers)
+        .values(staffRows.map((staff) => ({ projectId, userId: staff.id })))
+        .onConflictDoNothing();
+      await tx
+        .update(appUsers)
+        .set({ projectId })
+        .where(and(eq(appUsers.partnerId, partnerId), eq(appUsers.role, "STAFF")));
+    }
+  });
+}
+
+/** Gỡ partner và toàn bộ nhân viên của partner khỏi project; cập nhật projectId primary sang project còn lại (hoặc null). */
+export async function removePartnerAndStaffFromProject(partnerId: string, projectId: string): Promise<void> {
+  await getDb().transaction(async (tx) => {
+    const staffRows = await tx
+      .select({ id: appUsers.id })
+      .from(appUsers)
+      .where(and(eq(appUsers.partnerId, partnerId), eq(appUsers.role, "STAFF")));
+    const affectedUserIds = [partnerId, ...staffRows.map((s) => s.id)];
+
+    await tx
+      .delete(projectMembers)
+      .where(and(eq(projectMembers.projectId, projectId), inArray(projectMembers.userId, affectedUserIds)));
+
+    const remainingMemberships = await tx
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(eq(projectMembers.userId, partnerId));
+    const fallbackProjectId = remainingMemberships[0]?.projectId ?? null;
+
+    await tx
+      .update(appUsers)
+      .set({ projectId: fallbackProjectId })
+      .where(and(inArray(appUsers.id, affectedUserIds), eq(appUsers.projectId, projectId)));
+  });
 }
 
 export async function listPartnersInProject(projectId: string) {

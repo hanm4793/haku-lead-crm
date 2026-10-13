@@ -92,13 +92,15 @@ export function ProjectDetailTabs({
             </Badge>
           </TabsTrigger>
 
-          <TabsTrigger value="ads" className="gap-2 text-[13px] font-medium">
-            <Megaphone className="size-3.5 text-amber-600" />
-            <span>Tài khoản Ads</span>
-            <Badge variant="muted" className="ml-1 px-1.5 py-0 text-[10px]">
-              {adAccounts.length}
-            </Badge>
-          </TabsTrigger>
+          {canManageProject && (
+            <TabsTrigger value="ads" className="gap-2 text-[13px] font-medium">
+              <Megaphone className="size-3.5 text-amber-600" />
+              <span>Tài khoản Ads</span>
+              <Badge variant="muted" className="ml-1 px-1.5 py-0 text-[10px]">
+                {adAccounts.length}
+              </Badge>
+            </TabsTrigger>
+          )}
 
           <TabsTrigger value="partners" className="gap-2 text-[13px] font-medium">
             <Users className="size-3.5 text-emerald-600" />
@@ -146,9 +148,11 @@ export function ProjectDetailTabs({
         <ProjectPagesTable projectId={project.id} pages={pages} canManage={canManageProject} />
       </TabsContent>
 
-      <TabsContent value="ads" className="pt-2">
-        <ProjectAdAccountsTable projectId={project.id} accounts={adAccounts} canManage={canManageProject} />
-      </TabsContent>
+      {canManageProject && (
+        <TabsContent value="ads" className="pt-2">
+          <ProjectAdAccountsTable projectId={project.id} accounts={adAccounts} canManage={canManageProject} />
+        </TabsContent>
+      )}
 
       <TabsContent value="partners" className="pt-2">
         <ProjectPartnersTable

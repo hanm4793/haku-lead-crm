@@ -153,7 +153,6 @@ async function selectKpiRow(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
-    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now, extra));
 
   return row;
@@ -181,12 +180,13 @@ export async function queryReportKpis(
   };
 }
 
-export async function queryFunnel(
-  filters: LeadFilters,
-  viewer: ViewerScope,
-  now: Date,
-): Promise<FunnelStep[]> {
-  const row = await selectKpiRow(filters, viewer, now);
+export function funnelFromKpis(row: {
+  total: number;
+  contacted: number;
+  khqt: number;
+  gdtd: number;
+  khd: number;
+}): FunnelStep[] {
   const raw: [string, number][] = [
     ["Tổng lead", row.total],
     ["Đã liên hệ", row.contacted],
@@ -200,6 +200,15 @@ export async function queryFunnel(
     shareOfTotal: ratio(value, row.total),
     stepConversion: i === 0 ? 100 : ratio(value, raw[i - 1][1]),
   }));
+}
+
+export async function queryFunnel(
+  filters: LeadFilters,
+  viewer: ViewerScope,
+  now: Date,
+): Promise<FunnelStep[]> {
+  const row = await selectKpiRow(filters, viewer, now);
+  return funnelFromKpis(row);
 }
 
 export async function queryDailySeries(
@@ -218,7 +227,6 @@ export async function queryDailySeries(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
-    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now))
     .groupBy(sql`1`)
     .orderBy(asc(sql`1`));
@@ -249,7 +257,6 @@ export async function queryCategoryDistribution(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
-    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now))
     .groupBy(leads.category);
 
@@ -281,7 +288,6 @@ export async function queryBySource(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
-    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now))
     .groupBy(leads.source)
     .orderBy(desc(sql`count(*)`));
@@ -310,7 +316,6 @@ export async function queryByProduct(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
-    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(whereClause(filters, viewer, now))
     .groupBy(sql`1`)
     .orderBy(desc(sql`count(*)`))
@@ -346,7 +351,7 @@ async function queryPivotGrouped(
       .leftJoin(locations, eq(leads.locationId, locations.id))
       .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
       .leftJoin(products, eq(leads.productId, products.id))
-    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
+      .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
       .where(whereClause(filters, viewer, now, extra))
       .groupBy(sql`1`)
       .orderBy(desc(sql`count(*)`));
@@ -472,7 +477,6 @@ export async function queryCallList(
     .leftJoin(locations, eq(leads.locationId, locations.id))
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
-    .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
     .where(and(...parts))
     .orderBy(asc(leads.callbackAt))
     .limit(limit);
@@ -486,6 +490,7 @@ export async function querySheetCounts(
   viewer: ViewerScope,
   now: Date,
   splitBy: PivotDimension,
+  extra?: Partial<LeadCriteria>,
 ): Promise<{ name: string; count: number }[]> {
   const expr = dimensionExpr(splitBy);
   const rows = await getDb()
@@ -499,7 +504,7 @@ export async function querySheetCounts(
     .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
     .leftJoin(products, eq(leads.productId, products.id))
     .leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId))
-    .where(whereClause(filters, viewer, now))
+    .where(whereClause(filters, viewer, now, extra))
     .groupBy(sql`1`)
     .orderBy(desc(sql`count(*)`));
 

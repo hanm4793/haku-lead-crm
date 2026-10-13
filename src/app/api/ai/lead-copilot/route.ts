@@ -15,8 +15,20 @@ export const maxDuration = 30;
 const requestSchema = z.object({
   leadId: z.string().uuid(),
   action: z.enum(["summarize", "suggest_action", "polish_note"]),
-  draftNote: z.string().optional(),
+  draftNote: z.string().max(4000).optional(),
 });
+
+function redactPii(text: string, lead: Lead): string {
+  let out = text;
+  if (lead.phone && lead.phone.trim().length >= 6) {
+    out = out.split(lead.phone.trim()).join("[SĐT]");
+  }
+  const email = lead.attrs?.email?.trim();
+  if (email && email.length >= 4) {
+    out = out.split(email).join("[EMAIL]");
+  }
+  return out;
+}
 
 function fallbackCopilot(
   action: "summarize" | "suggest_action" | "polish_note",
@@ -91,20 +103,25 @@ export async function POST(request: Request) {
 
   const recentLogsText = logs
     .slice(0, 8)
-    .map((l) => `- [${l.at.slice(0, 10)}] ${l.actor}: ${l.message}`)
+    .map((l) => `- [${l.at.slice(0, 10)}] ${l.actor}: ${redactPii(l.message, lead)}`)
     .join("\n");
 
+  const safeAttrs = Object.fromEntries(
+    Object.entries(lead.attrs ?? {}).filter(
+      ([k]) => !/^(email|phone|sdt|so_dien_thoai|name|ho_ten|full_name)$/i.test(k),
+    ),
+  );
+
   const leadContext = `
-Hồ sơ Lead:
-- Tên: ${lead.name || "Chưa có"} | SĐT: ${lead.phone}
+Hồ sơ Lead (đã ẩn thông tin định danh cá nhân):
 - Phân loại: ${lead.category} | Trạng thái: ${lead.contactStatus}
 - ${labels.brand} / ${labels.product}: ${lead.brand || ""} - ${lead.product || "Chưa chọn"}
 - ${labels.location}: ${lead.location || "Chưa chọn"}
 - Người phụ trách: ${lead.assignee || "Chưa giao"}
-- Ghi chú hiện tại: ${lead.careNote || "Không có"}
+- Ghi chú hiện tại: ${lead.careNote ? redactPii(lead.careNote, lead) : "Không có"}
 - Số lần liên hệ: ${lead.contactCount} | Lần liên hệ gần nhất: ${lead.lastContactAt || "Chưa có"}
 - Hẹn gọi lại: ${lead.callbackAt || "Không có"}
-${lead.attrs && Object.keys(lead.attrs).length ? `- Thuộc tính bổ sung: ${JSON.stringify(lead.attrs)}` : ""}
+${Object.keys(safeAttrs).length ? `- Thuộc tính bổ sung: ${JSON.stringify(safeAttrs)}` : ""}
 
 Lịch sử hoạt động gần đây:
 ${recentLogsText || "Chưa có nhật ký hoạt động"}

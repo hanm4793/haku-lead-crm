@@ -1,13 +1,25 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Download, FileSpreadsheet, FileUp, Loader2, Plus, Search } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  Download,
+  FileSpreadsheet,
+  FileUp,
+  Loader2,
+  Plus,
+  Search,
+  Shuffle,
+  UserPlus,
+  X,
+} from "lucide-react";
 
 import { ColumnVisibilityPopover } from "@/components/common/column-visibility";
 import { DateRangePicker, resolvePreset, type DateRange, type PresetId } from "@/components/common/date-range-picker";
 import { Pagination } from "@/components/common/pagination";
 import { ALL_COLUMN_TOGGLES, LeadTable, type SortState } from "@/components/leads/lead-table";
-import { attrColumnId, buildAttrColumns, DEFAULT_VISIBLE_COLUMNS } from "@/components/leads/columns";
+import { attrColumnId, buildAttrColumns, columnHeader, DEFAULT_VISIBLE_COLUMNS } from "@/components/leads/columns";
 import { CreateLeadDialog } from "@/components/leads/create-lead-dialog";
 import { ImportLeadsDialog } from "@/components/leads/import-leads-dialog";
 import { LeadDetailDialog } from "@/components/leads/lead-detail-dialog";
@@ -20,13 +32,19 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLeadLogs } from "@/hooks/use-lead-logs";
 import { useLeadPage } from "@/hooks/use-lead-page";
-import { updateLeadAction } from "@/app/leads/actions";
+import {
+  appendActivityLogAction,
+  autoAssignLeadsAction,
+  bulkUpdateLeadsAction,
+  updateLeadAction,
+} from "@/app/leads/actions";
 import {
   canCreateLead,
   canEditLead,
@@ -39,14 +57,16 @@ import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import type { LeadPage } from "@/lib/db/leads-repo";
 import { downloadExport } from "@/lib/export/download";
 import { filtersToExportSpec } from "@/lib/export/from-filters";
+import { countActiveFilters } from "@/lib/filters";
 import type { LeadSearchInput } from "@/lib/leads/query";
-import type { ActivityKind, ContactStatus, Lead, LeadCategory, LeadFilters } from "@/lib/types";
+import type { ActivityKind, ContactStatus, FailReason, Lead, LeadCategory, LeadFilters } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useLeadStore } from "@/store/lead-store";
 
 interface LogEntry {
   kind: ActivityKind;
   message: string;
+  byAi?: boolean;
 }
 
 const NO_ATTR_FIELDS: AttrFieldRow[] = [];
@@ -89,8 +109,11 @@ export function LeadsPage({
     [attrFields],
   );
   const columnToggles = React.useMemo(
-    () => [...ALL_COLUMN_TOGGLES, ...buildAttrColumns(attrFields).map((c) => ({ id: c.id, header: c.header }))],
-    [attrFields],
+    () => [
+      ...ALL_COLUMN_TOGGLES.map((c) => ({ id: c.id, header: columnHeader(c.id, catalog.labels) })),
+      ...buildAttrColumns(attrFields).map((c) => ({ id: c.id, header: c.header })),
+    ],
+    [attrFields, catalog.labels],
   );
   const [customColumns, setCustomColumns] = React.useState<{ signature: string; ids: string[] } | null>(null);
   const visibleColumns = customColumns?.signature === attrSignature ? customColumns.ids : defaultColumns;
@@ -100,11 +123,40 @@ export function LeadsPage({
   const [pageSize, setPageSize] = React.useState(initialRequest.pageSize);
   const [datePreset, setDatePreset] = React.useState<PresetId>("ALL");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [bulkLoading, setBulkLoading] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = React.useState(false);
   const [searchInput, setSearchInput] = React.useState(filters.search);
+  const [lastStoreSearch, setLastStoreSearch] = React.useState(filters.search);
+  if (filters.search !== lastStoreSearch) {
+    setLastStoreSearch(filters.search);
+    setSearchInput(filters.search);
+  }
+
+  // Đọc tham số ?page= hoặc ?search= từ URL (ví dụ liên kết sâu từ trợ lý AI)
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const pageParam = params.get("page")?.trim();
+    const searchParam = params.get("search")?.trim();
+    const nextPatch: Partial<LeadFilters> = {};
+    if (pageParam) {
+      const matchedPage = fanpageOptions.find(
+        (fp) => fp.value === pageParam || fp.label.toLowerCase() === pageParam.toLowerCase(),
+      );
+      nextPatch.facebookPageIds = [matchedPage ? matchedPage.value : pageParam];
+    }
+    if (searchParam) {
+      nextPatch.search = searchParam;
+    }
+    if (Object.keys(nextPatch).length > 0) {
+      setFilters(nextPatch);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Gõ tìm kiếm nhanh nhưng chỉ truy vấn sau khi người dùng ngừng gõ.
   React.useEffect(() => {
@@ -119,6 +171,7 @@ export function LeadsPage({
   if (pagingKey !== lastPagingKey) {
     setLastPagingKey(pagingKey);
     setPage(1);
+    setSelectedIds([]);
   }
 
   const request = React.useMemo<LeadSearchInput>(
@@ -133,12 +186,31 @@ export function LeadsPage({
   }, [error, toast]);
 
   const selected = selectedId ? (data.rows.find((row) => row.id === selectedId) ?? null) : null;
+  const selectedIndex = selectedId ? data.rows.findIndex((row) => row.id === selectedId) : -1;
+  const prevLeadId = selectedIndex > 0 ? (data.rows[selectedIndex - 1]?.id ?? null) : null;
+  const nextLeadId =
+    selectedIndex >= 0 && selectedIndex < data.rows.length - 1
+      ? (data.rows[selectedIndex + 1]?.id ?? null)
+      : null;
+
   const leadEditable = (lead: Lead) => (editor ? canEditLead(editor, lead) : true);
   const leadProfileEditable = (lead: Lead) =>
     editor ? canEditLeadProfile(editor, lead) : lead.source === "MANUAL";
   const allowCreate = editor ? canCreateLead(editor.role) : true;
   const allowImport = editor ? canImportLeads(editor.role) : true;
-  const { logs: selectedLogs, reload: reloadLogs } = useLeadLogs(selectedId);
+  const allowAssign = editor ? editor.role === "SUPER_ADMIN" || editor.role === "PARTNER_ADMIN" : true;
+  const { logs: selectedLogs, loading: logsLoading, reload: reloadLogs } = useLeadLogs(selectedId);
+
+  const hasActiveFilters =
+    countActiveFilters(filters) > 0 ||
+    Boolean(filters.search.trim()) ||
+    Boolean(filters.dateFrom || filters.dateTo);
+
+  const handleResetAllFilters = () => {
+    resetFilters();
+    setSearchInput("");
+    setDatePreset("ALL");
+  };
 
   const handleDateChange = (preset: PresetId, range: DateRange) => {
     setDatePreset(preset);
@@ -150,6 +222,11 @@ export function LeadsPage({
     setExporting(true);
     try {
       await downloadExport(filtersToExportSpec(filters, visibleColumns));
+    } catch (err) {
+      toast.error(
+        "Không xuất được file Excel",
+        err instanceof Error ? err.message : "Vui lòng thử lại sau.",
+      );
     } finally {
       setExporting(false);
     }
@@ -210,16 +287,93 @@ export function LeadsPage({
     ]);
   };
 
-  const handleCategoryChange = (lead: Lead, next: LeadCategory) => {
-    if (!leadEditable(lead) || lead.category === next) return;
-    void save(lead, { category: next, failReason: next === "FAIL" ? lead.failReason : null }, [
-      { kind: "CATEGORY_CHANGE", message: `Cập nhật phân loại trực tiếp trên bảng: ${next}.` },
+  const handleCategoryChange = (lead: Lead, next: LeadCategory, failReason?: FailReason | null) => {
+    const nextFailReason = next === "FAIL" ? (failReason !== undefined ? failReason : lead.failReason) : null;
+    if (!leadEditable(lead) || (lead.category === next && lead.failReason === nextFailReason)) return;
+    void save(lead, { category: next, failReason: nextFailReason }, [
+      {
+        kind: "CATEGORY_CHANGE",
+        message: `Cập nhật phân loại trực tiếp trên bảng: ${next}${nextFailReason ? ` (${nextFailReason})` : ""}.`,
+      },
     ]);
   };
 
+  const handleAssigneeChange = (lead: Lead, next: string | null) => {
+    if (!allowAssign || lead.assignee === next) return;
+    void save(lead, { assignee: next }, [
+      {
+        kind: "ASSIGN_CHANGE",
+        message: `Đổi người phụ trách trực tiếp trên bảng: ${lead.assignee ?? "Chưa giao"} → ${next ?? "Chưa giao"}.`,
+      },
+    ]);
+  };
+
+  const handleLogCall = async (lead: Lead, kind: "CALL" | "MISSED_CALL", message: string): Promise<boolean> => {
+    if (!leadEditable(lead)) return false;
+    const res = await appendActivityLogAction({ leadId: lead.id, kind, message });
+    if (!res.ok) {
+      toast.error("Không ghi nhận được cuộc gọi", res.error);
+      return false;
+    }
+    toast.success(kind === "CALL" ? "Đã ghi nhận cuộc gọi" : "Đã ghi nhận cuộc gọi nhỡ");
+    refetch();
+    if (selectedId === lead.id) reloadLogs();
+    return true;
+  };
+
+  const handleBulkAssign = async (assignee: string | null) => {
+    if (selectedIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      const res = await bulkUpdateLeadsAction({ ids: selectedIds, patch: { assignee } });
+      if (!res.ok) {
+        toast.error("Không giao được lead hàng loạt", res.error);
+        return;
+      }
+      toast.success(`Đã cập nhật người phụ trách cho ${res.updatedCount} lead`);
+      setSelectedIds([]);
+      refetch();
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkStatus = async (contactStatus: ContactStatus) => {
+    if (selectedIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      const res = await bulkUpdateLeadsAction({ ids: selectedIds, patch: { contactStatus } });
+      if (!res.ok) {
+        toast.error("Không đổi được trạng thái hàng loạt", res.error);
+        return;
+      }
+      toast.success(`Đã đổi trạng thái liên hệ cho ${res.updatedCount} lead`);
+      setSelectedIds([]);
+      refetch();
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleAutoAssignRoundRobin = async () => {
+    if (selectedIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      const res = await autoAssignLeadsAction(selectedIds);
+      if (!res.ok) {
+        toast.error("Không thể chia tự động", res.error);
+        return;
+      }
+      toast.success(`Đã chia tự động (Round-Robin) ${res.assignedCount} lead`);
+      setSelectedIds([]);
+      refetch();
+    } finally {
+      setBulkLoading(false);
+    }
+  };
 
   return (
-    <div className="flex h-[calc(100vh-33px)] flex-col gap-3 p-4">
+    <div className="flex h-[calc(100vh-74px)] flex-col gap-3 p-4">
       <LeadKpiHeader kpis={data.kpis} />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xs">
@@ -268,12 +422,20 @@ export function LeadsPage({
             assigneeOptions={assignees}
             catalog={catalog}
             onChange={setFilters}
-            onReset={() => {
-              resetFilters();
-              setSearchInput("");
-              setDatePreset("ALL");
-            }}
+            onReset={handleResetAllFilters}
           />
+
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleResetAllFilters}
+              className="h-8 gap-1 px-2 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+            >
+              <X className="size-3.5" />
+              Xóa lọc
+            </Button>
+          )}
 
           <div className="ml-auto flex items-center gap-2">
             {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
@@ -329,6 +491,81 @@ export function LeadsPage({
           </div>
         </div>
 
+        {selectedIds.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/20 bg-primary/5 px-3 py-2 text-xs">
+            <div className="flex items-center gap-2 font-medium text-primary">
+              <span>Đã chọn {selectedIds.length} lead</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-slate-600 hover:text-slate-900"
+                disabled={bulkLoading}
+                onClick={() => setSelectedIds([])}
+              >
+                Bỏ chọn
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {allowAssign && (
+                <>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-7 gap-1.5 bg-white text-xs" disabled={bulkLoading}>
+                        <UserPlus className="size-3.5" />
+                        Giao phụ trách
+                        <ChevronDown className="size-3 opacity-60" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="max-h-64 w-52 overflow-y-auto">
+                      <DropdownMenuItem onSelect={() => void handleBulkAssign(null)}>
+                        Chưa giao (Bỏ phân bổ)
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {assignees.map((name) => (
+                        <DropdownMenuItem key={name} onSelect={() => void handleBulkAssign(name)}>
+                          {name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 bg-white text-xs"
+                    disabled={bulkLoading}
+                    onClick={() => void handleAutoAssignRoundRobin()}
+                  >
+                    {bulkLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Shuffle className="size-3.5" />}
+                    Chia tự động (Round-Robin)
+                  </Button>
+                </>
+              )}
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 gap-1.5 bg-white text-xs" disabled={bulkLoading}>
+                    <CheckCircle2 className="size-3.5" />
+                    Đổi trạng thái liên hệ
+                    <ChevronDown className="size-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem onSelect={() => void handleBulkStatus("DA_LIEN_HE")}>
+                    Đã liên hệ
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void handleBulkStatus("CHUA_LIEN_HE")}>
+                    Chưa liên hệ
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        )}
+
         <LeadTable
           leads={data.rows}
           visibleColumns={visibleColumns}
@@ -337,15 +574,26 @@ export function LeadsPage({
           onRowClick={(lead) => setSelectedId(lead.id)}
           onStatusChange={handleStatusChange}
           onCategoryChange={handleCategoryChange}
+          onAssigneeChange={handleAssigneeChange}
           canEdit={leadEditable}
+          canAssign={allowAssign}
+          assignees={assignees}
           attrFields={attrFields}
+          labels={catalog.labels}
+          selectedIds={selectedIds}
+          onSelectedIdsChange={setSelectedIds}
+          hasActiveFilters={hasActiveFilters}
+          onResetFilters={handleResetAllFilters}
         />
 
         <Pagination
           page={page}
           pageSize={pageSize}
           total={data.total}
-          onPageChange={setPage}
+          onPageChange={(nextPage) => {
+            setPage(nextPage);
+            setSelectedIds([]);
+          }}
           onPageSizeChange={setPageSize}
         />
       </div>
@@ -353,6 +601,7 @@ export function LeadsPage({
       <LeadDetailDialog
         lead={selected}
         logs={selectedLogs}
+        logsLoading={logsLoading}
         open={Boolean(selected)}
         onOpenChange={(open) => !open && setSelectedId(null)}
         assignees={assignees}
@@ -360,6 +609,10 @@ export function LeadsPage({
         attrFields={attrFields}
         readOnly={selected ? !leadEditable(selected) : false}
         canEditProfile={selected ? leadProfileEditable(selected) : false}
+        canAssign={allowAssign}
+        onPrev={prevLeadId ? () => setSelectedId(prevLeadId) : undefined}
+        onNext={nextLeadId ? () => setSelectedId(nextLeadId) : undefined}
+        onLogCall={selected ? (kind, msg) => handleLogCall(selected, kind, msg) : undefined}
         onSave={(patch, entries) => (selected && leadEditable(selected) ? save(selected, patch, entries) : false)}
       />
 
@@ -387,3 +640,4 @@ export function LeadsPage({
     </div>
   );
 }
+

@@ -14,6 +14,7 @@ import { PivotTab } from "@/components/reports/pivot-tab";
 import { ReportKpiCards } from "@/components/reports/report-kpi-cards";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLeadLogs } from "@/hooks/use-lead-logs";
+import { canEditLead, canEditLeadProfile, type UserRole } from "@/lib/auth/roles";
 import { DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/lib/catalog";
 import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import { EMPTY_FILTERS } from "@/lib/filters";
@@ -32,12 +33,14 @@ export function ReportsPage({
   assignees = [],
   catalog = DEFAULT_LEAD_CATALOG,
   attrFields = [],
+  editor,
 }: {
   initialSummary: ReportSummary;
   fanpageOptions?: FanpageFilterOption[];
   assignees?: string[];
   catalog?: LeadCatalogOptions;
   attrFields?: AttrFieldRow[];
+  editor?: { role: UserRole; appUserId?: string | null };
 }) {
   const now = useNow();
   const toast = useToast();
@@ -55,6 +58,7 @@ export function ReportsPage({
   const [loading, setLoading] = React.useState(false);
   const [selectedLead, setSelectedLead] = React.useState<Lead | null>(null);
   const [callList, setCallList] = React.useState(initialSummary.overview.callList);
+  const [refreshTick, setRefreshTick] = React.useState(0);
 
   const selectedId = selectedLead?.id ?? null;
   const { logs: selectedLogs, reload: reloadLogs } = useLeadLogs(selectedId);
@@ -62,6 +66,9 @@ export function ReportsPage({
   const liveSelected = selectedLead
     ? (callList.find((lead) => lead.id === selectedLead.id) ?? selectedLead)
     : null;
+  const leadEditable = (lead: Lead) => (editor ? canEditLead(editor, { assigneeId: lead.assigneeId }) : true);
+  const leadProfileEditable = (lead: Lead) =>
+    editor ? canEditLeadProfile(editor, lead) : lead.source === "MANUAL";
 
   const requestKey = JSON.stringify({
     filters,
@@ -101,7 +108,7 @@ export function ReportsPage({
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [requestKey, toast]);
+  }, [requestKey, refreshTick, toast]);
 
   const save = async (lead: Lead, patch: Partial<Lead>, logs: LogEntry[]): Promise<boolean> => {
     const previous = callList;
@@ -119,6 +126,7 @@ export function ReportsPage({
     setCallList((rows) => rows.map((row) => (row.id === lead.id ? result.lead : row)));
     setSelectedLead(result.lead);
     reloadLogs();
+    setRefreshTick((t) => t + 1);
     toast.success("Đã lưu thay đổi");
     return true;
   };
@@ -202,7 +210,9 @@ export function ReportsPage({
         assignees={assignees}
         catalog={catalog}
         attrFields={attrFields}
-        onSave={(patch, entries) => (liveSelected ? save(liveSelected, patch, entries) : false)}
+        readOnly={liveSelected ? !leadEditable(liveSelected) : false}
+        canEditProfile={liveSelected ? leadProfileEditable(liveSelected) : false}
+        onSave={(patch, entries) => (liveSelected && leadEditable(liveSelected) ? save(liveSelected, patch, entries) : false)}
       />
     </div>
   );

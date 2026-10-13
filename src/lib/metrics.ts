@@ -1,5 +1,6 @@
 import {
   CATEGORY_CHART_LABEL,
+  CHANNEL_LABEL,
   DEFAULT_CATALOG_LABELS,
   SOURCE_LABEL,
   UNASSIGNED_ASSIGNMENT_LABEL,
@@ -193,11 +194,13 @@ export function dimensionValue(lead: Lead, dim: PivotDimension): string {
     case "assignee":
       return lead.assignee ?? "Chưa giao";
     case "channelDetail":
-      return lead.channelDetail;
+      return CHANNEL_LABEL[lead.channelDetail] ?? lead.channelDetail;
     case "campaign":
       return lead.campaign ?? "Không gắn chiến dịch";
-    case "facebookPage":
-      return lead.facebookPageId ?? "Chưa gắn fanpage";
+    case "facebookPage": {
+      const pageName = (lead as Lead & { facebookPageName?: string | null }).facebookPageName?.trim();
+      return pageName || lead.facebookPageId || "Chưa gắn fanpage";
+    }
   }
 }
 

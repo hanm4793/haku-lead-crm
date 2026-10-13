@@ -1,3 +1,5 @@
+import { UNASSIGNED_FILTER_VALUE } from "./constants";
+import { phoneKey } from "./leads/phone";
 import type { Lead, LeadFilters } from "./types";
 import { endOfDay, startOfDay } from "./utils";
 
@@ -45,13 +47,15 @@ function normalize(text: string) {
 
 export function applyLeadFilters(leads: Lead[], filters: LeadFilters, now: Date = new Date()): Lead[] {
   const search = normalize(filters.search.trim());
+  const searchPhone = phoneKey(search);
   const from = filters.dateFrom ? startOfDay(new Date(filters.dateFrom)).getTime() : null;
   const to = filters.dateTo ? endOfDay(new Date(filters.dateTo)).getTime() : null;
 
   return leads.filter((lead) => {
     if (search) {
       const haystack = normalize(`${lead.name ?? ""} ${lead.phone}`);
-      if (!haystack.includes(search)) return false;
+      const phoneMatches = searchPhone.length >= 3 && phoneKey(lead.phone).includes(searchPhone);
+      if (!haystack.includes(search) && !phoneMatches) return false;
     }
 
     const created = new Date(lead.createdAt).getTime();
@@ -73,7 +77,11 @@ export function applyLeadFilters(leads: Lead[], filters: LeadFilters, now: Date 
     if (filters.sources.length && !filters.sources.includes(lead.source)) return false;
     if (filters.brands.length && (!lead.brand || !filters.brands.includes(lead.brand))) return false;
     if (filters.locations.length && !filters.locations.includes(lead.location)) return false;
-    if (filters.assignees.length && !filters.assignees.includes(lead.assignee ?? "")) return false;
+    if (filters.assignees.length) {
+      const matchUnassigned = filters.assignees.includes(UNASSIGNED_FILTER_VALUE) && !lead.assignee;
+      const matchNamed = Boolean(lead.assignee && filters.assignees.includes(lead.assignee));
+      if (!matchUnassigned && !matchNamed) return false;
+    }
     if (filters.products.length && !filters.products.includes(lead.product ?? "")) return false;
     if (filters.categories.length && !filters.categories.includes(lead.category)) return false;
     if (filters.failReasons.length && !filters.failReasons.includes(lead.failReason!)) return false;

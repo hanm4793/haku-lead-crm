@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { ProjectInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useLeadStore } from "@/store/lead-store";
 
 export function ProjectSwitcher({
   projects,
@@ -39,7 +40,10 @@ export function ProjectSwitcher({
     setPending(true);
     const result = await setActiveProjectAction(projectId);
     setPending(false);
-    if (result.ok) router.refresh();
+    if (result.ok) {
+      useLeadStore.getState().resetFilters();
+      router.refresh();
+    }
   };
 
   return (

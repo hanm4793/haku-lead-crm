@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { z } from "zod";
 
 import { ProjectDetailTabs } from "@/components/projects/project-detail-tabs";
 import {
@@ -7,6 +8,7 @@ import {
   canManageCatalogsInProject,
   canManageProjects,
   canViewProjects,
+  isPageVisible,
 } from "@/lib/auth/roles";
 import { getViewer } from "@/lib/auth/viewer";
 import { listAttrFields } from "@/lib/db/attr-fields-repo";
@@ -33,6 +35,9 @@ const EMPTY_CATALOG: CatalogSnapshot = { brands: [], products: [], locations: []
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const parsed = z.string().uuid().safeParse(id);
+  if (!parsed.success) notFound();
+
   const viewer = await getViewer();
   if (!viewer || !canViewProjects(viewer.role)) redirect("/leads");
   if (!isDatabaseConfigured()) redirect("/projects");
@@ -50,14 +55,21 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const labels = getCatalogLabels(projectRow);
   const catalog = await listCatalog(id).catch(() => EMPTY_CATALOG);
   const attrFields = await listAttrFields(id).catch(() => []);
-  const pages = await listFacebookPages({ projectId: id }).catch(() => []);
-  const allPages = await listFacebookPages().catch(() => []);
+  const rawPages = await listFacebookPages({ projectId: id }).catch(() => []);
   const canManageProject = canManageProjects(viewer.role);
+  const allPages = canManageProject ? await listFacebookPages().catch(() => []) : [];
   const unassignedPages = allPages.filter((p) => !p.projectId);
-  const pagesForPanel = canManageProject ? [...pages, ...unassignedPages] : pages;
-  const partners = await listPartnersInProject(id).catch(() => []);
+  const pagesForPanel =
+    viewer.role === "SUPER_ADMIN"
+      ? [...rawPages, ...unassignedPages]
+      : rawPages.filter((p) => isPageVisible(viewer, p.facebookPageId));
+  const rawPartners = await listPartnersInProject(id).catch(() => []);
+  const partners =
+    viewer.role === "SUPER_ADMIN"
+      ? rawPartners
+      : rawPartners.filter((p) => p.id === viewer.appUserId);
   const partnersAvailable = canManageProject ? await listPartnersNotInProject(id).catch(() => []) : [];
-  const adAccounts = await listAdAccounts(id).catch(() => []);
+  const adAccounts = viewer.role === "SUPER_ADMIN" ? await listAdAccounts(id).catch(() => []) : [];
   const lastLeadSync = canManageProject ? await loadLastProjectSync("leads", id).catch(() => null) : null;
   const canEditLabels = canManageProject || canManageCatalogsInProject(viewer, id);
   const canManageCatalog = canManageCatalogsInProject(viewer, id) || canManageAttrFieldsInProject(viewer, id);

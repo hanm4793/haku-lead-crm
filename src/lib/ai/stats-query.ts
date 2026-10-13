@@ -6,7 +6,7 @@ import { previousCalendarRange } from "@/lib/date-range";
 import { EMPTY_FILTERS } from "@/lib/filters";
 import { PIVOT_DIMENSIONS, type PivotDimension } from "@/lib/metrics";
 import type { LeadFilters, LeadKpis } from "@/lib/types";
-import { formatCurrency, formatNumber, formatPercent, toDateInputValue } from "@/lib/utils";
+import { formatCurrency, formatNumber, formatPercent, ratio, toVnParts } from "@/lib/utils";
 
 import { exportFiltersSchema, type ExportFilters } from "./export-spec";
 
@@ -281,9 +281,10 @@ export function formatStatsReply(input: {
       lines.push("• Không có lead trong kỳ này.");
     } else {
       for (const row of input.breakdown.slice(0, 8)) {
-        const contactRate = row.contactRate ?? (row.leads > 0 ? row.contacted / row.leads : 0);
-        const khqtRate = row.khqtRate ?? (row.contacted > 0 ? row.khqt / row.contacted : (row.leads > 0 ? row.khqt / row.leads : 0));
-        const failRate = row.failRate ?? (row.leads > 0 ? row.failed / row.leads : 0);
+        const contactRate = row.contactRate ?? ratio(row.contacted, row.leads);
+        const khqtRate =
+          row.khqtRate ?? (row.contacted > 0 ? ratio(row.khqt, row.contacted) : ratio(row.khqt, row.leads));
+        const failRate = row.failRate ?? ratio(row.failed, row.leads);
         lines.push(
           `• ${row.key}: ${formatNumber(row.leads)} lead | Đã LH: ${formatPercent(contactRate)} | KHQT: ${formatPercent(khqtRate)} | Loại: ${formatPercent(failRate)}`,
         );
@@ -793,7 +794,12 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   const q = fold(text);
   const campaign = extractCampaignName(q);
   const cleanQ = campaign ? q.replace(campaign, " ") : q;
-  const iso = (date: Date) => toDateInputValue(date.toISOString());
+  const vn = toVnParts(now);
+  const ymd = (y: number, m: number, d: number) => {
+    const utc = new Date(Date.UTC(y, m, d));
+    return `${utc.getUTCFullYear()}-${String(utc.getUTCMonth() + 1).padStart(2, "0")}-${String(utc.getUTCDate()).padStart(2, "0")}`;
+  };
+  const today = ymd(vn.year, vn.month, vn.day);
 
   if (/(tat ca thoi gian|toan thoi gian|moi thoi diem|tu truoc den nay|toan bo thoi gian)/.test(cleanQ)) {
     return { dateFrom: null, dateTo: null, label: "tất cả thời gian", hasExplicitTime: true, clearsDate: true };
@@ -807,19 +813,19 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   if (rangeMatch) {
     const d1 = Number(rangeMatch[1]);
     const m1 = Number(rangeMatch[2]) - 1;
-    const y1 = rangeMatch[3] ? Number(rangeMatch[3]) : now.getFullYear();
+    const y1 = rangeMatch[3] ? Number(rangeMatch[3]) : vn.year;
     const d2 = Number(rangeMatch[4]);
     const m2 = Number(rangeMatch[5]) - 1;
     const y2 = rangeMatch[6] ? Number(rangeMatch[6]) : y1;
-    const from = iso(new Date(y1, m1, d1));
-    const to = iso(new Date(y2, m2, d2));
+    const from = ymd(y1, m1, d1);
+    const to = ymd(y2, m2, d2);
     return { dateFrom: from, dateTo: to, label: `${vnDate(from)}–${vnDate(to)}`, hasExplicitTime: true, clearsDate: false };
   }
 
   if (/thang nay|dau thang den nay|trong thang nay/.test(cleanQ)) {
     return {
-      dateFrom: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
-      dateTo: iso(now),
+      dateFrom: ymd(vn.year, vn.month, 1),
+      dateTo: today,
       label: "tháng này",
       hasExplicitTime: true,
       clearsDate: false,
@@ -828,8 +834,8 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
 
   if (/thang truoc|thang vua roi|thang qua/.test(cleanQ)) {
     return {
-      dateFrom: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
-      dateTo: iso(new Date(now.getFullYear(), now.getMonth(), 0)),
+      dateFrom: ymd(vn.year, vn.month - 1, 1),
+      dateTo: ymd(vn.year, vn.month, 0),
       label: "tháng trước",
       hasExplicitTime: true,
       clearsDate: false,
@@ -838,8 +844,8 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
 
   if (/hom nay|ngay hom nay/.test(cleanQ)) {
     return {
-      dateFrom: iso(now),
-      dateTo: iso(now),
+      dateFrom: today,
+      dateTo: today,
       label: "hôm nay",
       hasExplicitTime: true,
       clearsDate: false,
@@ -847,11 +853,10 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   }
 
   if (/hom qua|ngay hom qua/.test(cleanQ)) {
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterday = ymd(vn.year, vn.month, vn.day - 1);
     return {
-      dateFrom: iso(yesterday),
-      dateTo: iso(yesterday),
+      dateFrom: yesterday,
+      dateTo: yesterday,
       label: "hôm qua",
       hasExplicitTime: true,
       clearsDate: false,
@@ -859,11 +864,10 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   }
 
   if (/hom kia|ngay hom kia/.test(cleanQ)) {
-    const dayBefore = new Date(now);
-    dayBefore.setDate(dayBefore.getDate() - 2);
+    const dayBefore = ymd(vn.year, vn.month, vn.day - 2);
     return {
-      dateFrom: iso(dayBefore),
-      dateTo: iso(dayBefore),
+      dateFrom: dayBefore,
+      dateTo: dayBefore,
       label: "hôm kia",
       hasExplicitTime: true,
       clearsDate: false,
@@ -871,11 +875,10 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   }
 
   if (/tuan nay|trong tuan nay|dau tuan den nay/.test(cleanQ)) {
-    const dayOfWeek = (now.getDay() + 6) % 7;
-    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
+    const dayOfWeek = (vn.dayOfWeek + 6) % 7;
     return {
-      dateFrom: iso(monday),
-      dateTo: iso(now),
+      dateFrom: ymd(vn.year, vn.month, vn.day - dayOfWeek),
+      dateTo: today,
       label: "tuần này",
       hasExplicitTime: true,
       clearsDate: false,
@@ -883,12 +886,10 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   }
 
   if (/tuan truoc|tuan vua roi|tuan qua/.test(cleanQ)) {
-    const dayOfWeek = (now.getDay() + 6) % 7;
-    const lastMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek - 7);
-    const lastSunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek - 1);
+    const dayOfWeek = (vn.dayOfWeek + 6) % 7;
     return {
-      dateFrom: iso(lastMonday),
-      dateTo: iso(lastSunday),
+      dateFrom: ymd(vn.year, vn.month, vn.day - dayOfWeek - 7),
+      dateTo: ymd(vn.year, vn.month, vn.day - dayOfWeek - 1),
       label: "tuần trước",
       hasExplicitTime: true,
       clearsDate: false,
@@ -898,11 +899,9 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   const days = /(\d+)\s*ngay/.exec(cleanQ);
   if (days) {
     const count = Math.max(1, Number(days[1]));
-    const from = new Date(now);
-    from.setDate(from.getDate() - (count - 1));
     return {
-      dateFrom: iso(from),
-      dateTo: iso(now),
+      dateFrom: ymd(vn.year, vn.month, vn.day - (count - 1)),
+      dateTo: today,
       label: `${count} ngày gần nhất`,
       hasExplicitTime: true,
       clearsDate: false,
@@ -910,10 +909,10 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   }
 
   if (/quy nay|trong quy nay/.test(cleanQ)) {
-    const startMonth = Math.floor(now.getMonth() / 3) * 3;
+    const startMonth = Math.floor(vn.month / 3) * 3;
     return {
-      dateFrom: iso(new Date(now.getFullYear(), startMonth, 1)),
-      dateTo: iso(now),
+      dateFrom: ymd(vn.year, startMonth, 1),
+      dateTo: today,
       label: "quý này",
       hasExplicitTime: true,
       clearsDate: false,
@@ -921,10 +920,10 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   }
 
   if (/quy truoc|quy vua roi/.test(cleanQ)) {
-    const currentQStart = Math.floor(now.getMonth() / 3) * 3;
+    const currentQStart = Math.floor(vn.month / 3) * 3;
     return {
-      dateFrom: iso(new Date(now.getFullYear(), currentQStart - 3, 1)),
-      dateTo: iso(new Date(now.getFullYear(), currentQStart, 0)),
+      dateFrom: ymd(vn.year, currentQStart - 3, 1),
+      dateTo: ymd(vn.year, currentQStart, 0),
       label: "quý trước",
       hasExplicitTime: true,
       clearsDate: false,
@@ -934,11 +933,11 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   const quarterMatch = /(?:^|\s)quy\s*([1-4])(?:\s*[\/\-]?\s*(?:nam\s*)?(\d{4}))?(?=\s|$|[?,!.])/.exec(cleanQ);
   if (quarterMatch) {
     const qNum = Number(quarterMatch[1]);
-    const year = quarterMatch[2] ? Number(quarterMatch[2]) : now.getFullYear();
+    const year = quarterMatch[2] ? Number(quarterMatch[2]) : vn.year;
     const startMonth = (qNum - 1) * 3;
     return {
-      dateFrom: iso(new Date(year, startMonth, 1)),
-      dateTo: iso(new Date(year, startMonth + 3, 0)),
+      dateFrom: ymd(year, startMonth, 1),
+      dateTo: ymd(year, startMonth + 3, 0),
       label: `quý ${qNum}${quarterMatch[2] ? `/${year}` : ""}`,
       hasExplicitTime: true,
       clearsDate: false,
@@ -952,10 +951,10 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   if (monthMatch) {
     const mNum = Number(monthMatch[1]);
     const yearStr = monthMatch[2] || monthMatch[3];
-    const year = yearStr ? Number(yearStr) : now.getFullYear();
+    const year = yearStr ? Number(yearStr) : vn.year;
     return {
-      dateFrom: iso(new Date(year, mNum - 1, 1)),
-      dateTo: iso(new Date(year, mNum, 0)),
+      dateFrom: ymd(year, mNum - 1, 1),
+      dateTo: ymd(year, mNum, 0),
       label: `tháng ${mNum}${yearStr ? `/${year}` : ""}`,
       hasExplicitTime: true,
       clearsDate: false,
@@ -964,8 +963,8 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
 
   if (/nam nay|trong nam nay|dau nam den nay/.test(cleanQ)) {
     return {
-      dateFrom: iso(new Date(now.getFullYear(), 0, 1)),
-      dateTo: iso(now),
+      dateFrom: ymd(vn.year, 0, 1),
+      dateTo: today,
       label: "năm nay",
       hasExplicitTime: true,
       clearsDate: false,
@@ -973,10 +972,10 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   }
 
   if (/nam truoc|nam ngoai/.test(cleanQ)) {
-    const y = now.getFullYear() - 1;
+    const y = vn.year - 1;
     return {
-      dateFrom: iso(new Date(y, 0, 1)),
-      dateTo: iso(new Date(y, 11, 31)),
+      dateFrom: ymd(y, 0, 1),
+      dateTo: ymd(y, 11, 31),
       label: "năm trước",
       hasExplicitTime: true,
       clearsDate: false,
@@ -1004,7 +1003,7 @@ export function parseStatsQuestion(
   const hasContext = Boolean(context?.lastStats || (context?.mentions && context.mentions.length > 0));
 
   const asksNumbers =
-    /(bao nhieu|so lieu|du lieu|thong ke|bao cao|tinh hinh|ket qua|doanh so|tong|ty le|phan bo|chi tiet|theo fanpage|tung fanpage|moi fanpage|theo page|tung page|theo chien dich|theo nguon|theo kenh|theo phu trach|theo nhan vien|theo sale|theo trang thai|theo phan loai|theo thuong hieu|theo hang|theo san pham|theo dong xe|theo dai ly|theo showroom|theo dia diem|theo chi nhanh|so voi|so sanh|doi chieu|qua han|khqt|gdtd|khd|ky hop dong|bi loai|mat khach|fail|da lien he|chua lien he|chi phi|chi tieu|ngan sach|quang cao|\bads\b|marketing|ctr|\bcpl\b|luot click|\bclick\b|hien thi|impression|thu cong|nhieu nhat|thap nhat|cao nhat|re nhat|\btop\b)/.test(
+    /(bao nhieu|so lieu|du lieu|thong ke|bao cao|tinh hinh|ket qua|doanh so|tong|ty le|phan bo|chi tiet|theo fanpage|tung fanpage|moi fanpage|theo page|tung page|theo chien dich|theo nguon|theo kenh|theo phu trach|theo nhan vien|theo sale|theo trang thai|theo phan loai|theo thuong hieu|theo hang|theo san pham|theo dong xe|theo dai ly|theo showroom|theo dia diem|theo chi nhanh|so voi|so sanh|doi chieu|qua han|khqt|gdtd|khd|ky hop dong|bi loai|mat khach|fail|da lien he|chua lien he|chi phi|chi tieu|ngan sach|quang cao|\bads\b|marketing|ctr|\bcpl\b|luot click|\bclick\b|hien thi|impression|thu cong|nhap tay|\bimport\b|tiktok|zalo|website|landing page|google|hotline|facebook|\bmeta\b|nhieu nhat|thap nhat|cao nhat|re nhat|\btop\b)/.test(
       q,
     );
 
@@ -1034,7 +1033,11 @@ export function parseStatsQuestion(
   if (/quang cao|\bads\b/.test(q) && (ranking || campaignQuery)) groupBy = "ad";
   else if (/theo fanpage|tung fanpage|moi fanpage|theo page|tung page/.test(q)) groupBy = "fanpage";
   else if (/chien dich|campaign/.test(q) && !campaignQuery) groupBy = "campaign";
-  else if (/theo nguon|tung nguon|theo kenh|phan bo.*nguon/.test(q) || (/nguon|kenh/.test(q) && !/thu cong|tiktok|zalo|landing/.test(q))) groupBy = "source";
+  else if (
+    /theo nguon|tung nguon|theo kenh|phan bo.*nguon/.test(q) ||
+    (/nguon|kenh/.test(q) && !/thu cong|nhap tay|\bimport\b|tiktok|zalo|landing|website|google|hotline|facebook|\bmeta\b/.test(q))
+  )
+    groupBy = "source";
   else if (/phu trach|nhan vien|\bsale\b/.test(q)) groupBy = "assignee";
   else if (/trang thai|phan loai/.test(q)) groupBy = "category";
   else if (/thuong hieu|hang xe|\bhang\b/.test(q)) groupBy = "brand";
@@ -1061,10 +1064,13 @@ export function parseStatsQuestion(
   else if (/da lien he/.test(q)) filters.contactStatus = "DA_LIEN_HE";
 
   if (groupBy !== "source") {
-    if (/thu cong|nhap tay|\bmanual\b/.test(q)) filters.sources = ["MANUAL"];
-    else if (/tiktok/.test(q)) filters.sources = ["TIKTOK_LEAD_ADS"];
-    else if (/zalo/.test(q)) filters.sources = ["ZALO_LEAD"];
-    else if (/landing page/.test(q)) filters.sources = ["LANDING_PAGE_FORM"];
+    if (/thu cong|nhap tay|\bmanual\b|\bimport\b/.test(q)) filters.sources = ["MANUAL"];
+    else if (/tiktok/.test(q)) filters.sources = ["TIKTOK"];
+    else if (/zalo/.test(q)) filters.sources = ["ZALO"];
+    else if (/landing page|website/.test(q)) filters.sources = ["WEBSITE"];
+    else if (/google/.test(q)) filters.sources = ["GOOGLE"];
+    else if (/hotline/.test(q)) filters.sources = ["HOTLINE"];
+    else if (/facebook|\bmeta\b/.test(q)) filters.sources = ["FACEBOOK"];
   }
 
   const parsedResult: StatsQuery = {

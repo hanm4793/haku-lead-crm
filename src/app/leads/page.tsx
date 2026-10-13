@@ -50,9 +50,13 @@ export default async function Page() {
   const now = new Date();
   const [initialData, facebookPages, assignees, reference, attrFields] = await Promise.all([
     queryLeadPage({ ...INITIAL_REQUEST, now }, viewer),
-    listFacebookPages(projectId ? { projectId } : undefined),
+    projectId
+      ? listFacebookPages({ projectId })
+      : viewer.role === "SUPER_ADMIN"
+        ? listFacebookPages()
+        : Promise.resolve([]),
     listAssignableStaff(viewer),
-    getReferenceData(projectId).catch(() => null),
+    getReferenceData(projectId, viewer).catch(() => null),
     projectId ? listAttrFields(projectId, { activeOnly: true }).catch(() => []) : Promise.resolve([]),
   ]);
   const catalog = reference ? catalogOptionsFromReference(reference) : DEFAULT_LEAD_CATALOG;

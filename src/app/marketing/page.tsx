@@ -1,13 +1,21 @@
-﻿import { redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 
 import { MarketingPage } from "@/components/marketing/marketing-page";
 import { canManageSettings, canViewMarketing, isMarketingRowVisible, isPageVisible } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
-import { hasSyncedInsights, latestInsightSync, listAdInsights, listCampaignInsights } from "@/lib/db/insights-repo";
+import {
+  hasSyncedInsights,
+  latestInsightSync,
+  listAdInsights,
+  listCampaignInsights,
+  queryCrmAttributionByPage,
+} from "@/lib/db/insights-repo";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
+import { getReferenceData } from "@/lib/db/leads-repo";
 import { listFacebookPageIdsForProject } from "@/lib/db/project-repo";
 import { getFacebookConfig } from "@/lib/facebook/env";
+import { toDateInputValue } from "@/lib/utils";
 
 export const metadata = { title: "Marketing — SEMTOP Marketing CRM" };
 export const dynamic = "force-dynamic";
@@ -29,13 +37,24 @@ export default async function Page() {
     );
   }
 
-  const [campaignRows, adInsightRows, pages, hasSynced, latestSync, projectPageIds] = await Promise.all([
-    listCampaignInsights(),
-    listAdInsights(),
+  const projectPageIds = projectId ? await listFacebookPageIdsForProject(projectId) : null;
+  const scopedPageIds =
+    projectPageIds !== null && viewer.role !== "SUPER_ADMIN"
+      ? projectPageIds.filter((id) => viewer.pageIds.includes(id))
+      : projectPageIds !== null
+        ? [...projectPageIds]
+        : viewer.role !== "SUPER_ADMIN"
+          ? [...viewer.pageIds]
+          : null;
+
+  const [campaignRows, adInsightRows, pages, hasSynced, latestSync, crmRows, reference] = await Promise.all([
+    listCampaignInsights(undefined, scopedPageIds),
+    listAdInsights(undefined, scopedPageIds),
     listFacebookPages(projectId ? { projectId } : undefined),
     hasSyncedInsights(),
     latestInsightSync(),
-    projectId ? listFacebookPageIdsForProject(projectId) : Promise.resolve(null),
+    queryCrmAttributionByPage({ projectId, pageIds: scopedPageIds }).catch(() => []),
+    getReferenceData(projectId).catch(() => null),
   ]);
 
   const adRows = adInsightRows.filter((row) => isMarketingRowVisible(viewer, row.pageId, projectPageIds));
@@ -48,19 +67,23 @@ export default async function Page() {
   const visiblePages = pages
     .filter((page) => isPageVisible(viewer, page.facebookPageId))
     .map((page) => ({ id: page.facebookPageId, name: page.name }));
+  const brandOptions = reference?.brands.map((b) => ({ code: b.code, name: b.name })) ?? [];
   const config = getFacebookConfig();
 
   return (
     <MarketingPage
       rows={rows}
       adRows={adRows}
+      crmRows={crmRows}
+      brandOptions={brandOptions}
       pages={visiblePages}
       hasSynced={hasSynced}
       configured={Boolean(config?.adAccountId)}
       adAccountId={config?.adAccountId ?? null}
       syncedAt={latestSync?.finishedAt ?? null}
-      today={new Date().toISOString().slice(0, 10)}
+      today={toDateInputValue(new Date().toISOString())}
       canSync={canManageSettings(viewer.role)}
     />
   );
 }
+

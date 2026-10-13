@@ -4,6 +4,7 @@ import { scopeConditions } from "@/lib/db/leads-repo";
 
 import {
   assertCanManageAccount,
+  canAssignLead,
   canCommentLead,
   canCreateLead,
   canEditLead,
@@ -155,6 +156,15 @@ describe("lead data", () => {
 
     expect(canEditLead({ role: "PARTNER_ADMIN", appUserId: "partner" }, { assigneeId: null })).toBe(true);
     expect(canEditLead({ role: "SUPER_ADMIN", appUserId: "super" }, { assigneeId: "anyone" })).toBe(true);
+  });
+
+  it("only super admin and partner admin can assign leads", () => {
+    expect(canAssignLead("SUPER_ADMIN")).toBe(true);
+    expect(canAssignLead("PARTNER_ADMIN")).toBe(true);
+    expect(canAssignLead("STAFF")).toBe(false);
+    expect(canAssignLead({ role: "SUPER_ADMIN" })).toBe(true);
+    expect(canAssignLead({ role: "PARTNER_ADMIN" })).toBe(true);
+    expect(canAssignLead({ role: "STAFF" })).toBe(false);
   });
 
   it("only MANUAL leads allow editing name and phone, respecting lead edit boundary", () => {

@@ -333,22 +333,37 @@ function extractCellString(value: ExcelJS.CellValue, isPhoneCol = false): string
   return String(value).trim();
 }
 
+function isValidCalendarDate(y: number, m: number, day: number): boolean {
+  if (m < 1 || m > 12 || day < 1 || day > 31) return false;
+  const d = new Date(Date.UTC(y, m - 1, day));
+  return (
+    !Number.isNaN(d.getTime()) &&
+    d.getUTCFullYear() === y &&
+    d.getUTCMonth() + 1 === m &&
+    d.getUTCDate() === day
+  );
+}
+
 function parseDateValue(raw: string): string | null {
   const value = raw.trim();
   if (!value) return null;
   const mIso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (mIso) {
-    const d = new Date(`${value}T00:00:00Z`);
-    return Number.isNaN(d.getTime()) ? null : value;
+    const y = Number(mIso[1]);
+    const m = Number(mIso[2]);
+    const day = Number(mIso[3]);
+    return isValidCalendarDate(y, m, day) ? value : null;
   }
   const mVn = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value);
   if (mVn) {
-    const dd = mVn[1].padStart(2, "0");
-    const mm = mVn[2].padStart(2, "0");
-    const yyyy = mVn[3];
-    const iso = `${yyyy}-${mm}-${dd}`;
-    const d = new Date(`${iso}T00:00:00Z`);
-    return Number.isNaN(d.getTime()) ? null : iso;
+    const day = Number(mVn[1]);
+    const m = Number(mVn[2]);
+    const y = Number(mVn[3]);
+    if (!isValidCalendarDate(y, m, day)) return null;
+    const dd = String(day).padStart(2, "0");
+    const mm = String(m).padStart(2, "0");
+    const yyyy = String(y);
+    return `${yyyy}-${mm}-${dd}`;
   }
   return null;
 }
@@ -577,9 +592,13 @@ export async function parseAndValidateImportWorkbook(
     const rawName = (fixedValues.name ?? "").trim();
     let validName = "";
     if (!rawName) {
-      invalidFields.push({ field: "Họ tên", value: "(trống)", error: "Họ tên đang để trống" });
+      const msg = "Họ tên đang để trống";
+      invalidFields.push({ field: "Họ tên", value: "(trống)", error: msg });
+      blockingError = blockingError ?? msg;
     } else if (rawName.length > 120) {
-      invalidFields.push({ field: "Họ tên", value: `${rawName.slice(0, 25)}…`, error: "Tối đa 120 ký tự" });
+      const msg = "Tối đa 120 ký tự";
+      invalidFields.push({ field: "Họ tên", value: `${rawName.slice(0, 25)}…`, error: msg });
+      blockingError = blockingError ?? msg;
     } else {
       validName = rawName;
       validFields.push({ field: "Họ tên", value: validName });
@@ -736,20 +755,27 @@ export async function parseAndValidateImportWorkbook(
     const rawCategory = (fixedValues.category ?? "").trim();
     let validCategory: LeadCategory = "CHUA_PHAN_LOAI";
     if (rawCategory) {
-      const matchedCat = CATEGORY_OPTIONS.find(
-        (o) =>
-          o.value.toLowerCase() === rawCategory.toLowerCase() ||
-          o.label.toLowerCase() === rawCategory.toLowerCase(),
-      );
-      if (matchedCat) {
-        validCategory = matchedCat.value;
-        validFields.push({ field: "Phân loại", value: matchedCat.label });
+      const lowerCat = rawCategory.toLowerCase();
+      if (lowerCat === "chưa phân loại" || lowerCat === "chua phan loai" || lowerCat === "chua_phan_loai") {
+        validCategory = "CHUA_PHAN_LOAI";
+        validFields.push({ field: "Phân loại", value: "Chưa phân loại" });
       } else {
-        invalidFields.push({
-          field: "Phân loại",
-          value: rawCategory,
-          error: "Phân loại không hợp lệ",
-        });
+        const matchedCat = CATEGORY_OPTIONS.find(
+          (o) =>
+            o.value.toLowerCase() === lowerCat ||
+            o.label.toLowerCase() === lowerCat ||
+            (o.hint && o.hint.toLowerCase() === lowerCat),
+        );
+        if (matchedCat) {
+          validCategory = matchedCat.value;
+          validFields.push({ field: "Phân loại", value: matchedCat.label });
+        } else {
+          invalidFields.push({
+            field: "Phân loại",
+            value: rawCategory,
+            error: "Phân loại không hợp lệ",
+          });
+        }
       }
     }
 
@@ -852,6 +878,9 @@ export async function parseAndValidateImportWorkbook(
           value: cellVal || "(trống)",
           error: check.error,
         });
+        if (def.required) {
+          blockingError = blockingError ?? `${def.label}: ${check.error}`;
+        }
       }
     }
 

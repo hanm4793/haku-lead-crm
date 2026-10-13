@@ -137,7 +137,10 @@ export const projectMembers = pgTable(
       .notNull()
       .references(() => appUsers.id, { onDelete: "cascade" }),
   },
-  (table) => [primaryKey({ columns: [table.projectId, table.userId] })],
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.userId] }),
+    index("project_members_user_idx").on(table.userId),
+  ],
 );
 
 /** Field phụ theo project — giá trị nằm ở leads.attrs[key]. */
@@ -158,7 +161,10 @@ export const projectAttrFields = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [unique("project_attr_fields_project_key").on(table.projectId, table.key)],
+  (table) => [
+    unique("project_attr_fields_project_key").on(table.projectId, table.key),
+    index("project_attr_fields_project_idx").on(table.projectId),
+  ],
 );
 
 export const brands = pgTable(
@@ -194,21 +200,28 @@ export const locations = pgTable(
  * Nhân sự tồn tại độc lập với tài khoản đăng nhập: seed được người phụ trách
  * trước khi họ có account, rồi gắn `authUserId` vào lần đăng nhập đầu tiên.
  */
-export const appUsers = pgTable("app_users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  authUserId: uuid("auth_user_id").unique(),
-  email: text("email").unique(),
-  fullName: text("full_name").notNull(),
-  role: userRoleEnum("role").notNull().default("STAFF"),
-  locationId: uuid("location_id").references(() => locations.id, { onDelete: "set null" }),
-  /** Partner/Staff thuộc project này. Super admin để null = mọi project. */
-  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
-  /** Staff thuộc partner-admin này và nhìn đúng các fanpage của partner. */
-  partnerId: uuid("partner_id").references((): AnyPgColumn => appUsers.id, { onDelete: "set null" }),
-  /** Super admin bật cho từng partner-admin. Super admin luôn dùng được AI. */
-  aiEnabled: boolean("ai_enabled").notNull().default(false),
-  active: boolean("active").notNull().default(true),
-});
+export const appUsers = pgTable(
+  "app_users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    authUserId: uuid("auth_user_id").unique(),
+    email: text("email").unique(),
+    fullName: text("full_name").notNull(),
+    role: userRoleEnum("role").notNull().default("STAFF"),
+    locationId: uuid("location_id").references(() => locations.id, { onDelete: "set null" }),
+    /** Partner/Staff thuộc project này. Super admin để null = mọi project. */
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    /** Staff thuộc partner-admin này và nhìn đúng các fanpage của partner. */
+    partnerId: uuid("partner_id").references((): AnyPgColumn => appUsers.id, { onDelete: "set null" }),
+    /** Super admin bật cho từng partner-admin. Super admin luôn dùng được AI. */
+    aiEnabled: boolean("ai_enabled").notNull().default(false),
+    active: boolean("active").notNull().default(true),
+  },
+  (table) => [
+    index("app_users_project_idx").on(table.projectId),
+    index("app_users_partner_idx").on(table.partnerId),
+  ],
+);
 
 /** Fanpage mà partner-admin được xem lead và marketing. */
 export const userFacebookPages = pgTable(
@@ -290,6 +303,10 @@ export const leads = pgTable(
     index("leads_assignee_idx").on(table.assigneeId),
     // Phục vụ tab "Quá hạn" và widget nhắc gọi lại.
     index("leads_callback_at_idx").on(table.callbackAt),
+    index("leads_project_created_idx").on(table.projectId, table.createdAt),
+    index("leads_project_page_idx").on(table.projectId, table.facebookPageId),
+    index("leads_brand_id_idx").on(table.brandId),
+    index("leads_product_id_idx").on(table.productId),
   ],
 );
 
@@ -322,6 +339,7 @@ export const metaAdInsights = pgTable(
     unique("meta_ad_insights_level_object_date").on(t.level, t.objectId, t.dateStart),
     index("meta_ad_insights_page_idx").on(t.pageId),
     index("meta_ad_insights_campaign_idx").on(t.campaignId),
+    index("meta_ad_insights_level_date_idx").on(t.level, t.dateStart),
   ],
 );
 
@@ -343,15 +361,19 @@ export const metaSyncRuns = pgTable("meta_sync_runs", {
  * Sync lead lấy page `active` trong project (hoặc mọi page nếu super admin sync all).
  * Env FACEBOOK_PAGE_IDS chỉ bootstrap lần đầu vào project mặc định.
  */
-export const facebookPages = pgTable("facebook_pages", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  facebookPageId: text("facebook_page_id").notNull().unique(),
-  name: text("name"),
-  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
-  active: boolean("active").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const facebookPages = pgTable(
+  "facebook_pages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    facebookPageId: text("facebook_page_id").notNull().unique(),
+    name: text("name"),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("facebook_pages_project_idx").on(table.projectId)],
+);
 
 /**
  * Kết nối tài khoản quảng cáo / lead ngoài Meta Page (Google, TikTok, Zalo).
@@ -379,6 +401,7 @@ export const projectAdAccounts = pgTable(
       table.platform,
       table.externalAccountId,
     ),
+    index("project_ad_accounts_project_idx").on(table.projectId),
   ],
 );
 

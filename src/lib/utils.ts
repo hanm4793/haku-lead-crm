@@ -7,24 +7,54 @@ export function cn(...inputs: ClassValue[]) {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** 16:06 05/08/2026 — đúng định dạng đang dùng trên hệ thống hiện tại. */
+const VN_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/** Tách các thành phần ngày/giờ theo múi giờ Việt Nam (Asia/Ho_Chi_Minh, UTC+7). */
+export function toVnParts(d: Date) {
+  const vn = new Date(d.getTime() + VN_OFFSET_MS);
+  return {
+    year: vn.getUTCFullYear(),
+    month: vn.getUTCMonth(),
+    day: vn.getUTCDate(),
+    hours: vn.getUTCHours(),
+    minutes: vn.getUTCMinutes(),
+    dayOfWeek: vn.getUTCDay(),
+  };
+}
+
+/** 16:06 05/08/2026 — đúng định dạng đang dùng trên hệ thống hiện tại (giờ VN UTC+7). */
 export function formatDateTime(iso: string | null | undefined) {
   if (!iso) return "—";
   const d = new Date(iso);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  if (Number.isNaN(d.getTime())) return "—";
+  const { year, month, day, hours, minutes } = toVnParts(d);
+  return `${pad(hours)}:${pad(minutes)} ${pad(day)}/${pad(month + 1)}/${year}`;
 }
 
 export function formatDate(iso: string | null | undefined) {
   if (!iso) return "—";
   const d = new Date(iso);
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  if (Number.isNaN(d.getTime())) return "—";
+  const { year, month, day } = toVnParts(d);
+  return `${pad(day)}/${pad(month + 1)}/${year}`;
 }
 
-/** yyyy-MM-dd để đổ vào <input type="date"> */
+/** yyyy-MM-dd theo giờ Việt Nam (UTC+7) để đổ vào <input type="date"> */
 export function toDateInputValue(iso: string | null | undefined) {
   if (!iso) return "";
   const d = new Date(iso);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  if (Number.isNaN(d.getTime())) return "";
+  const { year, month, day } = toVnParts(d);
+  return `${year}-${pad(month + 1)}-${pad(day)}`;
+}
+
+/** yyyy-MM-ddTHH:mm theo giờ Việt Nam (UTC+7) để đổ vào <input type="datetime-local"> */
+export function toDateTimeLocalValue(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const { year, month, day, hours, minutes } = toVnParts(d);
+  return `${year}-${pad(month + 1)}-${pad(day)}T${pad(hours)}:${pad(minutes)}`;
 }
 
 export function formatNumber(n: number) {
