@@ -3,6 +3,7 @@ import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
 import {
   CATEGORY_CHART_LABEL,
   CHANNEL_LABEL,
+  FAIL_REASON_LABEL,
   SOURCE_LABEL,
   UNASSIGNED_ASSIGNMENT_LABEL,
   UNASSIGNED_PRODUCT_LABEL,
@@ -22,6 +23,7 @@ import { appUsers, brands, facebookPages, leads, locations, products } from "@/l
 import type {
   CategoryShare,
   DailyPoint,
+  FailReasonBar,
   FunnelStep,
   ModelBar,
   PivotDimension,
@@ -29,7 +31,7 @@ import type {
   PivotRow,
   SourceBar,
 } from "@/lib/metrics";
-import type { Lead, LeadFilters, LeadKpis, LeadSource } from "@/lib/types";
+import type { FailReason, Lead, LeadFilters, LeadKpis, LeadSource } from "@/lib/types";
 import { ratio } from "@/lib/utils";
 
 /**
@@ -96,6 +98,7 @@ function dimensionExpr(dim: PivotDimension): SQL {
 const PIVOT_METRICS = {
   leads: sql<number>`count(*)::int`,
   contacted: sql<number>`count(*) filter (where ${leads.contactStatus} = 'DA_LIEN_HE')::int`,
+  unreachable: sql<number>`count(*) filter (where ${leads.category} = 'CHUA_LH_DUOC')::int`,
   khqt: sql<number>`count(*) filter (where ${leads.category} in ('KHQT', 'GDTD', 'KHD'))::int`,
   gdtd: sql<number>`count(*) filter (where ${leads.category} in ('GDTD', 'KHD'))::int`,
   khd: sql<number>`count(*) filter (where ${leads.category} = 'KHD')::int`,
@@ -108,6 +111,7 @@ function finalizePivotRow(
   raw: {
     leads: number;
     contacted: number;
+    unreachable: number;
     khqt: number;
     gdtd: number;
     khd: number;
@@ -120,9 +124,12 @@ function finalizePivotRow(
     key,
     leads: raw.leads,
     leadShare: ratio(raw.leads, grandTotal),
+    uncontacted: Math.max(0, raw.leads - raw.contacted),
     contacted: raw.contacted,
     contactRate: ratio(raw.contacted, raw.leads),
+    unreachable: raw.unreachable,
     khqt: raw.khqt,
+    khqtRate: ratio(raw.khqt, raw.leads),
     gdtd: raw.gdtd,
     khd: raw.khd,
     signRate: ratio(raw.khd, raw.leads),
@@ -187,12 +194,13 @@ export function funnelFromKpis(row: {
   gdtd: number;
   khd: number;
 }): FunnelStep[] {
+  const effectiveContacted = Math.max(row.contacted, row.khqt);
   const raw: [string, number][] = [
     ["Tổng lead", row.total],
-    ["Đã liên hệ", row.contacted],
-    ["Quan tâm trở lên", row.khqt],
-    ["Đang giao dịch trở lên", row.gdtd],
-    ["Ký hợp đồng", row.khd],
+    ["Đã liên hệ", effectiveContacted],
+    ["Quan tâm trở lên (KHQT+)", row.khqt],
+    ["Giao dịch theo dõi+ (GDTD+)", row.gdtd],
+    ["Ký hợp đồng (KHĐ)", row.khd],
   ];
   return raw.map(([label, value], i) => ({
     label,
@@ -231,15 +239,49 @@ export async function queryDailySeries(
     .groupBy(sql`1`)
     .orderBy(asc(sql`1`));
 
-  return rows.map((row) => {
+  const byDate = new Map<string, DailyPoint>();
+  for (const row of rows) {
     const [, month, day] = row.date.split("-");
-    return {
+    byDate.set(row.date, {
       date: row.date,
       label: `${day}.${month}`,
       leads: row.leads,
       khqt: row.khqt,
-    };
-  });
+    });
+  }
+
+  // Lấp đầy các ngày 0 lead trong khoảng lọc (tối đa 180 ngày) để đường xu hướng không bị đứt gãy.
+  if (
+    filters.dateFrom &&
+    filters.dateTo &&
+    /^\d{4}-\d{2}-\d{2}$/.test(filters.dateFrom) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(filters.dateTo)
+  ) {
+    const startMs = Date.parse(`${filters.dateFrom}T00:00:00Z`);
+    const endMs = Date.parse(`${filters.dateTo}T00:00:00Z`);
+    const diffDays = Math.round((endMs - startMs) / 86_400_000);
+    if (diffDays >= 0 && diffDays <= 180) {
+      const filled: DailyPoint[] = [];
+      for (let i = 0; i <= diffDays; i++) {
+        const d = new Date(startMs + i * 86_400_000);
+        const yyyy = d.getUTCFullYear();
+        const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+        const dd = String(d.getUTCDate()).padStart(2, "0");
+        const key = `${yyyy}-${mm}-${dd}`;
+        filled.push(
+          byDate.get(key) ?? {
+            date: key,
+            label: `${dd}.${mm}`,
+            leads: 0,
+            khqt: 0,
+          },
+        );
+      }
+      return filled;
+    }
+  }
+
+  return [...byDate.values()];
 }
 
 export async function queryCategoryDistribution(
@@ -270,6 +312,45 @@ export async function queryCategoryDistribution(
       label: CATEGORY_CHART_LABEL[category],
       value: byCat.get(category) ?? 0,
     }));
+}
+
+export async function queryFailReasons(
+  filters: LeadFilters,
+  viewer: ViewerScope,
+  now: Date,
+): Promise<FailReasonBar[]> {
+  const baseWhere = whereClause(filters, viewer, now);
+  const failWhere = baseWhere
+    ? and(baseWhere, eq(leads.category, "FAIL"))
+    : eq(leads.category, "FAIL");
+
+  const rows = await getDb()
+    .select({
+      reason: leads.failReason,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(leads)
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
+    .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
+    .leftJoin(products, eq(leads.productId, products.id))
+    .where(failWhere)
+    .groupBy(leads.failReason)
+    .orderBy(desc(sql`count(*)`));
+
+  const totalFailed = rows.reduce((sum, r) => sum + r.count, 0);
+  return rows.map((row) => {
+    const key = row.reason ?? "CHUA_RO";
+    const label = row.reason
+      ? (FAIL_REASON_LABEL[row.reason as FailReason] ?? row.reason)
+      : "Chưa ghi lý do";
+    return {
+      reason: key,
+      label,
+      count: row.count,
+      share: ratio(row.count, totalFailed),
+    };
+  });
 }
 
 export async function queryBySource(
@@ -340,6 +421,7 @@ async function queryPivotGrouped(
         key: sql<string>`${groupExpr}`,
         leads: PIVOT_METRICS.leads,
         contacted: PIVOT_METRICS.contacted,
+        unreachable: PIVOT_METRICS.unreachable,
         khqt: PIVOT_METRICS.khqt,
         gdtd: PIVOT_METRICS.gdtd,
         khd: PIVOT_METRICS.khd,
@@ -363,6 +445,7 @@ async function queryPivotGrouped(
       {
         leads: grandTotal,
         contacted: list.reduce((s, r) => s + r.contacted, 0),
+        unreachable: list.reduce((s, r) => s + r.unreachable, 0),
         khqt: list.reduce((s, r) => s + r.khqt, 0),
         gdtd: list.reduce((s, r) => s + r.gdtd, 0),
         khd: list.reduce((s, r) => s + r.khd, 0),
@@ -382,6 +465,7 @@ async function queryPivotGrouped(
       splitKey: sql<string>`${splitExpr}`,
       leads: PIVOT_METRICS.leads,
       contacted: PIVOT_METRICS.contacted,
+      unreachable: PIVOT_METRICS.unreachable,
       khqt: PIVOT_METRICS.khqt,
       gdtd: PIVOT_METRICS.gdtd,
       khd: PIVOT_METRICS.khd,
@@ -409,6 +493,7 @@ async function queryPivotGrouped(
   const aggregateKey = (cells: typeof rows) => ({
     leads: cells.reduce((s, r) => s + r.leads, 0),
     contacted: cells.reduce((s, r) => s + r.contacted, 0),
+    unreachable: cells.reduce((s, r) => s + r.unreachable, 0),
     khqt: cells.reduce((s, r) => s + r.khqt, 0),
     gdtd: cells.reduce((s, r) => s + r.gdtd, 0),
     khd: cells.reduce((s, r) => s + r.khd, 0),

@@ -1,9 +1,9 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, Percent, PhoneCall, PhoneOff, Users } from "lucide-react";
+import { AlertCircle, Award, CheckCircle2, Percent, PhoneCall, PhoneOff, Users } from "lucide-react";
 
 import type { LeadKpis } from "@/lib/types";
-import { cn, formatNumber, formatPercent } from "@/lib/utils";
+import { cn, formatNumber, formatPercent, ratio } from "@/lib/utils";
 
 interface Card {
   label: string;
@@ -14,9 +14,12 @@ interface Card {
   icon: React.ComponentType<{ className?: string }>;
   /** Tăng là xấu (vd. chưa LH) — đảo màu delta. */
   invertDelta?: boolean;
+  /** Phụ đề cố định thay cho delta (dùng cho chỉ số tồn đọng thời điểm hiện tại). */
+  subtext?: string;
 }
 
 export function ReportKpiCards({ current, previous }: { current: LeadKpis; previous: LeadKpis | null }) {
+  const signRate = ratio(current.khd, current.total);
   const cards: Card[] = [
     {
       label: "Tổng lead",
@@ -62,17 +65,26 @@ export function ReportKpiCards({ current, previous }: { current: LeadKpis; previ
       icon: CheckCircle2,
     },
     {
+      label: "Ký hợp đồng (KHĐ)",
+      value: formatNumber(current.khd),
+      delta: previous ? current.khd - previous.khd : null,
+      deltaKind: "count",
+      icon: Award,
+      subtext: `Tỷ lệ chốt: ${formatPercent(signRate)}`,
+    },
+    {
       label: "Quá hạn cần gọi",
       value: formatNumber(current.overdue),
-      delta: previous ? current.overdue - previous.overdue : null,
+      delta: null,
       deltaKind: "count",
       icon: AlertCircle,
       invertDelta: true,
+      subtext: current.overdue > 0 ? "Cần xử lý ngay" : "Không có tồn đọng",
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
       {cards.map((card) => {
         const Icon = card.icon;
         const rawPositive = (card.delta ?? 0) > 0;
@@ -80,13 +92,13 @@ export function ReportKpiCards({ current, previous }: { current: LeadKpis; previ
         const good = card.invertDelta ? rawNegative : rawPositive;
         const bad = card.invertDelta ? rawPositive : rawNegative;
         return (
-          <div key={card.label} className="rounded-xl border border-border bg-card px-4 py-3 shadow-xs">
+          <div key={card.label} className="rounded-xl border border-border bg-card px-3.5 py-3 shadow-xs">
             <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-              <Icon className="size-3.5" />
+              <Icon className="size-3.5 shrink-0" />
               <span className="truncate">{card.label}</span>
             </div>
             <div className="mt-1.5 text-2xl font-bold tabular-nums">{card.value}</div>
-            <div className="mt-0.5 h-4 text-[11px] font-medium tabular-nums">
+            <div className="mt-0.5 flex items-center gap-1.5 h-4 text-[11px] font-medium tabular-nums">
               {card.delta !== null && card.delta !== 0 && (
                 <span className={cn(good && "text-emerald-600", bad && "text-rose-600")}>
                   {rawPositive ? "▲" : "▼"}{" "}
@@ -95,7 +107,13 @@ export function ReportKpiCards({ current, previous }: { current: LeadKpis; previ
                     : formatNumber(Math.abs(card.delta))}
                 </span>
               )}
-              {card.delta === null && <span className="text-muted-foreground">—</span>}
+              {card.subtext ? (
+                <span className={cn("truncate text-[10px]", card.invertDelta && current.overdue > 0 ? "text-rose-600" : "text-muted-foreground")}>
+                  {card.subtext}
+                </span>
+              ) : (
+                card.delta === null && <span className="text-muted-foreground">—</span>
+              )}
             </div>
           </div>
         );

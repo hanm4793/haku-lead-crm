@@ -6,6 +6,7 @@ import {
   queryCallList,
   queryCategoryDistribution,
   queryDailySeries,
+  queryFailReasons,
   queryPivot,
   queryReportKpis,
 } from "@/lib/db/report-queries";
@@ -13,16 +14,24 @@ import { previousCalendarRange } from "@/lib/date-range";
 import type {
   CategoryShare,
   DailyPoint,
+  FailReasonBar,
   FunnelStep,
   ModelBar,
   PivotDimension,
   PivotResult,
+  PivotRow,
   SourceBar,
 } from "@/lib/metrics";
 import type { Lead, LeadFilters, LeadKpis } from "@/lib/types";
 
-/** Các chiều luôn được tính sẵn để nút xuất Excel của bảng chi tiết dùng ngay. */
-export const EXPORT_PIVOT_DIMENSIONS: PivotDimension[] = ["source", "facebookPage", "category", "product"];
+/** Các chiều luôn được tính sẵn để nút xuất Excel của bảng chi tiết và bảng tổng quan dùng ngay. */
+export const EXPORT_PIVOT_DIMENSIONS: PivotDimension[] = [
+  "source",
+  "facebookPage",
+  "assignee",
+  "category",
+  "product",
+];
 
 export interface ReportSummary {
   kpis: LeadKpis;
@@ -32,8 +41,11 @@ export interface ReportSummary {
     daily: DailyPoint[];
     funnel: FunnelStep[];
     distribution: CategoryShare[];
+    failReasons: FailReasonBar[];
     bySource: SourceBar[];
     byModel: ModelBar[];
+    byAssignee: PivotRow[];
+    byFanpage: PivotRow[];
     /** Danh sách cần gọi hôm nay — dữ liệu lead duy nhất được gửi ra client. */
     callList: Lead[];
   };
@@ -80,6 +92,7 @@ export async function buildReportSummary(
     previousKpis,
     daily,
     distribution,
+    failReasons,
     bySource,
     byModel,
     callList,
@@ -90,6 +103,7 @@ export async function buildReportSummary(
     previousFilters ? queryReportKpis(previousFilters, viewer, now) : Promise.resolve(null),
     queryDailySeries(filters, viewer, now),
     queryCategoryDistribution(filters, viewer, now),
+    queryFailReasons(filters, viewer, now),
     queryBySource(filters, viewer, now),
     queryByProduct(filters, viewer, now, 12),
     queryCallList(filters, viewer, now, 25),
@@ -112,8 +126,11 @@ export async function buildReportSummary(
       daily,
       funnel,
       distribution,
+      failReasons,
       bySource,
       byModel,
+      byAssignee: byDimension.assignee?.rows ?? [],
+      byFanpage: byDimension.facebookPage?.rows ?? [],
       callList,
     },
     pivot: {

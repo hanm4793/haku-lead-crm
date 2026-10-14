@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { BarChart3, Loader2, Table2 } from "lucide-react";
+import { BarChart3, Loader2, RotateCcw, Table2 } from "lucide-react";
 
 import { updateLeadAction } from "@/app/leads/actions";
 import { DateRangePicker, resolvePreset, type DateRange, type PresetId } from "@/components/common/date-range-picker";
@@ -12,15 +12,17 @@ import { useToast } from "@/components/providers/toast-provider";
 import { OverviewTab } from "@/components/reports/overview-tab";
 import { PivotTab } from "@/components/reports/pivot-tab";
 import { ReportKpiCards } from "@/components/reports/report-kpi-cards";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLeadLogs } from "@/hooks/use-lead-logs";
 import { canEditLead, canEditLeadProfile, type UserRole } from "@/lib/auth/roles";
 import { DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/lib/catalog";
 import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
-import { EMPTY_FILTERS } from "@/lib/filters";
+import { countActiveFilters, EMPTY_FILTERS } from "@/lib/filters";
 import type { PivotDimension } from "@/lib/metrics";
 import type { ReportSummary } from "@/lib/reports/summary";
 import type { ActivityKind, Lead, LeadFilters } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface LogEntry {
   kind: ActivityKind;
@@ -61,7 +63,7 @@ export function ReportsPage({
   const [refreshTick, setRefreshTick] = React.useState(0);
 
   const selectedId = selectedLead?.id ?? null;
-  const { logs: selectedLogs, reload: reloadLogs } = useLeadLogs(selectedId);
+  const { logs: selectedLogs, loading: logsLoading, reload: reloadLogs } = useLeadLogs(selectedId);
 
   const liveSelected = selectedLead
     ? (callList.find((lead) => lead.id === selectedLead.id) ?? selectedLead)
@@ -69,6 +71,8 @@ export function ReportsPage({
   const leadEditable = (lead: Lead) => (editor ? canEditLead(editor, { assigneeId: lead.assigneeId }) : true);
   const leadProfileEditable = (lead: Lead) =>
     editor ? canEditLeadProfile(editor, lead) : lead.source === "MANUAL";
+
+  const filterCount = countActiveFilters(filters);
 
   const requestKey = JSON.stringify({
     filters,
@@ -131,28 +135,38 @@ export function ReportsPage({
     return true;
   };
 
+  const resetAllFilters = () => {
+    setFilters({
+      ...EMPTY_FILTERS,
+      dateFrom: range.from,
+      dateTo: range.to,
+    });
+  };
+
   return (
     <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">Báo cáo</h1>
-          <p className="text-[13px] text-muted-foreground">Phân tích hiệu quả lead theo kênh &amp; tỷ lệ ký HĐ</p>
+          <p className="text-[13px] text-muted-foreground">
+            Phân tích hiệu quả lead theo kênh, lý do loại, hiệu suất đội ngũ Sale &amp; tỷ lệ ký HĐ
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          {filterCount > 0 && (
+            <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground" onClick={resetAllFilters}>
+              <RotateCcw className="size-3.5" />
+              Xóa lọc ({filterCount})
+            </Button>
+          )}
           <LeadFilterPopover
             filters={filters}
             fanpageOptions={fanpageOptions}
             assigneeOptions={assignees}
             catalog={catalog}
             onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
-            onReset={() =>
-              setFilters({
-                ...EMPTY_FILTERS,
-                dateFrom: range.from,
-                dateTo: range.to,
-              })
-            }
+            onReset={resetAllFilters}
           />
           <DateRangePicker
             preset={preset}
@@ -167,44 +181,47 @@ export function ReportsPage({
         </div>
       </div>
 
-      <ReportKpiCards current={summary.kpis} previous={summary.previousKpis} />
+      <div className={cn("space-y-4 transition-opacity", loading && "opacity-60")}>
+        <ReportKpiCards current={summary.kpis} previous={summary.previousKpis} />
 
-      <Tabs defaultValue="overview">
-        <TabsList className="border-b border-border">
-          <TabsTrigger value="overview" className="gap-1.5">
-            <BarChart3 className="size-3.5" />
-            Tổng quan
-          </TabsTrigger>
-          <TabsTrigger value="pivot" className="gap-1.5">
-            <Table2 className="size-3.5" />
-            Bảng chi tiết
-          </TabsTrigger>
-        </TabsList>
+        <Tabs defaultValue="overview">
+          <TabsList className="border-b border-border">
+            <TabsTrigger value="overview" className="gap-1.5">
+              <BarChart3 className="size-3.5" />
+              Tổng quan
+            </TabsTrigger>
+            <TabsTrigger value="pivot" className="gap-1.5">
+              <Table2 className="size-3.5" />
+              Bảng chi tiết
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="overview" className="pt-4">
-          <OverviewTab
-            data={{ ...summary.overview, callList }}
-            totalLeads={summary.totalLeads}
-            onSelectLead={setSelectedLead}
-            labels={catalog.labels}
-          />
-        </TabsContent>
-        <TabsContent value="pivot" className="pt-4">
-          <PivotTab
-            pivot={summary.pivot.current}
-            pivotByDimension={summary.pivot.byDimension}
-            groupBy={groupBy}
-            splitBy={splitBy}
-            onGroupByChange={setGroupBy}
-            onSplitByChange={setSplitBy}
-            labels={catalog.labels}
-          />
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="overview" className="pt-4">
+            <OverviewTab
+              data={{ ...summary.overview, callList }}
+              totalLeads={summary.totalLeads}
+              onSelectLead={setSelectedLead}
+              labels={catalog.labels}
+            />
+          </TabsContent>
+          <TabsContent value="pivot" className="pt-4">
+            <PivotTab
+              pivot={summary.pivot.current}
+              pivotByDimension={summary.pivot.byDimension}
+              groupBy={groupBy}
+              splitBy={splitBy}
+              onGroupByChange={setGroupBy}
+              onSplitByChange={setSplitBy}
+              labels={catalog.labels}
+            />
+          </TabsContent>
+        </Tabs>
+      </div>
 
       <LeadDetailDialog
         lead={liveSelected}
         logs={selectedLogs}
+        logsLoading={logsLoading}
         open={Boolean(liveSelected)}
         onOpenChange={(open) => !open && setSelectedLead(null)}
         assignees={assignees}
@@ -212,7 +229,9 @@ export function ReportsPage({
         attrFields={attrFields}
         readOnly={liveSelected ? !leadEditable(liveSelected) : false}
         canEditProfile={liveSelected ? leadProfileEditable(liveSelected) : false}
-        onSave={(patch, entries) => (liveSelected && leadEditable(liveSelected) ? save(liveSelected, patch, entries) : false)}
+        onSave={(patch, entries) =>
+          liveSelected && leadEditable(liveSelected) ? save(liveSelected, patch, entries) : false
+        }
       />
     </div>
   );

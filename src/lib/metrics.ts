@@ -52,13 +52,14 @@ export function computeFunnel(leads: Lead[]): FunnelStep[] {
   const interested = leads.filter((l) => INTERESTED.includes(l.category)).length;
   const inDeal = leads.filter((l) => IN_DEAL.includes(l.category)).length;
   const signed = leads.filter((l) => l.category === "KHD").length;
+  const effectiveContacted = Math.max(contacted, interested);
 
   const raw: [string, number][] = [
     ["Tổng lead", total],
-    ["Đã liên hệ", contacted],
-    ["Quan tâm trở lên", interested],
-    ["Đang giao dịch trở lên", inDeal],
-    ["Ký hợp đồng", signed],
+    ["Đã liên hệ", effectiveContacted],
+    ["Quan tâm trở lên (KHQT+)", interested],
+    ["Giao dịch theo dõi+ (GDTD+)", inDeal],
+    ["Ký hợp đồng (KHĐ)", signed],
   ];
 
   return raw.map(([label, value], i) => ({
@@ -204,13 +205,23 @@ export function dimensionValue(lead: Lead, dim: PivotDimension): string {
   }
 }
 
+export interface FailReasonBar {
+  reason: string;
+  label: string;
+  count: number;
+  share: number;
+}
+
 export interface PivotRow {
   key: string;
   leads: number;
   leadShare: number;
+  uncontacted: number;
   contacted: number;
   contactRate: number;
+  unreachable: number;
   khqt: number;
+  khqtRate: number;
   gdtd: number;
   khd: number;
   signRate: number;
@@ -224,9 +235,12 @@ function emptyPivotRow(key: string): PivotRow {
     key,
     leads: 0,
     leadShare: 0,
+    uncontacted: 0,
     contacted: 0,
     contactRate: 0,
+    unreachable: 0,
     khqt: 0,
+    khqtRate: 0,
     gdtd: 0,
     khd: 0,
     signRate: 0,
@@ -239,6 +253,7 @@ function emptyPivotRow(key: string): PivotRow {
 function accumulate(row: PivotRow, lead: Lead, now: Date) {
   row.leads += 1;
   if (lead.contactStatus === "DA_LIEN_HE") row.contacted += 1;
+  if (lead.category === "CHUA_LH_DUOC") row.unreachable += 1;
   if (INTERESTED.includes(lead.category)) row.khqt += 1;
   if (IN_DEAL.includes(lead.category)) row.gdtd += 1;
   if (lead.category === "KHD") row.khd += 1;
@@ -247,8 +262,10 @@ function accumulate(row: PivotRow, lead: Lead, now: Date) {
 }
 
 function finalize(row: PivotRow, grandTotal: number) {
+  row.uncontacted = Math.max(0, row.leads - row.contacted);
   row.leadShare = ratio(row.leads, grandTotal);
   row.contactRate = ratio(row.contacted, row.leads);
+  row.khqtRate = ratio(row.khqt, row.leads);
   row.signRate = ratio(row.khd, row.leads);
   row.failRate = ratio(row.failed, row.leads);
   return row;

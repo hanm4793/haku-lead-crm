@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, ArrowUp, ChevronsUpDown, Download, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ChevronsUpDown, Download, Loader2 } from "lucide-react";
 
 import { ColumnVisibilityPopover } from "@/components/common/column-visibility";
 import { useToast } from "@/components/providers/toast-provider";
@@ -16,22 +16,26 @@ import { cn, formatNumber, formatPercent } from "@/lib/utils";
 interface MetricColumn {
   id: keyof PivotRow;
   header: string;
+  hint?: string;
   kind: "count" | "percent";
-  tone?: "danger" | "muted";
+  tone?: "danger" | "warning" | "success" | "muted";
 }
 
 const METRIC_COLUMNS: MetricColumn[] = [
-  { id: "leads", header: "Lead", kind: "count" },
-  { id: "leadShare", header: "Tỷ trọng lead", kind: "percent", tone: "muted" },
-  { id: "contacted", header: "Đã LH", kind: "count" },
-  { id: "contactRate", header: "Tỷ lệ LH", kind: "percent", tone: "muted" },
-  { id: "khqt", header: "KHQT", kind: "count" },
-  { id: "gdtd", header: "GDTD", kind: "count" },
-  { id: "khd", header: "KHĐ", kind: "count" },
-  { id: "signRate", header: "Tỷ lệ ký HĐ", kind: "percent", tone: "muted" },
-  { id: "failed", header: "Loại", kind: "count", tone: "danger" },
-  { id: "failRate", header: "Tỷ lệ loại", kind: "percent", tone: "danger" },
-  { id: "overdue", header: "Quá hạn", kind: "count" },
+  { id: "leads", header: "Lead", hint: "Tổng số lead thu về", kind: "count" },
+  { id: "leadShare", header: "Tỷ trọng", hint: "% so với tổng lead toàn bảng (hoặc hàng cha)", kind: "percent", tone: "muted" },
+  { id: "uncontacted", header: "Chưa LH", hint: "Số lead chưa liên hệ", kind: "count", tone: "warning" },
+  { id: "contacted", header: "Đã LH", hint: "Số lead đã liên hệ", kind: "count" },
+  { id: "contactRate", header: "Tỷ lệ LH", hint: "Đã liên hệ / Tổng lead", kind: "percent", tone: "muted" },
+  { id: "unreachable", header: "Chưa LH được", hint: "Khách không nghe máy / thuê bao", kind: "count", tone: "muted" },
+  { id: "khqt", header: "KHQT+", hint: "Khách quan tâm trở lên (gồm KHQT, GDTD, KHĐ)", kind: "count", tone: "success" },
+  { id: "khqtRate", header: "Tỷ lệ KHQT+", hint: "KHQT+ / Tổng lead", kind: "percent", tone: "success" },
+  { id: "gdtd", header: "GDTD+", hint: "Giao dịch theo dõi trở lên (gồm GDTD, KHĐ)", kind: "count" },
+  { id: "khd", header: "KHĐ", hint: "Số khách ký hợp đồng", kind: "count", tone: "success" },
+  { id: "signRate", header: "Tỷ lệ ký HĐ", hint: "KHĐ / Tổng lead", kind: "percent", tone: "muted" },
+  { id: "failed", header: "Loại", hint: "Số lead bị đánh dấu Fail", kind: "count", tone: "danger" },
+  { id: "failRate", header: "Tỷ lệ loại", hint: "Loại / Tổng lead", kind: "percent", tone: "danger" },
+  { id: "overdue", header: "Quá hạn", hint: "Quá hạn lịch hẹn gọi lại", kind: "count", tone: "danger" },
 ];
 
 const DEFAULT_METRICS = METRIC_COLUMNS.map((c) => c.id as string);
@@ -69,6 +73,7 @@ export function PivotTab({
   const [sortBy, setSortBy] = React.useState<keyof PivotRow>("leads");
   const [sortOrder, setSortOrder] = React.useState<"asc" | "desc">("desc");
   const [exporting, setExporting] = React.useState(false);
+  const [collapsedKeys, setCollapsedKeys] = React.useState<string[]>([]);
 
   const visibleMetrics = METRIC_COLUMNS.filter((c) => metrics.includes(c.id as string));
 
@@ -90,33 +95,60 @@ export function PivotTab({
     }
   };
 
+  const toggleRowCollapse = (key: string) => {
+    setCollapsedKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  };
+
+  const allCollapsed = rows.length > 0 && collapsedKeys.length >= rows.length;
+
   const handleExport = async () => {
     setExporting(true);
     try {
-      const buildSheet = (dim: PivotDimension, result: PivotResult) => {
+      const formatRowValues = (row: PivotRow, keyLabel: string) => ({
+        key: keyLabel,
+        ...Object.fromEntries(
+          visibleMetrics.map((c) => [
+            c.id as string,
+            c.kind === "percent" ? Number((row[c.id] as number).toFixed(1)) : (row[c.id] as number),
+          ]),
+        ),
+      });
+
+      const buildSheet = (dim: PivotDimension, result: PivotResult, includeSplit: boolean) => {
+        const exportRows: Record<string, string | number>[] = [];
+        for (const row of result.rows) {
+          exportRows.push(formatRowValues(row, row.key));
+          if (includeSplit && splitBy !== "NONE" && result.splitKeys.length > 0) {
+            for (const sKey of result.splitKeys) {
+              const child = result.split[row.key]?.[sKey];
+              if (child) {
+                exportRows.push(formatRowValues(child, `  ↳ ${sKey}`));
+              }
+            }
+          }
+        }
+        exportRows.push(formatRowValues(result.total, result.total.key));
+
+        const headerTitle =
+          includeSplit && splitBy !== "NONE"
+            ? `${PIVOT_DIMENSIONS[dim]} / ${PIVOT_DIMENSIONS[splitBy]}`
+            : PIVOT_DIMENSIONS[dim];
+
         return {
           name: PIVOT_DIMENSIONS[dim],
           columns: [
-            { key: "key", header: PIVOT_DIMENSIONS[dim], width: 26 },
+            { key: "key", header: headerTitle, width: 30 },
             ...visibleMetrics.map((c) => ({ key: c.id as string, header: c.header, width: 14 })),
           ],
-          rows: [...result.rows, result.total].map((row) => ({
-            key: row.key,
-            ...Object.fromEntries(
-              visibleMetrics.map((c) => [
-                c.id as string,
-                c.kind === "percent" ? Number((row[c.id] as number).toFixed(1)) : (row[c.id] as number),
-              ]),
-            ),
-          })),
+          rows: exportRows,
         };
       };
 
-      // File gồm bảng đang xem + một sheet cho mỗi chiều phân tích chính.
+      // File gồm bảng đang xem (có cả dòng con nếu đang tách 2 chiều) + một sheet cho mỗi chiều phân tích chính.
       const extraDims = (Object.keys(pivotByDimension) as PivotDimension[]).filter((d) => d !== groupBy);
       const sheets = [
-        buildSheet(groupBy, pivot),
-        ...extraDims.map((dim) => buildSheet(dim, pivotByDimension[dim])),
+        buildSheet(groupBy, pivot, true),
+        ...extraDims.map((dim) => buildSheet(dim, pivotByDimension[dim], false)),
       ];
 
       const response = await fetch("/api/export/table", {
@@ -147,7 +179,13 @@ export function PivotTab({
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-xs">
         <div className="space-y-1">
           <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Nhóm theo</Label>
-          <Select value={groupBy} onValueChange={(v) => onGroupByChange(v as PivotDimension)}>
+          <Select
+            value={groupBy}
+            onValueChange={(v) => {
+              setCollapsedKeys([]);
+              onGroupByChange(v as PivotDimension);
+            }}
+          >
             <SelectTrigger size="sm" className="w-44">
               <SelectValue />
             </SelectTrigger>
@@ -163,9 +201,15 @@ export function PivotTab({
 
         <div className="space-y-1">
           <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Chi tiết theo
+            Chi tiết theo (2 chiều)
           </Label>
-          <Select value={splitBy} onValueChange={(v) => onSplitByChange(v as PivotDimension | "NONE")}>
+          <Select
+            value={splitBy}
+            onValueChange={(v) => {
+              setCollapsedKeys([]);
+              onSplitByChange(v as PivotDimension | "NONE");
+            }}
+          >
             <SelectTrigger size="sm" className="w-44">
               <SelectValue />
             </SelectTrigger>
@@ -183,6 +227,15 @@ export function PivotTab({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {splitBy !== "NONE" && rows.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCollapsedKeys(allCollapsed ? [] : rows.map((r) => r.key))}
+            >
+              {allCollapsed ? "Mở rộng tất cả" : "Thu gọn tất cả"}
+            </Button>
+          )}
           <ColumnVisibilityPopover
             columns={METRIC_COLUMNS.map((c) => ({ id: c.id as string, header: c.header }))}
             visible={metrics}
@@ -198,10 +251,13 @@ export function PivotTab({
 
       <div className="rounded-xl border border-border bg-card shadow-xs">
         <div className="px-5 pt-4">
-          <div className="text-[15px] font-semibold">Bảng chỉ số theo {PIVOT_DIMENSIONS[groupBy].toLowerCase()}</div>
+          <div className="text-[15px] font-semibold">
+            Bảng chỉ số theo {PIVOT_DIMENSIONS[groupBy].toLowerCase()}
+            {splitBy !== "NONE" ? ` × ${PIVOT_DIMENSIONS[splitBy].toLowerCase()}` : ""}
+          </div>
           <p className="text-xs text-muted-foreground">
-            Bấm tiêu đề cột để sắp xếp. “Chi tiết theo” mở dòng con dưới mỗi hàng (pivot 2 chiều). Tỷ trọng dòng con
-            tính trên hàng cha.
+            Bấm tiêu đề cột để sắp xếp. KHQT+ gồm KHQT, GDTD và KHĐ. Khi chọn “Chi tiết theo”, bấm vào từng dòng cha để
+            đóng/mở các dòng con (tỷ trọng dòng con tính trên hàng cha).
           </p>
         </div>
 
@@ -218,6 +274,7 @@ export function PivotTab({
                 {visibleMetrics.map((column) => (
                   <th
                     key={column.id as string}
+                    title={column.hint}
                     className="cursor-pointer px-3 py-2 text-right font-semibold whitespace-nowrap"
                     onClick={() => toggleSort(column.id)}
                   >
@@ -227,57 +284,112 @@ export function PivotTab({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <React.Fragment key={row.key}>
-                  <tr className="border-t border-border/70 hover:bg-[#f6f9ff]">
-                    <td className="sticky left-0 z-10 bg-card px-3 py-2">
-                      <div className="font-medium text-slate-800">{row.key}</div>
-                      <div className="mt-1 h-1 w-24 overflow-hidden rounded-full bg-slate-100">
-                        <div className="h-full rounded-full bg-primary" style={{ width: `${(row.leads / maxLeads) * 100}%` }} />
-                      </div>
-                    </td>
-                    {visibleMetrics.map((column) => (
-                      <td
-                        key={column.id as string}
-                        className={cn(
-                          "px-3 py-2 text-right tabular-nums",
-                          column.tone === "danger" && "text-rose-600",
-                          column.tone === "muted" && "text-slate-500",
-                        )}
-                      >
-                        {cellText(row, column)}
-                      </td>
-                    ))}
-                  </tr>
+              {rows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={visibleMetrics.length + 1}
+                    className="px-4 py-8 text-center text-xs text-muted-foreground"
+                  >
+                    Không có dữ liệu phù hợp bộ lọc hiện tại.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row) => {
+                  const isCollapsed = collapsedKeys.includes(row.key);
+                  const hasChildren =
+                    splitBy !== "NONE" &&
+                    pivot.splitKeys.some((sKey) => Boolean(pivot.split[row.key]?.[sKey]));
 
-                  {splitBy !== "NONE" &&
-                    pivot.splitKeys
-                      .filter((sKey) => Boolean(pivot.split[row.key]?.[sKey]))
-                      .map((sKey) => {
-                        const cell = pivot.split[row.key]![sKey]!;
-                        return (
-                          <tr key={`${row.key}-${sKey}`} className="border-t border-border/40 bg-[#fbfcfe] text-[12px]">
-                            <td className="sticky left-0 z-10 bg-[#fbfcfe] py-1.5 pl-8 pr-3 text-slate-500">{sKey}</td>
-                            {visibleMetrics.map((column) => (
-                              <td
-                                key={column.id as string}
-                                className={cn("px-3 py-1.5 text-right tabular-nums text-slate-500", column.tone === "danger" && "text-rose-400")}
+                  return (
+                    <React.Fragment key={row.key}>
+                      <tr
+                        className={cn(
+                          "border-t border-border/70 hover:bg-[#f6f9ff]",
+                          hasChildren && "cursor-pointer",
+                        )}
+                        onClick={() => hasChildren && toggleRowCollapse(row.key)}
+                      >
+                        <td className="sticky left-0 z-10 bg-card px-3 py-2">
+                          <div className="flex items-center gap-1.5 font-medium text-slate-800">
+                            {hasChildren &&
+                              (isCollapsed ? (
+                                <ChevronRight className="size-3.5 shrink-0 text-slate-400" />
+                              ) : (
+                                <ChevronDown className="size-3.5 shrink-0 text-slate-500" />
+                              ))}
+                            <span>{row.key}</span>
+                          </div>
+                          <div className="mt-1 h-1 w-24 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full bg-primary"
+                              style={{ width: `${(row.leads / maxLeads) * 100}%` }}
+                            />
+                          </div>
+                        </td>
+                        {visibleMetrics.map((column) => {
+                          const rawVal = row[column.id] as number;
+                          return (
+                            <td
+                              key={column.id as string}
+                              className={cn(
+                                "px-3 py-2 text-right tabular-nums",
+                                column.tone === "danger" && rawVal > 0 && "font-medium text-rose-600",
+                                column.tone === "warning" && rawVal > 0 && "font-medium text-amber-600",
+                                column.tone === "success" && rawVal > 0 && "font-medium text-emerald-700",
+                                column.tone === "muted" && "text-slate-500",
+                              )}
+                            >
+                              {cellText(row, column)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+
+                      {hasChildren &&
+                        !isCollapsed &&
+                        pivot.splitKeys
+                          .filter((sKey) => Boolean(pivot.split[row.key]?.[sKey]))
+                          .map((sKey) => {
+                            const cell = pivot.split[row.key]![sKey]!;
+                            return (
+                              <tr
+                                key={`${row.key}-${sKey}`}
+                                className="border-t border-border/40 bg-[#fbfcfe] text-[12px]"
                               >
-                                {cellText(cell, column)}
-                              </td>
-                            ))}
-                          </tr>
-                        );
-                      })}
-                </React.Fragment>
-              ))}
+                                <td className="sticky left-0 z-10 bg-[#fbfcfe] py-1.5 pl-8 pr-3 text-slate-500">
+                                  ↳ {sKey}
+                                </td>
+                                {visibleMetrics.map((column) => (
+                                  <td
+                                    key={column.id as string}
+                                    className={cn(
+                                      "px-3 py-1.5 text-right tabular-nums text-slate-500",
+                                      column.tone === "danger" && (cell[column.id] as number) > 0 && "text-rose-500",
+                                      column.tone === "success" && (cell[column.id] as number) > 0 && "text-emerald-600",
+                                    )}
+                                  >
+                                    {cellText(cell, column)}
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                    </React.Fragment>
+                  );
+                })
+              )}
 
               <tr className="border-t-2 border-border bg-[#f8fafc] font-semibold">
                 <td className="sticky left-0 z-10 bg-[#f8fafc] px-3 py-2">Tổng</td>
                 {visibleMetrics.map((column) => (
                   <td
                     key={column.id as string}
-                    className={cn("px-3 py-2 text-right tabular-nums", column.tone === "danger" && "text-rose-600")}
+                    className={cn(
+                      "px-3 py-2 text-right tabular-nums",
+                      column.tone === "danger" && (pivot.total[column.id] as number) > 0 && "text-rose-600",
+                      column.tone === "warning" && (pivot.total[column.id] as number) > 0 && "text-amber-600",
+                      column.tone === "success" && (pivot.total[column.id] as number) > 0 && "text-emerald-700",
+                    )}
                   >
                     {cellText(pivot.total, column)}
                   </td>
@@ -288,8 +400,8 @@ export function PivotTab({
         </div>
 
         <p className="px-5 py-3 text-[11px] text-muted-foreground">
-          Xuất Excel gồm bảng đang xem + sheet cho từng chiều đã chuẩn bị (nguồn, fanpage, trạng thái, sản phẩm, và
-          chiều đang nhóm nếu khác).
+          Xuất Excel gồm bảng đang xem (kèm các dòng con nếu chọn “Chi tiết theo”) + sheet cho từng chiều phân tích
+          chính (nguồn, fanpage, phụ trách, trạng thái, sản phẩm).
         </p>
       </div>
     </div>
