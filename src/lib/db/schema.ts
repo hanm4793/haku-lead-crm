@@ -445,6 +445,55 @@ export const leadComments = pgTable(
   ],
 );
 
+export interface AudienceFilterConfig {
+  /** Danh sách facebookPageId được chọn. Rỗng = tất cả fanpage/lead trong project. */
+  facebookPageIds?: string[];
+  /** Phân loại chất lượng lead (VD: ["KHQT", "GDTD", "KHD"]) */
+  categories?: LeadCategory[];
+  /** Trạng thái liên hệ */
+  contactStatuses?: ContactStatus[];
+  /** Lý do loại (khi lọc tệp FAIL) */
+  failReasons?: FailReason[];
+  /** Nguồn lead */
+  sources?: LeadSource[];
+  /** Thương hiệu (brand id) */
+  brandIds?: string[];
+  /** Sản phẩm (product id) */
+  productIds?: string[];
+  /** Khu vực (location id) */
+  locationIds?: string[];
+  /** Khoảng ngày tạo lead (YYYY-MM-DD) */
+  dateFrom?: string | null;
+  dateTo?: string | null;
+}
+
+/**
+ * Tệp khách hàng (Audience Segment) tạo theo Dự án và 1/nhiều Fanpage để
+ * đẩy ngược lên Facebook Custom Audience hoặc xuất file chuẩn cho Google/TikTok/Zalo Ads.
+ */
+export const audienceSegments = pgTable(
+  "audience_segments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    description: text("description"),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    filters: jsonb("filters").$type<AudienceFilterConfig>().notNull().default({}),
+    facebookAdAccountId: text("facebook_ad_account_id"),
+    facebookAudienceId: text("facebook_audience_id"),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastSyncCount: integer("last_sync_count").notNull().default(0),
+    lastSyncStatus: metaSyncStatusEnum("last_sync_status"),
+    lastSyncMessage: text("last_sync_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("audience_segments_project_idx").on(table.projectId),
+    index("audience_segments_created_at_idx").on(table.createdAt.desc()),
+  ],
+);
+
 export const leadsRelations = relations(leads, ({ one, many }) => ({
   project: one(projects, { fields: [leads.projectId], references: [projects.id] }),
   brand: one(brands, { fields: [leads.brandId], references: [brands.id] }),
@@ -484,6 +533,10 @@ export const facebookPagesRelations = relations(facebookPages, ({ one }) => ({
 
 export const projectAdAccountsRelations = relations(projectAdAccounts, ({ one }) => ({
   project: one(projects, { fields: [projectAdAccounts.projectId], references: [projects.id] }),
+}));
+
+export const audienceSegmentsRelations = relations(audienceSegments, ({ one }) => ({
+  project: one(projects, { fields: [audienceSegments.projectId], references: [projects.id] }),
 }));
 
 export const projectAttrFieldsRelations = relations(projectAttrFields, ({ one }) => ({

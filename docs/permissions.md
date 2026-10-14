@@ -36,6 +36,7 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 | Bộ lọc fanpage trên Lead và Báo cáo | Mọi fanpage đang bật | Fanpage được gán | Fanpage của partner |
 | Số liệu báo cáo | Mọi fanpage | Cùng phạm vi lead | Không vào màn |
 | Ads và chiến dịch marketing | Mọi dòng thuộc fanpage của **project đang xem** (switcher). Không gắn page → ẩn khi đã chọn project | Không vào màn | Không vào màn |
+| Sinh tệp khách hàng (Audience) theo dự án/fanpage & đẩy lên Facebook / xuất tệp Ads (`canManageAudiences`) | Có | Không | Không |
 | Giao / đổi người phụ trách lead (`canAssignLead`) | Có | Có | Không |
 | Người được giao lead | Mọi nhân viên đang hoạt động | Nhân viên cùng partner | Nhân viên cùng partner |
 

@@ -26,6 +26,11 @@ export function canViewMarketing(role: UserRole): boolean {
   return role === "SUPER_ADMIN";
 }
 
+/** Sinh tệp khách hàng (Audience) theo dự án/fanpage và đẩy ngược lên Facebook / xuất tệp Ads. */
+export function canManageAudiences(role: UserRole): boolean {
+  return role === "SUPER_ADMIN";
+}
+
 export function canViewReports(role: UserRole): boolean {
   return role === "SUPER_ADMIN" || role === "PARTNER_ADMIN";
 }

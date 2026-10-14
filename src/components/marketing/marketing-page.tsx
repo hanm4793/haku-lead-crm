@@ -2,7 +2,18 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowDown, ArrowUp, MousePointerClick, RefreshCw, Search, Wallet, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  CloudUpload,
+  Megaphone,
+  MousePointerClick,
+  RefreshCw,
+  Search,
+  Users,
+  Wallet,
+  X,
+} from "lucide-react";
 import {
   Bar,
   CartesianGrid,
@@ -17,9 +28,16 @@ import {
 
 import { syncFacebookInsightsAction } from "@/app/settings/facebook-actions";
 import { DateRangePicker, type DateRange, type PresetId } from "@/components/common/date-range-picker";
+import {
+  AudienceBuilderPanel,
+  type AudiencePageOption,
+  type AudienceProjectOption,
+} from "@/components/marketing/audience-builder-panel";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
+import type { AudienceSegmentView } from "@/lib/db/audiences-repo";
 import type { AdInsightRow, CrmAttributionRow, InsightRow } from "@/lib/db/insights-repo";
 import { adsManagerUrl } from "@/lib/facebook/ads-manager-url";
 import {
@@ -88,6 +106,12 @@ export function MarketingPage({
   crmRows = [],
   brandOptions = [],
   pages,
+  activeProjectId = null,
+  projects = [],
+  allPages = [],
+  savedAudiences = [],
+  canManageAudiences = false,
+  tokenConfigured = false,
   hasSynced,
   configured,
   adAccountId,
@@ -100,6 +124,12 @@ export function MarketingPage({
   crmRows?: CrmAttributionRow[];
   brandOptions?: Array<{ code: string; name: string }>;
   pages: MarketingPageOption[];
+  activeProjectId?: string | null;
+  projects?: AudienceProjectOption[];
+  allPages?: AudiencePageOption[];
+  savedAudiences?: AudienceSegmentView[];
+  canManageAudiences?: boolean;
+  tokenConfigured?: boolean;
   hasSynced: boolean;
   configured: boolean;
   adAccountId: string | null;
@@ -111,6 +141,10 @@ export function MarketingPage({
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
+  const urlTab = searchParams?.get("tab");
+  const [activeTab, setActiveTab] = React.useState<"campaigns" | "audiences">(
+    urlTab === "audiences" ? "audiences" : "campaigns",
+  );
   const [pending, setPending] = React.useState(false);
   const [preset, setPreset] = React.useState<PresetId>("ALL");
   const [range, setRange] = React.useState<DateRange>({ from: null, to: null });
@@ -298,32 +332,95 @@ export function MarketingPage({
     <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">Marketing</h1>
+          <h1 className="text-xl font-bold">Marketing & Tệp Đối tượng (Audiences)</h1>
           <p className="text-[13px] text-muted-foreground">
-            Meta Ads theo fanpage, chiến dịch và ads
+            Meta Ads theo fanpage, chiến dịch & sinh tệp khách hàng đẩy ngược lên nền tảng quảng cáo
             {span.from && span.to ? ` · dữ liệu ${formatDate(span.from)} – ${formatDate(span.to)}` : ""}
             {syncedAt ? ` · đồng bộ ${formatDateTime(syncedAt)}` : ""}
           </p>
         </div>
-        {canSync ? (
-          <Button type="button" disabled={pending || !configured} onClick={() => void sync()}>
-            <RefreshCw className={pending ? "animate-spin" : undefined} />
-            {pending ? "Đang đồng bộ…" : "Đồng bộ Insights"}
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {canManageAudiences && (
+            <Button
+              type="button"
+              variant={activeTab === "audiences" ? "default" : "outline"}
+              className="gap-1.5"
+              onClick={() => setActiveTab(activeTab === "audiences" ? "campaigns" : "audiences")}
+            >
+              <CloudUpload className="size-4" />
+              {activeTab === "audiences"
+                ? "Quay lại Bảng Chiến dịch Ads"
+                : `Sinh tệp khách hàng & Đẩy Ads (${savedAudiences.length})`}
+            </Button>
+          )}
+          {canSync && activeTab === "campaigns" ? (
+            <Button type="button" disabled={pending || !configured} onClick={() => void sync()}>
+              <RefreshCw className={pending ? "animate-spin" : undefined} />
+              {pending ? "Đang đồng bộ…" : "Đồng bộ Insights"}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
-      {canSync && !configured ? (
-        <p className="text-sm text-amber-800" role="alert">
-          Thiếu FACEBOOK_AD_ACCOUNT_ID — cấu hình biến môi trường để đồng bộ Insights.
-        </p>
-      ) : null}
-      {span.to && span.to < today ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900" role="status">
-          Số liệu đã lưu đến {formatDate(span.to)}. Các ngày sau đó chưa có{canSync ? " — bấm Đồng bộ Insights để kéo nốt" : ", liên hệ quản trị viên để đồng bộ"}.
-        </p>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2">
+      {canManageAudiences && (
+        <div className="flex flex-wrap items-center gap-1 border-b border-border/80 pb-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("campaigns")}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition",
+              activeTab === "campaigns"
+                ? "bg-primary text-primary-foreground shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+            )}
+          >
+            <Megaphone className="size-3.5" />
+            <span>Hiệu quả Chiến dịch & Ads</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("audiences")}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition",
+              activeTab === "audiences"
+                ? "bg-primary text-primary-foreground shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+            )}
+          >
+            <Users className="size-3.5" />
+            <span>Tệp khách hàng & Đẩy Ads (Facebook / Google / TikTok / Zalo)</span>
+            <Badge
+              variant={activeTab === "audiences" ? "secondary" : "muted"}
+              className="ml-0.5 px-1.5 py-0 text-[10px]"
+            >
+              {savedAudiences.length}
+            </Badge>
+          </button>
+        </div>
+      )}
+
+      {activeTab === "audiences" && canManageAudiences ? (
+        <AudienceBuilderPanel
+          activeProjectId={activeProjectId}
+          projects={projects}
+          allPages={allPages}
+          initialSegments={savedAudiences}
+          defaultAdAccountId={adAccountId}
+          tokenConfigured={tokenConfigured}
+        />
+      ) : (
+        <>
+          {canSync && !configured ? (
+            <p className="text-sm text-amber-800" role="alert">
+              Thiếu FACEBOOK_AD_ACCOUNT_ID — cấu hình biến môi trường để đồng bộ Insights.
+            </p>
+          ) : null}
+          {span.to && span.to < today ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900" role="status">
+              Số liệu đã lưu đến {formatDate(span.to)}. Các ngày sau đó chưa có{canSync ? " — bấm Đồng bộ Insights để kéo nốt" : ", liên hệ quản trị viên để đồng bộ"}.
+            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
         <DateRangePicker preset={preset} range={range} onChange={applyRange} />
         <MultiSelect
           options={pageOptions}
@@ -717,6 +814,8 @@ export function MarketingPage({
               </div>
             </section>
           ) : null}
+        </>
+      )}
         </>
       )}
     </div>

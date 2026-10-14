@@ -13,6 +13,7 @@ import {
   canImportLeads,
   canManageAttrFields,
   canManageAttrFieldsInProject,
+  canManageAudiences,
   canManageCatalogs,
   canManageCatalogsInProject,
   canManageProjects,
@@ -42,7 +43,7 @@ describe("menu", () => {
     for (const role of ROLES) expect(canSeeNav(role, "all")).toBe(true);
   });
 
-  it("reports is manager screen and marketing is super-admin-only", () => {
+  it("reports is manager screen and marketing/audiences are super-admin-only", () => {
     expect(canSeeNav("SUPER_ADMIN", "reports")).toBe(true);
     expect(canSeeNav("PARTNER_ADMIN", "reports")).toBe(true);
     expect(canSeeNav("STAFF", "reports")).toBe(false);
@@ -54,6 +55,10 @@ describe("menu", () => {
     expect(canViewMarketing("SUPER_ADMIN")).toBe(true);
     expect(canViewMarketing("PARTNER_ADMIN")).toBe(false);
     expect(canViewMarketing("STAFF")).toBe(false);
+
+    expect(canManageAudiences("SUPER_ADMIN")).toBe(true);
+    expect(canManageAudiences("PARTNER_ADMIN")).toBe(false);
+    expect(canManageAudiences("STAFF")).toBe(false);
   });
 
   it("accounts is manager-only and settings is super-admin-only", () => {

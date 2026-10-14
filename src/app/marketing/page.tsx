@@ -1,8 +1,15 @@
 import { redirect } from "next/navigation";
 
 import { MarketingPage } from "@/components/marketing/marketing-page";
-import { canManageSettings, canViewMarketing, isMarketingRowVisible, isPageVisible } from "@/lib/auth/roles";
+import {
+  canManageAudiences,
+  canManageSettings,
+  canViewMarketing,
+  isMarketingRowVisible,
+  isPageVisible,
+} from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
+import { listAudienceSegments } from "@/lib/db/audiences-repo";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import {
   hasSyncedInsights,
@@ -13,7 +20,7 @@ import {
 } from "@/lib/db/insights-repo";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
 import { getReferenceData } from "@/lib/db/leads-repo";
-import { listFacebookPageIdsForProject } from "@/lib/db/project-repo";
+import { listFacebookPageIdsForProject, listProjects } from "@/lib/db/project-repo";
 import { getFacebookConfig } from "@/lib/facebook/env";
 import { toDateInputValue } from "@/lib/utils";
 
@@ -47,10 +54,24 @@ export default async function Page() {
           ? [...viewer.pageIds]
           : null;
 
-  const [campaignRows, adInsightRows, pages, hasSynced, latestSync, crmRows, reference] = await Promise.all([
+  const [
+    campaignRows,
+    adInsightRows,
+    pages,
+    allPages,
+    allProjects,
+    savedAudiences,
+    hasSynced,
+    latestSync,
+    crmRows,
+    reference,
+  ] = await Promise.all([
     listCampaignInsights(undefined, scopedPageIds),
     listAdInsights(undefined, scopedPageIds),
     listFacebookPages(projectId ? { projectId } : undefined),
+    listFacebookPages().catch(() => []),
+    listProjects({ activeOnly: true }).catch(() => []),
+    canManageAudiences(viewer.role) ? listAudienceSegments().catch(() => []) : Promise.resolve([]),
     hasSyncedInsights(),
     latestInsightSync(),
     queryCrmAttributionByPage({ projectId, pageIds: scopedPageIds }).catch(() => []),
@@ -67,6 +88,14 @@ export default async function Page() {
   const visiblePages = pages
     .filter((page) => isPageVisible(viewer, page.facebookPageId))
     .map((page) => ({ id: page.facebookPageId, name: page.name }));
+  const audiencePages = allPages
+    .filter((page) => page.active && isPageVisible(viewer, page.facebookPageId))
+    .map((page) => ({
+      id: page.facebookPageId,
+      name: page.name,
+      projectId: page.projectId,
+    }));
+  const projectOptions = allProjects.map((p) => ({ id: p.id, name: p.name }));
   const brandOptions = reference?.brands.map((b) => ({ code: b.code, name: b.name })) ?? [];
   const config = getFacebookConfig();
 
@@ -77,6 +106,12 @@ export default async function Page() {
       crmRows={crmRows}
       brandOptions={brandOptions}
       pages={visiblePages}
+      activeProjectId={viewer.activeProjectId ?? null}
+      projects={projectOptions}
+      allPages={audiencePages}
+      savedAudiences={savedAudiences}
+      canManageAudiences={canManageAudiences(viewer.role)}
+      tokenConfigured={Boolean(config?.token)}
       hasSynced={hasSynced}
       configured={Boolean(config?.adAccountId)}
       adAccountId={config?.adAccountId ?? null}

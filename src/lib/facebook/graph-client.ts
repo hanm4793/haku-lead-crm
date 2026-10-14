@@ -90,6 +90,23 @@ export async function graphGet<T>(
   return readGraphJson<T>(res);
 }
 
+export async function graphPost<T>(
+  path: string,
+  body: Record<string, unknown>,
+  options?: GraphRequestOptions,
+): Promise<T> {
+  const config = requireConfig();
+  const url = buildGraphUrl(config, path, undefined, options?.accessToken ?? config.token);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  return readGraphJson<T>(res);
+}
+
 function pagingHasMore(paging: PagedGraphResponse<unknown>["paging"]): boolean {
   if (!paging) return false;
   const after = paging.cursors?.after?.trim();
