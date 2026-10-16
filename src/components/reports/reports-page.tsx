@@ -5,6 +5,7 @@ import { BarChart3, Loader2, RotateCcw, Table2 } from "lucide-react";
 
 import { updateLeadAction } from "@/app/leads/actions";
 import { DateRangePicker, resolvePreset, type DateRange, type PresetId } from "@/components/common/date-range-picker";
+import { ProjectSwitcher } from "@/components/layout/project-switcher";
 import { LeadDetailDialog } from "@/components/leads/lead-detail-dialog";
 import { LeadFilterPopover, type FanpageFilterOption } from "@/components/leads/filter-popover";
 import { useNow } from "@/components/providers/now-provider";
@@ -57,9 +58,11 @@ export function ReportsPage({
   const [groupBy, setGroupBy] = React.useState<PivotDimension>("source");
   const [splitBy, setSplitBy] = React.useState<PivotDimension | "NONE">("NONE");
   const [summary, setSummary] = React.useState(initialSummary);
+  const [callList, setCallList] = React.useState(initialSummary.overview.callList);
+  const [prevInitialSummary, setPrevInitialSummary] = React.useState(initialSummary);
+  const [hydratedVersion, setHydratedVersion] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
   const [selectedLead, setSelectedLead] = React.useState<Lead | null>(null);
-  const [callList, setCallList] = React.useState(initialSummary.overview.callList);
   const [refreshTick, setRefreshTick] = React.useState(0);
 
   const selectedId = selectedLead?.id ?? null;
@@ -79,14 +82,26 @@ export function ReportsPage({
     groupBy,
     splitBy: splitBy === "NONE" ? null : splitBy,
   });
-  const skipFirstFetch = React.useRef(true);
+  const fetchSignature = `${requestKey}|${refreshTick}`;
+  const lastFetchedSignature = React.useRef(fetchSignature);
+  const lastHydratedVersion = React.useRef(0);
+
+  if (prevInitialSummary !== initialSummary) {
+    setPrevInitialSummary(initialSummary);
+    setSummary(initialSummary);
+    setCallList(initialSummary.overview.callList);
+    setHydratedVersion((v) => v + 1);
+  }
 
   React.useEffect(() => {
-    // Server đã hydrate sẵn bản đầu — bỏ qua lần effect đầu để tránh gọi API thừa.
-    if (skipFirstFetch.current) {
-      skipFirstFetch.current = false;
+    if (lastHydratedVersion.current !== hydratedVersion) {
+      lastHydratedVersion.current = hydratedVersion;
+      lastFetchedSignature.current = fetchSignature;
       return;
     }
+    // Server đã hydrate sẵn bản đầu — bỏ qua nếu chữ ký truy vấn chưa đổi.
+    if (lastFetchedSignature.current === fetchSignature) return;
+    lastFetchedSignature.current = fetchSignature;
 
     const controller = new AbortController();
     setLoading(true);
@@ -112,7 +127,7 @@ export function ReportsPage({
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [requestKey, refreshTick, toast]);
+  }, [requestKey, fetchSignature, hydratedVersion, toast]);
 
   const save = async (lead: Lead, patch: Partial<Lead>, logs: LogEntry[]): Promise<boolean> => {
     const previous = callList;
@@ -160,6 +175,7 @@ export function ReportsPage({
               Xóa lọc ({filterCount})
             </Button>
           )}
+          <ProjectSwitcher />
           <LeadFilterPopover
             filters={filters}
             fanpageOptions={fanpageOptions}

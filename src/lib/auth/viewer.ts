@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { and, count, eq, isNull } from "drizzle-orm";
 
 import { pageGrantUserId } from "@/lib/auth/roles";
@@ -44,19 +45,23 @@ function adminEmails() {
 }
 
 /**
- * Lấy phạm vi quyền của người đang đăng nhập.
- *
- * Trả về `null` nghĩa là đã bật auth nhưng chưa đăng nhập — caller cần chuyển
- * hướng sang /login. Khi chưa cấu hình Supabase Auth thì chạy chế độ demo với
- * quyền admin để dự án vẫn mở được ngay sau khi clone.
+ * Lấy phạm vi quyền của người đang đăng nhập (memoize trong cùng một request
+ * giữa RootLayout và Page).
  */
-export async function getViewer(): Promise<Viewer | null> {
+export const getViewer = cache(async (): Promise<Viewer | null> => {
   if (!isSupabaseConfigured() || !isDatabaseConfigured()) return DEMO_VIEWER;
 
   const supabase = await createSupabaseServerClient();
+  // Middleware đã xác thực token với Supabase Auth ở đầu request; ưu tiên đọc
+  // session từ cookie để tránh gọi mạng lần 2–3 tới Supabase Auth.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user =
+    session?.user ??
+    (
+      await supabase.auth.getUser()
+    ).data.user;
 
   if (!user) return null;
 
@@ -70,10 +75,10 @@ export async function getViewer(): Promise<Viewer | null> {
     return null;
   }
   return viewer;
-}
+});
 
 /** Gắn `activeProjectId` để lọc lead, báo cáo, marketing và catalog. */
-export async function getScopedViewer(): Promise<Viewer | null> {
+export const getScopedViewer = cache(async (): Promise<Viewer | null> => {
   const viewer = await getViewer();
   if (!viewer) return null;
   if (!isDatabaseConfigured()) return viewer;
@@ -83,7 +88,7 @@ export async function getScopedViewer(): Promise<Viewer | null> {
   } catch {
     return viewer;
   }
-}
+});
 
 /** Alias theo tên trong kế hoạch migration — cùng nghĩa với `getViewer`. */
 export const getViewerScope = getViewer;
@@ -163,15 +168,17 @@ async function provisionViewer(
   }
 
   const pageOwnerId = pageGrantUserId({ role: row.role, id: row.id, partnerId: row.partnerId });
-  const pageIds = pageOwnerId ? await listGrantedPageIds(pageOwnerId) : [];
-
   const projectViewer = toProjectViewer({
     role: row.role,
     appUserId: row.id,
     projectId,
     partnerId: row.partnerId,
   });
-  const projectIds = await listProjectIdsForViewer(projectViewer);
+
+  const [pageIds, projectIds] = await Promise.all([
+    pageOwnerId ? listGrantedPageIds(pageOwnerId) : Promise.resolve([]),
+    listProjectIdsForViewer(projectViewer),
+  ]);
 
   return {
     role: row.role,

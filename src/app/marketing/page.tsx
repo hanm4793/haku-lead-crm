@@ -9,7 +9,10 @@ import {
   isPageVisible,
 } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
-import { listAudienceSegments } from "@/lib/db/audiences-repo";
+import {
+  listAudienceCampaignOptions,
+  listAudienceSegments,
+} from "@/lib/db/audiences-repo";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import {
   hasSyncedInsights,
@@ -20,7 +23,11 @@ import {
 } from "@/lib/db/insights-repo";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
 import { getReferenceData } from "@/lib/db/leads-repo";
-import { listFacebookPageIdsForProject, listProjects } from "@/lib/db/project-repo";
+import {
+  listProjects,
+  listProjectsForSwitcher,
+  toProjectViewer,
+} from "@/lib/db/project-repo";
 import { getFacebookConfig } from "@/lib/facebook/env";
 import { toDateInputValue } from "@/lib/utils";
 
@@ -44,48 +51,42 @@ export default async function Page() {
     );
   }
 
-  const projectPageIds = projectId ? await listFacebookPageIdsForProject(projectId) : null;
-  const scopedPageIds =
-    projectPageIds !== null && viewer.role !== "SUPER_ADMIN"
-      ? projectPageIds.filter((id) => viewer.pageIds.includes(id))
-      : projectPageIds !== null
-        ? [...projectPageIds]
-        : viewer.role !== "SUPER_ADMIN"
-          ? [...viewer.pageIds]
-          : null;
+  const viewerScopedPageIds =
+    viewer.role !== "SUPER_ADMIN" ? [...viewer.pageIds] : null;
 
   const [
     campaignRows,
     adInsightRows,
-    pages,
     allPages,
-    allProjects,
+    accessibleProjects,
     savedAudiences,
+    audienceCampaigns,
     hasSynced,
     latestSync,
     crmRows,
     reference,
   ] = await Promise.all([
-    listCampaignInsights(undefined, scopedPageIds),
-    listAdInsights(undefined, scopedPageIds),
-    listFacebookPages(projectId ? { projectId } : undefined),
+    listCampaignInsights(undefined, viewerScopedPageIds),
+    listAdInsights(undefined, viewerScopedPageIds),
     listFacebookPages().catch(() => []),
-    listProjects({ activeOnly: true }).catch(() => []),
+    viewer.role === "SUPER_ADMIN"
+      ? listProjects({ activeOnly: true }).catch(() => [])
+      : listProjectsForSwitcher(toProjectViewer(viewer)).catch(() => []),
     canManageAudiences(viewer.role) ? listAudienceSegments().catch(() => []) : Promise.resolve([]),
+    canManageAudiences(viewer.role) ? listAudienceCampaignOptions().catch(() => []) : Promise.resolve([]),
     hasSyncedInsights(),
     latestInsightSync(),
-    queryCrmAttributionByPage({ projectId, pageIds: scopedPageIds }).catch(() => []),
+    queryCrmAttributionByPage({ pageIds: viewerScopedPageIds }).catch(() => []),
     getReferenceData(projectId).catch(() => null),
   ]);
 
-  const adRows = adInsightRows.filter((row) => isMarketingRowVisible(viewer, row.pageId, projectPageIds));
-  // Khi có project (hoặc không phải super-all): campaign chỉ lấy từ ad còn lại trong phạm vi.
+  const adRows = adInsightRows.filter((row) => isMarketingRowVisible(viewer, row.pageId, viewerScopedPageIds));
   const campaignIds =
-    projectPageIds !== null || viewer.role !== "SUPER_ADMIN"
+    viewerScopedPageIds !== null
       ? new Set(adRows.map((row) => row.campaignId).filter(Boolean))
       : null;
   const rows = campaignIds ? campaignRows.filter((row) => campaignIds.has(row.objectId)) : campaignRows;
-  const visiblePages = pages
+  const visiblePages = allPages
     .filter((page) => isPageVisible(viewer, page.facebookPageId))
     .map((page) => ({ id: page.facebookPageId, name: page.name }));
   const audiencePages = allPages
@@ -95,7 +96,7 @@ export default async function Page() {
       name: page.name,
       projectId: page.projectId,
     }));
-  const projectOptions = allProjects.map((p) => ({ id: p.id, name: p.name }));
+  const projectOptions = accessibleProjects.map((p) => ({ id: p.id, name: p.name }));
   const brandOptions = reference?.brands.map((b) => ({ code: b.code, name: b.name })) ?? [];
   const config = getFacebookConfig();
 
@@ -110,6 +111,7 @@ export default async function Page() {
       projects={projectOptions}
       allPages={audiencePages}
       savedAudiences={savedAudiences}
+      audienceCampaigns={audienceCampaigns}
       canManageAudiences={canManageAudiences(viewer.role)}
       tokenConfigured={Boolean(config?.token)}
       hasSynced={hasSynced}

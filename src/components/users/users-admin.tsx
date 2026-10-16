@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { createUserAction, resendPasswordEmailAction, updateUserAction } from "@/app/users/actions";
 import { DataTable, ListPanel, type DataColumn } from "@/components/common/data-table";
 import { CountTabs, FilterSelect, ListToolbar } from "@/components/common/list-toolbar";
+import { ProjectSwitcher } from "@/components/layout/project-switcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -270,6 +271,7 @@ export function UsersAdmin({
             search={{ value: query, onChange: setQuery, placeholder: "Tìm tên / email" }}
             filters={
               <>
+                <ProjectSwitcher />
                 <FilterSelect
                   value={statusFilter}
                   onChange={setStatusFilter}

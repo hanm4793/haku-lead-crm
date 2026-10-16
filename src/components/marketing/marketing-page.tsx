@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDown,
   ArrowUp,
-  CloudUpload,
+  Clock,
   Megaphone,
   MousePointerClick,
   RefreshCw,
@@ -28,6 +28,7 @@ import {
 
 import { syncFacebookInsightsAction } from "@/app/settings/facebook-actions";
 import { DateRangePicker, type DateRange, type PresetId } from "@/components/common/date-range-picker";
+import { Pagination } from "@/components/common/pagination";
 import {
   AudienceBuilderPanel,
   type AudiencePageOption,
@@ -37,7 +38,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
-import type { AudienceSegmentView } from "@/lib/db/audiences-repo";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type {
+  AudienceCampaignOption,
+  AudienceSegmentView,
+} from "@/lib/db/audiences-repo";
 import type { AdInsightRow, CrmAttributionRow, InsightRow } from "@/lib/db/insights-repo";
 import { adsManagerUrl } from "@/lib/facebook/ads-manager-url";
 import {
@@ -65,6 +77,7 @@ import { useToast } from "@/components/providers/toast-provider";
 
 const AXIS_STYLE = { fontSize: 11, fill: "#94a3b8" } as const;
 const GRID_COLOR = "#e2e8f0";
+const TABLE_PAGE_SIZE = 10;
 
 type SortKey = "name" | "spend" | "impressions" | "clicks" | "ctr" | "leads" | "cpl" | "efficiency";
 
@@ -110,13 +123,13 @@ export function MarketingPage({
   projects = [],
   allPages = [],
   savedAudiences = [],
+  audienceCampaigns = [],
   canManageAudiences = false,
   tokenConfigured = false,
   hasSynced,
   configured,
   adAccountId,
   syncedAt,
-  today,
   canSync = false,
 }: {
   rows: InsightRow[];
@@ -128,13 +141,14 @@ export function MarketingPage({
   projects?: AudienceProjectOption[];
   allPages?: AudiencePageOption[];
   savedAudiences?: AudienceSegmentView[];
+  audienceCampaigns?: AudienceCampaignOption[];
   canManageAudiences?: boolean;
   tokenConfigured?: boolean;
   hasSynced: boolean;
   configured: boolean;
   adAccountId: string | null;
   syncedAt: string | null;
-  today: string;
+  today?: string;
   /** Chỉ super admin được chạy đồng bộ Insights. */
   canSync?: boolean;
 }) {
@@ -148,6 +162,7 @@ export function MarketingPage({
   const [pending, setPending] = React.useState(false);
   const [preset, setPreset] = React.useState<PresetId>("ALL");
   const [range, setRange] = React.useState<DateRange>({ from: null, to: null });
+  const [selectedProjectIds, setSelectedProjectIds] = React.useState<string[]>([]);
   const [campaignIds, setCampaignIds] = React.useState<string[]>([]);
   const [pageIds, setPageIds] = React.useState<string[]>([]);
   const [brands, setBrands] = React.useState<CampaignBrandId[]>([]);
@@ -166,6 +181,25 @@ export function MarketingPage({
     direction: "desc",
   });
 
+  const projectOptions = React.useMemo(
+    () => projects.map((p) => ({ value: p.id, label: p.name })),
+    [projects],
+  );
+
+  const projectAllowedPageIds = React.useMemo(() => {
+    if (selectedProjectIds.length === 0) return null;
+    return new Set(
+      allPages
+        .filter((p) => p.projectId && selectedProjectIds.includes(p.projectId))
+        .map((p) => p.id),
+    );
+  }, [allPages, selectedProjectIds]);
+
+  const activePageIdSet = React.useMemo(() => {
+    if (pageIds.length > 0) return new Set(pageIds);
+    return projectAllowedPageIds;
+  }, [pageIds, projectAllowedPageIds]);
+
   const campaignBrands = React.useMemo(
     () => buildCampaignBrands(brandOptions, rows.map((row) => row.objectName)),
     [brandOptions, rows],
@@ -173,14 +207,14 @@ export function MarketingPage({
 
   const span = React.useMemo(() => storedSpan(rows), [rows]);
   const pageCampaignIds = React.useMemo(() => {
-    if (pageIds.length === 0) return null;
+    if (!activePageIdSet) return null;
     const ids = new Set<string>();
     for (const row of adRows) {
-      if (!pageIds.includes(row.pageId ?? "") || !row.campaignId) continue;
+      if (!activePageIdSet.has(row.pageId ?? "") || !row.campaignId) continue;
       ids.add(row.campaignId);
     }
     return ids;
-  }, [adRows, pageIds]);
+  }, [adRows, activePageIdSet]);
   const campaignOptions = React.useMemo(() => {
     const entries = new Map<string, string>();
     for (const row of rows) {
@@ -202,11 +236,13 @@ export function MarketingPage({
     const namesByPage = new Map<string, Array<string | null>>();
     for (const row of adRows) {
       const pageId = row.pageId ?? "";
+      if (projectAllowedPageIds && !projectAllowedPageIds.has(pageId)) continue;
       const names = namesByPage.get(pageId) ?? [];
       names.push(row.campaignName);
       namesByPage.set(pageId, names);
     }
     for (const pageId of official.keys()) {
+      if (projectAllowedPageIds && !projectAllowedPageIds.has(pageId)) continue;
       if (!namesByPage.has(pageId)) namesByPage.set(pageId, []);
     }
     return [...namesByPage.entries()]
@@ -215,7 +251,7 @@ export function MarketingPage({
         label: official.get(value) || pageLabelFromCampaigns(names) || (value ? value : "Chưa gắn fanpage"),
       }))
       .sort((left, right) => left.label.localeCompare(right.label, "vi"));
-  }, [pages, adRows]);
+  }, [pages, adRows, projectAllowedPageIds]);
 
   const adScope = React.useMemo(
     () =>
@@ -233,7 +269,16 @@ export function MarketingPage({
       ),
     [adRows, range.from, range.to, campaignIds, brands, query, campaignBrands],
   );
-  const visibleAds = pageIds.length === 0 ? adScope : adScope.filter((row) => pageIds.includes(row.pageId ?? ""));
+  const projectScopedAdScope = React.useMemo(
+    () =>
+      projectAllowedPageIds
+        ? adScope.filter((row) => projectAllowedPageIds.has(row.pageId ?? ""))
+        : adScope,
+    [adScope, projectAllowedPageIds],
+  );
+  const visibleAds = activePageIdSet
+    ? adScope.filter((row) => activePageIdSet.has(row.pageId ?? ""))
+    : adScope;
   const filteredCampaigns = React.useMemo(
     () =>
       filterInsightRows(
@@ -250,7 +295,7 @@ export function MarketingPage({
     [rows, range.from, range.to, campaignIds, brands, query, campaignBrands],
   );
   const campaignSummaries = (
-    pageIds.length > 0
+    activePageIdSet
       ? summarizeCampaignsFromAds(visibleAds, campaignBrands)
       : summarizeCampaigns(filteredCampaigns, campaignBrands)
   ).filter((campaign) => !pageCampaignIds || pageCampaignIds.has(campaign.objectId));
@@ -261,40 +306,96 @@ export function MarketingPage({
   const selectionVisible = selectedId !== null && campaignSummaries.some((campaign) => campaign.objectId === selectedId);
   if (selectedId && !selectionVisible) setSelectedId(null);
   const activeId = selectionVisible ? selectedId : null;
-  const chartRows = pageIds.length > 0
+  const chartRows = activePageIdSet
     ? visibleAds.filter((row) => (activeId ? row.campaignId === activeId : true))
     : filteredCampaigns.filter((row) => (activeId ? row.objectId === activeId : true));
   const totals = dashboardTotals(chartRows);
-  const crmTotals = summarizeCrmAttribution(crmRows, { from: range.from, to: range.to, pageIds }, totals.spend);
+  const crmScopedRows = React.useMemo(
+    () =>
+      projectAllowedPageIds
+        ? crmRows.filter((row) => projectAllowedPageIds.has(row.pageId ?? ""))
+        : crmRows,
+    [crmRows, projectAllowedPageIds],
+  );
+  const crmTotals = summarizeCrmAttribution(crmScopedRows, { from: range.from, to: range.to, pageIds }, totals.spend);
   const series = seriesByDate(chartRows);
   const campaigns = ratedCampaigns.items.sort((left, right) => compareCampaigns(left, right, sort.key, sort.direction));
   const maxSpend = Math.max(...campaigns.map((campaign) => campaign.spend), 1);
   const selected = campaigns.find((campaign) => campaign.objectId === activeId) ?? null;
-  const ratedPages = attachEfficiency(summarizePages(adScope, crmRows, range));
+  const ratedPages = attachEfficiency(summarizePages(projectScopedAdScope, crmScopedRows, range));
   const adsInCampaign = selected
     ? attachEfficiency(summarizeAds(visibleAds.filter((row) => row.campaignId === selected.objectId), campaignBrands))
     : null;
   const dailyRows = selected
     ? seriesByDate(chartRows).slice().sort((left, right) => right.date.localeCompare(left.date))
     : [];
+  const [fanpagePage, setFanpagePage] = React.useState(1);
+  const [campaignPage, setCampaignPage] = React.useState(1);
+  const [dailyPage, setDailyPage] = React.useState(1);
+
+  const sortedPages = React.useMemo(
+    () => ratedPages.items.slice().sort((left, right) => right.spend - left.spend),
+    [ratedPages.items],
+  );
+  const fanpagePageCount = Math.max(1, Math.ceil(sortedPages.length / TABLE_PAGE_SIZE));
+  const safeFanpagePage = Math.min(fanpagePage, fanpagePageCount);
+  const pagedFanpages = sortedPages.slice(
+    (safeFanpagePage - 1) * TABLE_PAGE_SIZE,
+    safeFanpagePage * TABLE_PAGE_SIZE,
+  );
+
+  const campaignPageCount = Math.max(1, Math.ceil(campaigns.length / TABLE_PAGE_SIZE));
+  const safeCampaignPage = Math.min(campaignPage, campaignPageCount);
+  const pagedCampaigns = campaigns.slice(
+    (safeCampaignPage - 1) * TABLE_PAGE_SIZE,
+    safeCampaignPage * TABLE_PAGE_SIZE,
+  );
+
+  const dailyPageCount = Math.max(1, Math.ceil(dailyRows.length / TABLE_PAGE_SIZE));
+  const safeDailyPage = Math.min(dailyPage, dailyPageCount);
+  const pagedDailyRows = dailyRows.slice(
+    (safeDailyPage - 1) * TABLE_PAGE_SIZE,
+    safeDailyPage * TABLE_PAGE_SIZE,
+  );
+
   const filtersActive =
     preset !== "ALL" ||
+    selectedProjectIds.length > 0 ||
     campaignIds.length > 0 ||
     pageIds.length > 0 ||
     brands.length > 0 ||
     query.trim().length > 0 ||
     selectedId !== null;
 
+  function handleProjectChange(nextProjectIds: string[]) {
+    setSelectedProjectIds(nextProjectIds);
+    setFanpagePage(1);
+    setCampaignPage(1);
+    if (nextProjectIds.length > 0) {
+      const allowed = new Set(
+        allPages
+          .filter((p) => p.projectId && nextProjectIds.includes(p.projectId))
+          .map((p) => p.id),
+      );
+      setPageIds((prev) => prev.filter((id) => allowed.has(id)));
+    }
+  }
+
   function applyRange(nextPreset: PresetId, nextRange: DateRange) {
     setPreset(nextPreset);
     setRange(nextRange);
+    setFanpagePage(1);
+    setCampaignPage(1);
+    setDailyPage(1);
   }
 
   function toggleBrand(brand: CampaignBrandId) {
     setBrands((current) => (current.includes(brand) ? current.filter((item) => item !== brand) : [...current, brand]));
+    setCampaignPage(1);
   }
 
   function toggleSort(key: SortKey) {
+    setCampaignPage(1);
     setSort((current) =>
       current.key === key
         ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
@@ -305,12 +406,69 @@ export function MarketingPage({
   function clearFilters() {
     setPreset("ALL");
     setRange({ from: null, to: null });
+    setSelectedProjectIds([]);
     setCampaignIds([]);
     setPageIds([]);
     setBrands([]);
     setQuery("");
     setSelectedId(null);
+    setFanpagePage(1);
+    setCampaignPage(1);
+    setDailyPage(1);
   }
+
+  const [autoSyncMinutes, setAutoSyncMinutes] = React.useState<string>(() => {
+    if (typeof window === "undefined") return "30";
+    return window.localStorage.getItem("semtop_auto_sync_minutes") ?? "30";
+  });
+
+  const handleAutoSyncChange = (value: string) => {
+    setAutoSyncMinutes(value);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("semtop_auto_sync_minutes", value);
+    }
+    toast.info(
+      value === "0"
+        ? "Đã tắt tự động đồng bộ"
+        : `Đã bật tự động đồng bộ định kỳ mỗi ${value} phút`,
+    );
+  };
+
+  const runBackgroundAutoSync = React.useCallback(
+    async (intervalMinutes: number) => {
+      if (!canSync || !configured || pending) return;
+      try {
+        const res = await fetch(`/api/cron/facebook-sync?kind=all&minInterval=${intervalMinutes}`, {
+          method: "POST",
+        });
+        if (!res.ok) return;
+        const payload = (await res.json()) as { ok?: boolean; didSyncAny?: boolean };
+        if (payload.ok && payload.didSyncAny) {
+          router.refresh();
+        }
+      } catch {
+        // Bỏ qua lỗi mạng ngầm để không làm phiền người dùng
+      }
+    },
+    [canSync, configured, pending, router],
+  );
+
+  React.useEffect(() => {
+    const minutes = Number(autoSyncMinutes) || 0;
+    if (!canSync || !configured || minutes <= 0) return;
+
+    // Kiểm tra ngay khi mở trang nếu lần đồng bộ cuối đã cũ hơn chu kỳ cấu hình
+    const lastMs = syncedAt ? new Date(syncedAt).getTime() : 0;
+    if (!lastMs || Date.now() - lastMs >= minutes * 60_000) {
+      void runBackgroundAutoSync(minutes);
+    }
+
+    const timer = window.setInterval(() => {
+      void runBackgroundAutoSync(minutes);
+    }, minutes * 60_000);
+
+    return () => window.clearInterval(timer);
+  }, [autoSyncMinutes, canSync, configured, syncedAt, runBackgroundAutoSync]);
 
   async function sync() {
     setPending(true);
@@ -332,71 +490,68 @@ export function MarketingPage({
     <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">Marketing & Tệp Đối tượng (Audiences)</h1>
+          <h1 className="text-xl font-bold">Marketing & Tệp KH</h1>
           <p className="text-[13px] text-muted-foreground">
-            Meta Ads theo fanpage, chiến dịch & sinh tệp khách hàng đẩy ngược lên nền tảng quảng cáo
-            {span.from && span.to ? ` · dữ liệu ${formatDate(span.from)} – ${formatDate(span.to)}` : ""}
+            Hiệu quả chiến dịch QC & quản lý tệp KH
+            {span.from && span.to ? ` · ${formatDate(span.from)} – ${formatDate(span.to)}` : ""}
             {syncedAt ? ` · đồng bộ ${formatDateTime(syncedAt)}` : ""}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {canManageAudiences && (
-            <Button
-              type="button"
-              variant={activeTab === "audiences" ? "default" : "outline"}
-              className="gap-1.5"
-              onClick={() => setActiveTab(activeTab === "audiences" ? "campaigns" : "audiences")}
-            >
-              <CloudUpload className="size-4" />
-              {activeTab === "audiences"
-                ? "Quay lại Bảng Chiến dịch Ads"
-                : `Sinh tệp khách hàng & Đẩy Ads (${savedAudiences.length})`}
-            </Button>
-          )}
           {canSync && activeTab === "campaigns" ? (
-            <Button type="button" disabled={pending || !configured} onClick={() => void sync()}>
-              <RefreshCw className={pending ? "animate-spin" : undefined} />
-              {pending ? "Đang đồng bộ…" : "Đồng bộ Insights"}
-            </Button>
+            <>
+              <Select value={autoSyncMinutes} onValueChange={handleAutoSyncChange}>
+                <SelectTrigger className="h-8 w-[175px] gap-1.5 text-xs">
+                  <Clock className="size-3.5 shrink-0 text-primary" />
+                  <SelectValue placeholder="Tự động đồng bộ" />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  <SelectItem value="0" className="text-xs">
+                    Tự động: Tắt
+                  </SelectItem>
+                  <SelectItem value="15" className="text-xs">
+                    Tự động: Mỗi 15 phút
+                  </SelectItem>
+                  <SelectItem value="30" className="text-xs">
+                    Tự động: Mỗi 30 phút
+                  </SelectItem>
+                  <SelectItem value="60" className="text-xs">
+                    Tự động: Mỗi 1 giờ
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button type="button" size="sm" className="h-8" disabled={pending || !configured} onClick={() => void sync()}>
+                <RefreshCw className={cn("size-3.5", pending && "animate-spin")} />
+                {pending ? "Đang đồng bộ…" : "Đồng bộ ngay"}
+              </Button>
+            </>
           ) : null}
         </div>
       </div>
 
       {canManageAudiences && (
-        <div className="flex flex-wrap items-center gap-1 border-b border-border/80 pb-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab("campaigns")}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition",
-              activeTab === "campaigns"
-                ? "bg-primary text-primary-foreground shadow-2xs"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-            )}
-          >
-            <Megaphone className="size-3.5" />
-            <span>Hiệu quả Chiến dịch & Ads</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("audiences")}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition",
-              activeTab === "audiences"
-                ? "bg-primary text-primary-foreground shadow-2xs"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-            )}
-          >
-            <Users className="size-3.5" />
-            <span>Tệp khách hàng & Đẩy Ads (Facebook / Google / TikTok / Zalo)</span>
-            <Badge
-              variant={activeTab === "audiences" ? "secondary" : "muted"}
-              className="ml-0.5 px-1.5 py-0 text-[10px]"
-            >
-              {savedAudiences.length}
-            </Badge>
-          </button>
-        </div>
+        <Tabs
+          value={activeTab}
+          onValueChange={(val) => setActiveTab(val as "campaigns" | "audiences")}
+        >
+          <TabsList className="w-full justify-start border-b border-border">
+            <TabsTrigger value="campaigns" className="gap-1.5">
+              <Megaphone className="size-3.5" />
+              Hiệu quả Chiến dịch & QC
+            </TabsTrigger>
+            <TabsTrigger value="audiences" className="gap-1.5">
+              <Users className="size-3.5" />
+              Tệp KH
+              <Badge
+                variant={activeTab === "audiences" ? "secondary" : "muted"}
+                className="ml-0.5 px-1.5 py-0 text-[10px]"
+              >
+                {savedAudiences.length}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       )}
 
       {activeTab === "audiences" && canManageAudiences ? (
@@ -404,6 +559,7 @@ export function MarketingPage({
           activeProjectId={activeProjectId}
           projects={projects}
           allPages={allPages}
+          campaignOptions={audienceCampaigns}
           initialSegments={savedAudiences}
           defaultAdAccountId={adAccountId}
           tokenConfigured={tokenConfigured}
@@ -415,17 +571,25 @@ export function MarketingPage({
               Thiếu FACEBOOK_AD_ACCOUNT_ID — cấu hình biến môi trường để đồng bộ Insights.
             </p>
           ) : null}
-          {span.to && span.to < today ? (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900" role="status">
-              Số liệu đã lưu đến {formatDate(span.to)}. Các ngày sau đó chưa có{canSync ? " — bấm Đồng bộ Insights để kéo nốt" : ", liên hệ quản trị viên để đồng bộ"}.
-            </p>
-          ) : null}
           <div className="flex flex-wrap items-center gap-2">
         <DateRangePicker preset={preset} range={range} onChange={applyRange} />
+        {projects.length > 0 && (
+          <MultiSelect
+            options={projectOptions}
+            selected={selectedProjectIds}
+            onChange={handleProjectChange}
+            placeholder="Tất cả dự án"
+            className="h-8 w-[180px] text-[13px]"
+            contentClassName="w-[240px]"
+          />
+        )}
         <MultiSelect
           options={pageOptions}
           selected={pageIds}
-          onChange={setPageIds}
+          onChange={(next) => {
+            setPageIds(next);
+            setCampaignPage(1);
+          }}
           placeholder="Tất cả fanpage"
           className="h-8 w-[200px] text-[13px]"
           contentClassName="w-[280px]"
@@ -433,7 +597,10 @@ export function MarketingPage({
         <MultiSelect
           options={campaignOptions}
           selected={campaignIds}
-          onChange={setCampaignIds}
+          onChange={(next) => {
+            setCampaignIds(next);
+            setCampaignPage(1);
+          }}
           placeholder="Tất cả chiến dịch"
           className="h-8 w-[240px] text-[13px]"
           contentClassName="w-[360px]"
@@ -442,8 +609,12 @@ export function MarketingPage({
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Tìm chiến dịch, ads…"
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setFanpagePage(1);
+              setCampaignPage(1);
+            }}
+            placeholder="Tìm chiến dịch, QC…"
             className="h-8 w-[220px] pl-8 text-[13px]"
             aria-label="Tìm chiến dịch"
           />
@@ -478,9 +649,7 @@ export function MarketingPage({
         })}
       </div>
       <p className="text-[12px] text-muted-foreground">
-        Hiệu quả so với CPL trung vị của các mục đang có lead trong bộ lọc hiện tại
-        {ratedCampaigns.benchmark != null ? ` (${formatCurrency(ratedCampaigns.benchmark)})` : ""}
-        . Thấp hơn hoặc bằng trung vị là Hiệu quả, chưa tới 1,5 lần là Trung bình, cao hơn là Kém. Đã chi mà không có lead thì là Chưa ra lead.
+        CPL trung vị{ratedCampaigns.benchmark != null ? `: ${formatCurrency(ratedCampaigns.benchmark)}` : ""} · ≤ trung vị: Hiệu quả · ≤ 1.5x: Trung bình · &gt; 1.5x: Kém.
       </p>
 
       {rows.length === 0 ? (
@@ -509,9 +678,9 @@ export function MarketingPage({
           <section className="rounded-lg border border-border bg-card p-4 shadow-xs">
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="text-sm font-semibold">
-                {selected ? selected.objectName ?? selected.objectId : "Chi tiêu và lead theo ngày"}
+                {selected ? selected.objectName ?? selected.objectId : "Chi tiêu & Lead theo ngày"}
               </h2>
-              <p className="text-[12px] text-muted-foreground">Bấm một cột để khoanh đúng ngày đó</p>
+              <p className="text-[12px] text-muted-foreground">Bấm cột ngày để lọc</p>
             </div>
             {series.length === 0 ? (
               <p className="py-16 text-center text-sm text-muted-foreground">Không có ngày nào khớp bộ lọc.</p>
@@ -576,36 +745,36 @@ export function MarketingPage({
 
           <section className="overflow-hidden rounded-lg border border-border bg-card shadow-xs">
             <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <h2 className="text-sm font-semibold">Theo fanpage</h2>
-              <p className="text-[12px] text-muted-foreground">Bấm một fanpage để chỉ xem data của page đó</p>
+              <h2 className="text-sm font-semibold">Theo Fanpage</h2>
+              <p className="text-[12px] text-muted-foreground">
+                {sortedPages.length} fanpage · bấm chọn Fanpage để lọc
+              </p>
             </div>
             {adRows.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-                Chưa có dữ liệu từng ads — bấm Đồng bộ Insights để gắn fanpage và ads.
+                Chưa có dữ liệu QC — bấm Đồng bộ Insights.
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[920px] text-left text-[13px]">
-                  <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2.5 font-medium">Fanpage</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Chi tiêu</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Lead (Meta)</th>
-                      <th className="px-3 py-2.5 text-right font-medium">CPL</th>
-                      <th className="px-3 py-2.5 text-right font-medium">CTR</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Lead CRM</th>
-                      <th className="px-3 py-2.5 text-right font-medium">KHQT</th>
-                      <th className="px-3 py-2.5 text-right font-medium">KHD</th>
-                      <th className="px-3 py-2.5 text-right font-medium">CPQL</th>
-                      <th className="px-3 py-2.5 text-right font-medium">CPS</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Hiệu quả</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ratedPages.items
-                      .slice()
-                      .sort((left, right) => right.spend - left.spend)
-                      .map((page) => {
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[920px] text-left text-[13px]">
+                    <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-2.5 font-medium">Fanpage</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Chi tiêu</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Lead (Meta)</th>
+                        <th className="px-3 py-2.5 text-right font-medium">CPL</th>
+                        <th className="px-3 py-2.5 text-right font-medium">CTR</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Lead CRM</th>
+                        <th className="px-3 py-2.5 text-right font-medium">KHQT</th>
+                        <th className="px-3 py-2.5 text-right font-medium">KHD</th>
+                        <th className="px-3 py-2.5 text-right font-medium">CPQL</th>
+                        <th className="px-3 py-2.5 text-right font-medium">CPS</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Hiệu quả</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagedFanpages.map((page) => {
                         const active = pageIds.length === 1 && pageIds[0] === page.pageId;
                         const label =
                           pageOptions.find((option) => option.value === page.pageId)?.label ?? "Chưa gắn fanpage";
@@ -616,7 +785,10 @@ export function MarketingPage({
                               "cursor-pointer border-b last:border-b-0 hover:bg-muted/40",
                               active && "bg-accent",
                             )}
-                            onClick={() => setPageIds(active ? [] : [page.pageId])}
+                            onClick={() => {
+                              setPageIds(active ? [] : [page.pageId]);
+                              setCampaignPage(1);
+                            }}
                           >
                             <td className="px-3 py-2.5 font-medium">{label}</td>
                             <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(page.spend)}</td>
@@ -642,141 +814,160 @@ export function MarketingPage({
                           </tr>
                         );
                       })}
-                  </tbody>
-                </table>
-              </div>
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={safeFanpagePage}
+                  pageSize={TABLE_PAGE_SIZE}
+                  total={sortedPages.length}
+                  unit="fanpage"
+                  onPageChange={setFanpagePage}
+                />
+              </>
             )}
           </section>
 
           <section className="overflow-hidden rounded-lg border border-border bg-card shadow-xs">
             <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <h2 className="text-sm font-semibold">Hiệu quả theo chiến dịch</h2>
+              <h2 className="text-sm font-semibold">Theo Chiến dịch</h2>
               <p className="text-[12px] text-muted-foreground">
-                {pageIds.length > 0
-                  ? `${campaigns.length} chiến dịch của fanpage đang chọn`
-                  : `${campaigns.length} chiến dịch`}
-                {" · bấm Xem ads để mở từng ads"}
+                {campaigns.length} chiến dịch · bấm dòng để xem QC
               </p>
             </div>
             {campaigns.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-muted-foreground">Không có chiến dịch khớp bộ lọc.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] text-left text-[13px]">
-                  <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
-                    <tr>
-                      <SortHeader label="Chiến dịch" sortKey="name" sort={sort} onSort={toggleSort} />
-                      <SortHeader label="Chi tiêu" sortKey="spend" sort={sort} onSort={toggleSort} align="right" />
-                      <SortHeader label="Hiển thị" sortKey="impressions" sort={sort} onSort={toggleSort} align="right" />
-                      <SortHeader label="Click" sortKey="clicks" sort={sort} onSort={toggleSort} align="right" />
-                      <SortHeader label="CTR" sortKey="ctr" sort={sort} onSort={toggleSort} align="right" />
-                      <SortHeader label="Lead" sortKey="leads" sort={sort} onSort={toggleSort} align="right" />
-                      <SortHeader label="CPL" sortKey="cpl" sort={sort} onSort={toggleSort} align="right" />
-                      <SortHeader label="Hiệu quả" sortKey="efficiency" sort={sort} onSort={toggleSort} align="right" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {campaigns.map((campaign) => (
-                      <React.Fragment key={campaign.objectId}>
-                        <tr
-                          className={cn(
-                            "cursor-pointer border-b last:border-b-0 hover:bg-muted/40",
-                            campaign.objectId === activeId && "bg-accent",
-                          )}
-                          onClick={() => setSelectedId(campaign.objectId === activeId ? null : campaign.objectId)}
-                        >
-                          <td className="px-3 py-2.5">
-                            <AdsManagerTitle level="campaign" objectId={campaign.objectId} adAccountId={adAccountId}>
-                              {campaign.objectName ?? campaign.objectId}
-                            </AdsManagerTitle>
-                            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
-                              <div
-                                className="h-full rounded-full bg-primary"
-                                style={{ width: `${Math.max(2, (campaign.spend / maxSpend) * 100)}%` }}
-                              />
-                            </div>
-                            <span className="mt-1.5 inline-block text-[12px] font-medium text-primary">
-                              {campaign.objectId === activeId ? "Ẩn ads" : "Xem ads"}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(campaign.spend)}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.impressions)}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.clicks)}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
-                            {campaign.ctr === null ? "—" : formatPercent(campaign.ctr)}
-                          </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.leads)}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
-                            {campaign.cpl === null ? "—" : formatCurrency(campaign.cpl)}
-                          </td>
-                          <td className="px-3 py-2.5 text-right">
-                            <EfficiencyBadge value={campaign.efficiency} />
-                          </td>
-                        </tr>
-                        {campaign.objectId === activeId && adsInCampaign ? (
-                          <tr className="border-b bg-muted/20">
-                            <td colSpan={8} className="px-4 py-3">
-                              <div className="mb-2 flex items-baseline justify-between gap-3">
-                                <p className="text-[13px] font-semibold">Ads trong chiến dịch này</p>
-                                <p className="text-[12px] text-muted-foreground">
-                                  {adsInCampaign.benchmark != null
-                                    ? `CPL trung vị của các ads có lead: ${formatCurrency(adsInCampaign.benchmark)}`
-                                    : "Chưa đủ ads có lead để so CPL"}
-                                </p>
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[860px] text-left text-[13px]">
+                    <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
+                      <tr>
+                        <SortHeader label="Chiến dịch" sortKey="name" sort={sort} onSort={toggleSort} />
+                        <SortHeader label="Chi tiêu" sortKey="spend" sort={sort} onSort={toggleSort} align="right" />
+                        <SortHeader label="Hiển thị" sortKey="impressions" sort={sort} onSort={toggleSort} align="right" />
+                        <SortHeader label="Click" sortKey="clicks" sort={sort} onSort={toggleSort} align="right" />
+                        <SortHeader label="CTR" sortKey="ctr" sort={sort} onSort={toggleSort} align="right" />
+                        <SortHeader label="Lead" sortKey="leads" sort={sort} onSort={toggleSort} align="right" />
+                        <SortHeader label="CPL" sortKey="cpl" sort={sort} onSort={toggleSort} align="right" />
+                        <SortHeader label="Hiệu quả" sortKey="efficiency" sort={sort} onSort={toggleSort} align="right" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagedCampaigns.map((campaign) => (
+                        <React.Fragment key={campaign.objectId}>
+                          <tr
+                            className={cn(
+                              "cursor-pointer border-b last:border-b-0 hover:bg-muted/40",
+                              campaign.objectId === activeId && "bg-accent",
+                            )}
+                            onClick={() => {
+                              setSelectedId(campaign.objectId === activeId ? null : campaign.objectId);
+                              setDailyPage(1);
+                            }}
+                          >
+                            <td className="px-3 py-2.5">
+                              <AdsManagerTitle level="campaign" objectId={campaign.objectId} adAccountId={adAccountId}>
+                                {campaign.objectName ?? campaign.objectId}
+                              </AdsManagerTitle>
+                              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className="h-full rounded-full bg-primary"
+                                  style={{ width: `${Math.max(2, (campaign.spend / maxSpend) * 100)}%` }}
+                                />
                               </div>
-                              {adsInCampaign.items.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">Chiến dịch này chưa có dòng ads trong bộ lọc.</p>
-                              ) : (
-                                <table className="w-full min-w-[760px] text-left text-[13px]">
-                                  <thead className="text-xs text-muted-foreground">
-                                    <tr>
-                                      <th className="px-2 py-1.5 font-medium">Ads</th>
-                                      <th className="px-2 py-1.5 font-medium">Nhóm</th>
-                                      <th className="px-2 py-1.5 text-right font-medium">Chi tiêu</th>
-                                      <th className="px-2 py-1.5 text-right font-medium">Click</th>
-                                      <th className="px-2 py-1.5 text-right font-medium">CTR</th>
-                                      <th className="px-2 py-1.5 text-right font-medium">Lead</th>
-                                      <th className="px-2 py-1.5 text-right font-medium">CPL</th>
-                                      <th className="px-2 py-1.5 text-right font-medium">Hiệu quả</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {adsInCampaign.items
-                                      .slice()
-                                      .sort((left, right) => right.spend - left.spend)
-                                      .map((ad) => (
-                                        <tr key={ad.objectId} className="border-t border-border/70">
-                                          <td className="px-2 py-2">
-                                            <AdsManagerTitle level="ad" objectId={ad.objectId} adAccountId={adAccountId}>
-                                              {ad.objectName ?? ad.objectId}
-                                            </AdsManagerTitle>
-                                          </td>
-                                          <td className="px-2 py-2 text-muted-foreground">{ad.adsetName ?? "—"}</td>
-                                          <td className="px-2 py-2 text-right tabular-nums">{formatCurrency(ad.spend)}</td>
-                                          <td className="px-2 py-2 text-right tabular-nums">{formatNumber(ad.clicks)}</td>
-                                          <td className="px-2 py-2 text-right tabular-nums">
-                                            {ad.ctr === null ? "—" : formatPercent(ad.ctr)}
-                                          </td>
-                                          <td className="px-2 py-2 text-right tabular-nums">{formatNumber(ad.leads)}</td>
-                                          <td className="px-2 py-2 text-right tabular-nums">
-                                            {ad.cpl === null ? "—" : formatCurrency(ad.cpl)}
-                                          </td>
-                                          <td className="px-2 py-2 text-right">
-                                            <EfficiencyBadge value={ad.efficiency} />
-                                          </td>
-                                        </tr>
-                                      ))}
-                                  </tbody>
-                                </table>
-                              )}
+                              <span className="mt-1.5 inline-block text-[12px] font-medium text-primary">
+                                {campaign.objectId === activeId ? "Ẩn ads" : "Xem ads"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(campaign.spend)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.impressions)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.clicks)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">
+                              {campaign.ctr === null ? "—" : formatPercent(campaign.ctr)}
+                            </td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.leads)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">
+                              {campaign.cpl === null ? "—" : formatCurrency(campaign.cpl)}
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              <EfficiencyBadge value={campaign.efficiency} />
                             </td>
                           </tr>
-                        ) : null}
-                      </React.Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                          {campaign.objectId === activeId && adsInCampaign ? (
+                            <tr className="border-b bg-muted/20">
+                              <td colSpan={8} className="px-4 py-3">
+                                <div className="mb-2 flex items-baseline justify-between gap-3">
+                                  <p className="text-[13px] font-semibold">Ads trong chiến dịch này</p>
+                                  <p className="text-[12px] text-muted-foreground">
+                                    {adsInCampaign.benchmark != null
+                                      ? `CPL trung vị của các ads có lead: ${formatCurrency(adsInCampaign.benchmark)}`
+                                      : "Chưa đủ ads có lead để so CPL"}
+                                  </p>
+                                </div>
+                                {adsInCampaign.items.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground">Chiến dịch này chưa có dòng ads trong bộ lọc.</p>
+                                ) : (
+                                  <div className="thin-scrollbar max-h-[360px] overflow-y-auto">
+                                    <table className="w-full min-w-[760px] text-left text-[13px]">
+                                      <thead className="sticky top-0 bg-muted/90 text-xs text-muted-foreground backdrop-blur-xs">
+                                        <tr>
+                                          <th className="px-2 py-1.5 font-medium">Ads</th>
+                                          <th className="px-2 py-1.5 font-medium">Nhóm</th>
+                                          <th className="px-2 py-1.5 text-right font-medium">Chi tiêu</th>
+                                          <th className="px-2 py-1.5 text-right font-medium">Click</th>
+                                          <th className="px-2 py-1.5 text-right font-medium">CTR</th>
+                                          <th className="px-2 py-1.5 text-right font-medium">Lead</th>
+                                          <th className="px-2 py-1.5 text-right font-medium">CPL</th>
+                                          <th className="px-2 py-1.5 text-right font-medium">Hiệu quả</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {adsInCampaign.items
+                                          .slice()
+                                          .sort((left, right) => right.spend - left.spend)
+                                          .map((ad) => (
+                                            <tr key={ad.objectId} className="border-t border-border/70">
+                                              <td className="px-2 py-2">
+                                                <AdsManagerTitle level="ad" objectId={ad.objectId} adAccountId={adAccountId}>
+                                                  {ad.objectName ?? ad.objectId}
+                                                </AdsManagerTitle>
+                                              </td>
+                                              <td className="px-2 py-2 text-muted-foreground">{ad.adsetName ?? "—"}</td>
+                                              <td className="px-2 py-2 text-right tabular-nums">{formatCurrency(ad.spend)}</td>
+                                              <td className="px-2 py-2 text-right tabular-nums">{formatNumber(ad.clicks)}</td>
+                                              <td className="px-2 py-2 text-right tabular-nums">
+                                                {ad.ctr === null ? "—" : formatPercent(ad.ctr)}
+                                              </td>
+                                              <td className="px-2 py-2 text-right tabular-nums">{formatNumber(ad.leads)}</td>
+                                              <td className="px-2 py-2 text-right tabular-nums">
+                                                {ad.cpl === null ? "—" : formatCurrency(ad.cpl)}
+                                              </td>
+                                              <td className="px-2 py-2 text-right">
+                                                <EfficiencyBadge value={ad.efficiency} />
+                                              </td>
+                                            </tr>
+                                          ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={safeCampaignPage}
+                  pageSize={TABLE_PAGE_SIZE}
+                  total={campaigns.length}
+                  unit="chiến dịch"
+                  onPageChange={setCampaignPage}
+                />
+              </>
             )}
           </section>
 
@@ -800,7 +991,7 @@ export function MarketingPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {dailyRows.map((row) => (
+                    {pagedDailyRows.map((row) => (
                       <tr key={row.date} className="border-b last:border-b-0">
                         <td className="px-3 py-2.5">{formatDate(row.date)}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(row.spend ?? 0)}</td>
@@ -812,6 +1003,13 @@ export function MarketingPage({
                   </tbody>
                 </table>
               </div>
+              <Pagination
+                page={safeDailyPage}
+                pageSize={TABLE_PAGE_SIZE}
+                total={dailyRows.length}
+                unit="ngày"
+                onPageChange={setDailyPage}
+              />
             </section>
           ) : null}
         </>

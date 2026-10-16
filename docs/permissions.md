@@ -16,6 +16,7 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 | Dự án (`/projects`) | Có. `canViewProjects` | Có. Project trong `project_members` | Không, chuyển về Lead |
 | Tài khoản | Có | Có. Chỉ nhân viên của mình | Không, chuyển về Lead |
 | Cài đặt và đồng bộ Facebook | Có | Không | Không |
+| Tự động đồng bộ dữ liệu Facebook (`/api/cron/facebook-sync`, `canSyncFacebook`) | Có (hoặc `CRON_SECRET`) | Không, API trả 403 | Không, API trả 403 |
 | Danh mục / field phụ trên **Cài đặt** | Có. `canManageCatalogs` / `canManageAttrFields` | Không | Không |
 | Danh mục / field phụ trên **Dự án → chi tiết** | Có | Có trên project là thành viên. `canManageCatalogsInProject` | Không |
 | Quản lý project (tạo, thêm fanpage từ danh sách Facebook cấp quyền, bật tắt, gỡ, kiểm tra, gán partner, ads) | Có. `canManageProjects` | Không (xem danh sách read-only) | Không |
@@ -36,7 +37,7 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 | Bộ lọc fanpage trên Lead và Báo cáo | Mọi fanpage đang bật | Fanpage được gán | Fanpage của partner |
 | Số liệu báo cáo | Mọi fanpage | Cùng phạm vi lead | Không vào màn |
 | Ads và chiến dịch marketing | Mọi dòng thuộc fanpage của **project đang xem** (switcher). Không gắn page → ẩn khi đã chọn project | Không vào màn | Không vào màn |
-| Sinh tệp khách hàng (Audience) theo dự án/fanpage & đẩy lên Facebook / xuất tệp Ads (`canManageAudiences`) | Có | Không | Không |
+| Sinh tệp khách hàng (Audience), Tệp tương tự (Lookalike 1%–10%), Chân dung đã lưu (Saved Audience) & Phân tích nhân khẩu học Fanpage (`canManageAudiences`) | Có | Không | Không |
 | Giao / đổi người phụ trách lead (`canAssignLead`) | Có | Có | Không |
 | Người được giao lead | Mọi nhân viên đang hoạt động | Nhân viên cùng partner | Nhân viên cùng partner |
 

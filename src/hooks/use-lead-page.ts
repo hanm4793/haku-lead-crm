@@ -28,18 +28,32 @@ export function useLeadPage(
   request: LeadSearchInput,
 ): UseLeadPageResult {
   const [data, setData] = React.useState(initialData);
+  const [prevInitialData, setPrevInitialData] = React.useState(initialData);
+  const [hydratedVersion, setHydratedVersion] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [reloadToken, setReloadToken] = React.useState(0);
 
   const key = JSON.stringify(request);
   const initialKey = React.useMemo(() => JSON.stringify(initialRequest), [initialRequest]);
-  const firstRun = React.useRef(true);
+  const fetchSignature = `${key}|${reloadToken}`;
+  const lastFetchedSignature = React.useRef(`${initialKey}|0`);
+  const lastHydratedVersion = React.useRef(0);
+
+  if (prevInitialData !== initialData) {
+    setPrevInitialData(initialData);
+    setData(initialData);
+    setHydratedVersion((v) => v + 1);
+  }
 
   React.useEffect(() => {
-    const isFirstRun = firstRun.current;
-    firstRun.current = false;
-    if (isFirstRun && key === initialKey && reloadToken === 0) return;
+    if (lastHydratedVersion.current !== hydratedVersion) {
+      lastHydratedVersion.current = hydratedVersion;
+      lastFetchedSignature.current = fetchSignature;
+      return;
+    }
+    if (lastFetchedSignature.current === fetchSignature) return;
+    lastFetchedSignature.current = fetchSignature;
 
     const controller = new AbortController();
     setLoading(true);
@@ -65,7 +79,7 @@ export function useLeadPage(
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [key, initialKey, reloadToken]);
+  }, [key, fetchSignature, hydratedVersion]);
 
   // Ảnh chụp dữ liệu hiện tại để hoàn tác được khi server từ chối thay đổi.
   const snapshot = React.useRef(data);

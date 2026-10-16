@@ -2,7 +2,7 @@ import { generateText } from "ai";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { resolveModel } from "@/lib/ai/model";
+import { resolveModelCandidates } from "@/lib/ai/model";
 import { canUseAi } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import { getActivityLogs, getLeadById, getReferenceData } from "@/lib/db/leads-repo";
@@ -16,6 +16,7 @@ const requestSchema = z.object({
   leadId: z.string().uuid(),
   action: z.enum(["summarize", "suggest_action", "polish_note"]),
   draftNote: z.string().max(4000).optional(),
+  model: z.string().max(80).optional(),
 });
 
 function redactPii(text: string, lead: Lead): string {
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Yêu cầu không hợp lệ" }, { status: 400 });
   }
 
-  const { leadId, action, draftNote } = parsed.data;
+  const { leadId, action, draftNote, model: preferredModel } = parsed.data;
   const lead = await getLeadById(leadId, viewer);
   if (!lead) {
     return NextResponse.json({ error: "Không tìm thấy lead hoặc bạn không có quyền xem." }, { status: 404 });
@@ -94,9 +95,9 @@ export async function POST(request: Request) {
     getReferenceData(viewer.activeProjectId ?? undefined).catch(() => null),
   ]);
   const labels = reference?.labels ?? DEFAULT_CATALOG_LABELS;
-  const resolved = resolveModel();
+  const candidates = resolveModelCandidates(preferredModel);
 
-  if (!resolved) {
+  if (candidates.length === 0) {
     const text = fallbackCopilot(action, lead, logs, labels, draftNote);
     return NextResponse.json({ result: text, mode: "fallback" });
   }
@@ -145,19 +146,28 @@ Không dài dòng, trả lời thực tế, lịch sự, đúng trọng tâm.`;
 Chỉ trả lời nội dung ghi chú đã được chuẩn hóa, không thêm lời chào hay giải thích.`;
   }
 
-  try {
-    const result = await generateText({
-      model: resolved.model,
-      system: leadContext,
-      prompt,
-      temperature: 0.2,
-    });
-    return NextResponse.json({ result: result.text.trim(), mode: "ai" });
-  } catch {
-    const text = fallbackCopilot(action, lead, logs, labels, draftNote);
-    return NextResponse.json({
-      result: `${text}\n\n(Lưu ý: Không gọi được mô hình AI thật, đây là phản hồi tự động dự phòng.)`,
-      mode: "fallback",
-    });
+  for (const resolved of candidates) {
+    try {
+      const result = await generateText({
+        model: resolved.model,
+        system: leadContext,
+        prompt,
+        temperature: 0.2,
+        maxRetries: 0,
+      });
+      return NextResponse.json({
+        result: result.text.trim(),
+        mode: "ai",
+        model: resolved.modelId,
+      });
+    } catch {
+      // Thử tiếp model dự phòng tiếp theo
+    }
   }
+
+  const text = fallbackCopilot(action, lead, logs, labels, draftNote);
+  return NextResponse.json({
+    result: `${text}\n\n(Lưu ý: Không gọi được mô hình AI thật, đây là phản hồi tự động dự phòng.)`,
+    mode: "fallback",
+  });
 }

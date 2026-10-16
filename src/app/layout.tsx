@@ -4,9 +4,9 @@ import { Plus_Jakarta_Sans } from "next/font/google";
 import { AppShell } from "@/components/layout/app-shell";
 import { ToastProvider } from "@/components/providers/toast-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getViewer } from "@/lib/auth/viewer";
+import { getScopedViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
-import { listProjectsForSwitcher, resolveActiveProject, toProjectInfo, toProjectViewer } from "@/lib/db/project-repo";
+import { listProjectsForSwitcher, toProjectViewer } from "@/lib/db/project-repo";
 import type { ProjectInfo } from "@/lib/types";
 
 import "./globals.css";
@@ -23,16 +23,13 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const viewer = await getViewer();
+  const viewer = await getScopedViewer();
 
   let projects: ProjectInfo[] = [];
-  let activeProjectId: string | null = null;
+  const activeProjectId: string | null = viewer?.activeProjectId ?? null;
   if (viewer && isDatabaseConfigured()) {
     try {
-      const active = await resolveActiveProject(toProjectViewer(viewer));
-      activeProjectId = active.id;
       projects = await listProjectsForSwitcher(toProjectViewer(viewer));
-      if (projects.length === 0) projects = [toProjectInfo(active)];
     } catch {
       // Chưa có project — shell vẫn mở, super admin tạo trong Cài đặt.
     }

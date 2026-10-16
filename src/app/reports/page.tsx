@@ -7,12 +7,10 @@ import { getScopedViewer } from "@/lib/auth/viewer";
 import { catalogOptionsFromReference, DEFAULT_LEAD_CATALOG } from "@/lib/catalog";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
-import { listAttrFields } from "@/lib/db/attr-fields-repo";
 import { getReferenceData } from "@/lib/db/leads-repo";
 import { resolvePreset } from "@/lib/date-range";
 import { EMPTY_FILTERS } from "@/lib/filters";
 import { buildReportSummary } from "@/lib/reports/summary";
-import { listAssignableStaff } from "@/lib/db/users-repo";
 
 export const metadata = { title: "Báo cáo — SEMTOP Marketing CRM" };
 export const dynamic = "force-dynamic";
@@ -38,7 +36,7 @@ export default async function Page() {
   const projectId = viewer.activeProjectId ?? undefined;
   const now = new Date();
   const range = resolvePreset("THIS_MONTH", now);
-  const [initialSummary, facebookPages, assignees, reference, attrFields] = await Promise.all([
+  const [initialSummary, facebookPages, reference] = await Promise.all([
     buildReportSummary(
       {
         filters: { ...EMPTY_FILTERS, dateFrom: range.from, dateTo: range.to },
@@ -49,11 +47,11 @@ export default async function Page() {
       viewer,
     ),
     listFacebookPages(projectId ? { projectId } : undefined),
-    listAssignableStaff(viewer),
-    getReferenceData(projectId).catch(() => null),
-    projectId ? listAttrFields(projectId, { activeOnly: true }).catch(() => []) : Promise.resolve([]),
+    getReferenceData(projectId, viewer).catch(() => null),
   ]);
   const catalog = reference ? catalogOptionsFromReference(reference) : DEFAULT_LEAD_CATALOG;
+  const assignees = reference?.assignees ?? [];
+  const attrFields = reference?.attrFields ?? [];
 
   const fanpageOptions = facebookPages
     .filter((page) => page.active && isPageVisible(viewer, page.facebookPageId))

@@ -19,11 +19,55 @@ interface ProviderConfig {
   docs: string;
 }
 
+export interface AiModelOption {
+  id: string;
+  label: string;
+  badge?: string;
+  description: string;
+}
+
+export const GOOGLE_AI_MODELS: AiModelOption[] = [
+  {
+    id: "gemini-4-argon",
+    label: "Gemini 4 Argon",
+    badge: "Mới nhất",
+    description: "Model thế hệ 4 mới nhất trên Google AI (yêu cầu quota Tier 1+, tự động dự phòng sang 3.5 Flash nếu hết quota Free).",
+  },
+  {
+    id: "gemini-3.8-flash",
+    label: "Gemini 3.8 Flash",
+    badge: "Nhanh",
+    description: "Model Flash thế hệ 3.8 tốc độ cao, tối ưu cho truy vấn CRM và trích xuất báo cáo.",
+  },
+  {
+    id: "gemini-3.5-flash",
+    label: "Gemini 3.5 Flash",
+    badge: "Ổn định · Free Tier",
+    description: "Hoạt động ổn định trên cả tài khoản Google AI Free Tier và Paid Tier.",
+  },
+  {
+    id: "gemini-3.5-flash-lite",
+    label: "Gemini 3.5 Flash Lite",
+    badge: "Siêu tốc · Tiết kiệm",
+    description: "Phản hồi cực nhanh, tiêu tốn ít quota, hỗ trợ tốt Free Tier.",
+  },
+  {
+    id: "gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro",
+    badge: "Chuyên sâu",
+    description: "Phù hợp cho câu hỏi phân tích chuyên sâu và gợi ý kịch bản tư vấn.",
+  },
+  {
+    id: "gemini-3.1-flash-lite",
+    label: "Gemini 3.1 Flash Lite",
+    description: "Model nhẹ, chi phí thấp.",
+  },
+];
+
 export const PROVIDERS: Record<AiProvider, ProviderConfig> = {
   google: {
     label: "Google Gemini (AI Studio)",
-    // Tài khoản mở sau 2026 không còn gọi được gemini-2.5-flash-lite.
-    defaultModel: "gemini-3.1-flash-lite",
+    defaultModel: "gemini-4-argon",
     apiKeyEnv: "GOOGLE_GENERATIVE_AI_API_KEY",
     docs: "https://aistudio.google.com/apikey",
   },
@@ -64,7 +108,11 @@ const PRICING: Record<string, { input: number; output: number }> = {
   "gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
   "gemini-2.5-flash": { input: 0.3, output: 2.5 },
   "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 },
-  "gemini-3.5-flash-lite": { input: 0.3, output: 2.5 },
+  "gemini-3.1-pro-preview": { input: 1.25, output: 5.0 },
+  "gemini-3.5-flash-lite": { input: 0.15, output: 0.6 },
+  "gemini-3.5-flash": { input: 0.3, output: 2.5 },
+  "gemini-3.8-flash": { input: 0.35, output: 2.5 },
+  "gemini-4-argon": { input: 0.5, output: 3.0 },
   "gemini-3-flash-preview": { input: 0.5, output: 3.0 },
   "openai/gpt-oss-20b": { input: 0.075, output: 0.3 },
   "llama-3.1-8b-instant": { input: 0.05, output: 0.08 },
@@ -83,7 +131,11 @@ export function getProvider(): AiProvider {
   return raw in PROVIDERS ? (raw as AiProvider) : "google";
 }
 
-export function getModelId(provider: AiProvider = getProvider()) {
+export function getModelId(provider: AiProvider = getProvider(), preferredModelId?: string | null) {
+  const trimmed = preferredModelId?.trim();
+  if (trimmed && /^[a-zA-Z0-9._:/-]+$/.test(trimmed)) {
+    return trimmed;
+  }
   return process.env.AI_MODEL || PROVIDERS[provider].defaultModel;
 }
 
@@ -94,12 +146,12 @@ export function isAiConfigured(provider: AiProvider = getProvider()) {
   return Boolean(process.env[keyEnv]);
 }
 
-export function resolveModel(): ResolvedModel | null {
+export function resolveModel(preferredModelId?: string | null): ResolvedModel | null {
   const provider = getProvider();
   if (!isAiConfigured(provider)) return null;
 
   const config = PROVIDERS[provider];
-  const modelId = getModelId(provider);
+  const modelId = getModelId(provider, preferredModelId);
 
   if (provider === "google") {
     const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY });
@@ -113,6 +165,31 @@ export function resolveModel(): ResolvedModel | null {
   });
 
   return { provider, providerLabel: config.label, modelId, model: client(modelId) };
+}
+
+/**
+ * Trả về danh sách model theo thứ tự ưu tiên: model người dùng chọn đứng đầu,
+ * tiếp theo là các model dự phòng ổn định (gemini-3.5-flash, gemini-3.5-flash-lite)
+ * để nếu model đầu (ví dụ gemini-4-argon trên key Free Tier) hết quota hoặc quá tải
+ * thì tự động chuyển tiếp mượt mà mà không bị gián đoạn.
+ */
+export function resolveModelCandidates(preferredModelId?: string | null): ResolvedModel[] {
+  const primary = resolveModel(preferredModelId);
+  if (!primary) return [];
+  if (primary.provider !== "google") return [primary];
+
+  const fallbackIds = ["gemini-3.5-flash", "gemini-3.5-flash-lite"];
+  const seen = new Set<string>([primary.modelId]);
+  const candidates: ResolvedModel[] = [primary];
+
+  for (const fbId of fallbackIds) {
+    if (!seen.has(fbId)) {
+      seen.add(fbId);
+      const fb = resolveModel(fbId);
+      if (fb) candidates.push(fb);
+    }
+  }
+  return candidates;
 }
 
 export function estimateCostUsd(modelId: string, inputTokens: number, outputTokens: number) {

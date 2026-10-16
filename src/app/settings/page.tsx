@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { AiModelSelector } from "@/components/settings/ai-model-selector";
 import { FacebookSyncPanel } from "@/components/settings/facebook-sync-panel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -100,11 +101,10 @@ export default async function Page() {
         <Card>
           <CardHeader>
             <CardTitle>Trợ lý AI</CardTitle>
-            <CardDescription>Model dùng cho AI Chat và Export thông minh</CardDescription>
+            <CardDescription>Model dùng cho AI Chat, Lead Copilot và Export thông minh</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2 text-[13px]">
+          <CardContent className="space-y-2.5 text-[13px]">
             <Row label="Nhà cung cấp" value={PROVIDERS[provider].label} />
-            <Row label="Model" value={modelId} />
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Trạng thái</span>
               {aiConfigured ? (
@@ -121,6 +121,7 @@ export default async function Page() {
                   : `${(costPerCall * USD_TO_VND).toFixed(1)} đ · ${(costPerCall * 1000 * USD_TO_VND).toFixed(0)} đ / 1.000 lượt`
               }
             />
+            <AiModelSelector defaultModelId={modelId} />
             <p className="pt-1 text-xs text-muted-foreground">
               Dữ liệu khách hàng không được gửi tới model. Prompt chỉ chứa mô tả schema và danh mục giá trị hợp lệ.
             </p>

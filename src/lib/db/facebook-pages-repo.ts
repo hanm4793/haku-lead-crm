@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 
 import { getDb, isDatabaseConfigured } from "@/lib/db/client";
 import { ensureDefaultProject } from "@/lib/db/project-repo";
@@ -36,7 +36,7 @@ export async function listFacebookPages(options?: { projectId?: string }): Promi
     })
     .from(facebookPages)
     .where(where)
-    .orderBy(asc(facebookPages.name), asc(facebookPages.facebookPageId));
+    .orderBy(sql`${facebookPages.name} IS NULL ASC`, asc(facebookPages.name), asc(facebookPages.facebookPageId));
 }
 
 /** Page đang bật để sync lead. Nếu bảng trống → bootstrap từ env rồi trả về. */

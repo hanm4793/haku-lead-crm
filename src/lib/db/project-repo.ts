@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, or, sql } from "drizzle-orm";
 
 import type { UserRole } from "@/lib/auth/roles";
 import { DEFAULT_CATALOG_LABELS, DEFAULT_PROJECT_NAME, DEFAULT_PROJECT_SLUG } from "@/lib/constants";
@@ -26,21 +26,16 @@ export type ProjectAdAccountRow = {
  * có thì lấy project active đầu tiên, để DB seed tay vẫn chạy được.
  */
 export async function getDefaultProject(): Promise<ProjectRow | null> {
-  const db = getDb();
-  const [bySlug] = await db
+  const [row] = await getDb()
     .select()
     .from(projects)
-    .where(eq(projects.slug, DEFAULT_PROJECT_SLUG))
+    .where(or(eq(projects.slug, DEFAULT_PROJECT_SLUG), eq(projects.active, true)))
+    .orderBy(
+      sql`case when ${projects.slug} = ${DEFAULT_PROJECT_SLUG} then 0 else 1 end`,
+      asc(projects.createdAt),
+    )
     .limit(1);
-  if (bySlug) return bySlug;
-
-  const [firstActive] = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.active, true))
-    .orderBy(asc(projects.createdAt))
-    .limit(1);
-  return firstActive ?? null;
+  return row ?? null;
 }
 
 export async function listProjects(options: { activeOnly?: boolean } = {}): Promise<ProjectRow[]> {
@@ -616,14 +611,12 @@ export async function assertPartnerAssignable(userId: string) {
 }
 
 export async function listProjectsForSwitcher(viewer: ProjectViewer): Promise<ProjectInfo[]> {
-  const ids = await listProjectIdsForViewer(viewer);
-  if (!ids.length) {
-    if (viewer.role === "SUPER_ADMIN") {
-      const rows = await listProjects({ activeOnly: true });
-      return rows.map(toProjectInfo);
-    }
-    return [];
+  if (viewer.role === "SUPER_ADMIN") {
+    const rows = await listProjects({ activeOnly: true });
+    return rows.map(toProjectInfo);
   }
+  const ids = await listProjectIdsForViewer(viewer);
+  if (!ids.length) return [];
   const rows = await getDb()
     .select()
     .from(projects)

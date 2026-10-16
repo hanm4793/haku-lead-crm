@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import { BarChart3, Briefcase, ChevronLeft, Megaphone, Settings, Shield, Sparkles, Users } from "lucide-react";
 
 import { AiChatPanel } from "@/components/ai/ai-chat-panel";
-import { ProjectSwitcher } from "@/components/layout/project-switcher";
+import { ProjectProvider } from "@/components/layout/project-switcher";
 import { UserMenu } from "@/components/layout/user-menu";
 import { Button } from "@/components/ui/button";
 import { canSeeNav, canUseAi, canViewMarketing, ROLE_LABELS, type NavGate, type UserRole } from "@/lib/auth/roles";
@@ -22,12 +22,6 @@ const NAV_ITEMS: { href: string; label: string; icon: typeof Users; access: NavG
   { href: "/users", label: "Người dùng", icon: Shield, access: "users" },
   { href: "/settings", label: "Cài đặt App", icon: Settings, access: "settings" },
 ];
-
-/**
- * Màn dữ liệu theo "dự án đang xem" (cookie). Màn Dự án, Cài đặt và Tài khoản tự chứa
- * ngữ cảnh của riêng nó nên không hiện ô chọn dự án ở header.
- */
-const PROJECT_SCOPED_ROUTES = ["/leads", "/reports", "/marketing", "/users"];
 
 export function AppShell({
   children,
@@ -49,6 +43,12 @@ export function AppShell({
   const pathname = usePathname();
   const [collapsed, setCollapsed] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
+  const [pendingHref, setPendingHref] = React.useState<string | null>(null);
+  const [prevPathname, setPrevPathname] = React.useState(pathname);
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
+    setPendingHref(null);
+  }
 
   React.useEffect(() => {
     const mql = window.matchMedia("(max-width: 767px)");
@@ -76,158 +76,158 @@ export function AppShell({
   };
   const navItems = NAV_ITEMS.filter((item) => canSeeNav(user.role, item.access));
   const showAi = canUseAi(user);
-  const onScopedRoute = PROJECT_SCOPED_ROUTES.some((route) => pathname.startsWith(route));
-  const switcherVisible =
-    onScopedRoute &&
-    (user.role === "STAFF" ? projects.length > 1 : projects.length >= 1);
+  const effectivePathname = pendingHref ?? pathname;
 
   return (
-    <div className="flex min-h-screen">
-      {!collapsed && (
-        <>
-          <div className="w-[4.25rem] shrink-0 md:hidden" aria-hidden />
-          <div
-            className="fixed inset-0 z-30 bg-black/40 md:hidden"
-            onClick={() => setCollapsed(true)}
-            aria-hidden
-          />
-        </>
-      )}
-      <aside
-        className={cn(
-          "sticky top-0 flex h-screen shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-200",
-          collapsed
-            ? "w-[4.25rem]"
-            : "w-60 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:shadow-xl",
+    <ProjectProvider
+      value={{
+        projects,
+        activeProjectId,
+        role: user.role,
+      }}
+    >
+      <div className="flex min-h-screen">
+        {!collapsed && (
+          <>
+            <div className="w-[4.25rem] shrink-0 md:hidden" aria-hidden />
+            <div
+              className="fixed inset-0 z-30 bg-black/40 md:hidden"
+              onClick={() => setCollapsed(true)}
+              aria-hidden
+            />
+          </>
         )}
-      >
-        <div
+        <aside
           className={cn(
-            "flex items-center border-b border-white/10 px-3 py-3",
-            collapsed ? "justify-center px-2" : "px-3",
+            "sticky top-0 flex h-screen shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-200",
+            collapsed
+              ? "w-[4.25rem]"
+              : "w-60 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:shadow-xl",
           )}
         >
           <div
             className={cn(
-              "flex items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-black/5",
-              collapsed ? "p-1.5" : "px-2.5 py-1.5",
+              "flex items-center border-b border-white/10 px-3 py-3",
+              collapsed ? "justify-center px-2" : "px-3",
             )}
           >
-            <Image
-              src="/brand/logo-white.png"
-              alt="SEMTOP"
-              width={collapsed ? 36 : 140}
-              height={collapsed ? 36 : 36}
-              className={cn("object-contain", collapsed ? "h-7 w-7" : "h-8 w-auto")}
-              priority
-            />
+            <div
+              className={cn(
+                "flex items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-black/5",
+                collapsed ? "p-1.5" : "px-2.5 py-1.5",
+              )}
+            >
+              <Image
+                src={collapsed ? "/brand/logo-mark.png" : "/brand/logo-white.png"}
+                alt="SEMTOP"
+                width={collapsed ? 32 : 140}
+                height={collapsed ? 32 : 36}
+                className={cn("object-contain", collapsed ? "h-7 w-7" : "h-8 w-auto")}
+                priority
+              />
+            </div>
           </div>
-        </div>
 
-        <nav className="mt-3 flex flex-1 flex-col gap-1 px-2.5">
-          {navItems.map((item) => {
-            const active = pathname.startsWith(item.href);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                title={collapsed ? item.label : undefined}
+          <nav className="mt-3 flex flex-1 flex-col gap-1 px-2.5">
+            {navItems.map((item) => {
+              const active = effectivePathname.startsWith(item.href);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  prefetch
+                  title={collapsed ? item.label : undefined}
+                  onClick={() => {
+                    if (!pathname.startsWith(item.href)) {
+                      setPendingHref(item.href);
+                    }
+                    if (typeof window !== "undefined" && window.innerWidth < 768) {
+                      setCollapsed(true);
+                    }
+                  }}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-sidebar-accent text-white shadow-sm"
+                      : "text-white/80 hover:bg-white/10 hover:text-white",
+                    collapsed && "justify-center px-0",
+                  )}
+                >
+                  <Icon className="size-4 shrink-0" />
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </Link>
+              );
+            })}
+
+            {showAi && (
+              <button
+                type="button"
                 onClick={() => {
                   if (typeof window !== "undefined" && window.innerWidth < 768) {
                     setCollapsed(true);
                   }
+                  setAiOpen(true);
                 }}
+                title={collapsed ? "Trợ lý AI" : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                  active
-                    ? "bg-sidebar-accent text-white shadow-sm"
-                    : "text-white/80 hover:bg-white/10 hover:text-white",
+                  "mt-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white",
                   collapsed && "justify-center px-0",
                 )}
               >
-                <Icon className="size-4 shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </Link>
-            );
-          })}
+                <Sparkles className="size-4 shrink-0" />
+                {!collapsed && <span className="truncate">Trợ lý AI</span>}
+              </button>
+            )}
+          </nav>
 
-          {showAi && (
-            <button
-              type="button"
-              onClick={() => {
-                if (typeof window !== "undefined" && window.innerWidth < 768) {
-                  setCollapsed(true);
-                }
-                setAiOpen(true);
-              }}
-              title={collapsed ? "Trợ lý AI" : undefined}
+          <div className="px-2.5 pb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCollapsed((v) => !v)}
               className={cn(
-                "mt-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white",
-                collapsed && "justify-center px-0",
+                "w-full justify-start gap-2 text-white/70 hover:bg-white/10 hover:text-white",
+                collapsed && "justify-center",
               )}
             >
-              <Sparkles className="size-4 shrink-0" />
-              {!collapsed && <span className="truncate">Trợ lý AI</span>}
-            </button>
-          )}
-        </nav>
+              <ChevronLeft className={cn("size-4 transition-transform", collapsed && "rotate-180")} />
+              {!collapsed && <span className="text-xs">Thu gọn</span>}
+            </Button>
+          </div>
 
-        <div className="px-2.5 pb-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setCollapsed((v) => !v)}
-            className={cn(
-              "w-full justify-start gap-2 text-white/70 hover:bg-white/10 hover:text-white",
-              collapsed && "justify-center",
-            )}
-          >
-            <ChevronLeft className={cn("size-4 transition-transform", collapsed && "rotate-180")} />
-            {!collapsed && <span className="text-xs">Thu gọn</span>}
-          </Button>
+          <UserMenu
+            fullName={user.fullName}
+            role={ROLE_LABELS[user.role]}
+            email={user.email}
+            isDemo={user.isDemo}
+            collapsed={collapsed}
+          />
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <main className="min-w-0 flex-1">{children}</main>
+
+          <footer className="flex items-center justify-between border-t border-border bg-card px-5 py-2.5 text-[11px] text-muted-foreground">
+            <span>SEMTOP Marketing CRM</span>
+            <div className="flex items-center gap-4">
+              <span>{user.fullName}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full bg-emerald-500" />
+                Hệ thống hoạt động
+              </span>
+            </div>
+          </footer>
         </div>
 
-        <UserMenu
-          fullName={user.fullName}
-          role={ROLE_LABELS[user.role]}
-          email={user.email}
-          isDemo={user.isDemo}
-          collapsed={collapsed}
-        />
-      </aside>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        {switcherVisible ? (
-          <div className="flex items-center justify-end border-b border-border bg-card px-4 py-2">
-            <ProjectSwitcher
-              projects={projects}
-              activeProjectId={activeProjectId}
-              hideWhenSingle={user.role === "STAFF"}
-            />
-          </div>
-        ) : null}
-        <main className="min-w-0 flex-1">{children}</main>
-
-        <footer className="flex items-center justify-between border-t border-border bg-card px-5 py-2.5 text-[11px] text-muted-foreground">
-          <span>SEMTOP Marketing CRM</span>
-          <div className="flex items-center gap-4">
-            <span>{user.fullName}</span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-1.5 rounded-full bg-emerald-500" />
-              Hệ thống hoạt động
-            </span>
-          </div>
-        </footer>
+        {showAi && (
+          <AiChatPanel
+            open={aiOpen}
+            onOpenChange={setAiOpen}
+            canSeeMarketing={canViewMarketing(user.role)}
+          />
+        )}
       </div>
-
-      {showAi && (
-        <AiChatPanel
-          open={aiOpen}
-          onOpenChange={setAiOpen}
-          canSeeMarketing={canViewMarketing(user.role)}
-        />
-      )}
-    </div>
+    </ProjectProvider>
   );
 }

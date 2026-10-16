@@ -29,14 +29,12 @@ export default async function Page() {
     );
   }
 
-  let projects: ProjectInfo[] = [];
-  if (viewer.role === "SUPER_ADMIN") {
-    projects = (await listProjects().catch(() => [])).map(toProjectInfo);
-  }
-  const [users, facebookPages] = await Promise.all([
+  const [projectRows, users, facebookPages] = await Promise.all([
+    viewer.role === "SUPER_ADMIN" ? listProjects().catch(() => []) : Promise.resolve([]),
     listManagedUsers(viewer),
     listFacebookPages(projectId ? { projectId } : undefined),
   ]);
+  const projects: ProjectInfo[] = projectRows.map(toProjectInfo);
   const pages = facebookPages
     .filter((page) => page.active && isPageVisible(viewer, page.facebookPageId))
     .map((page) => ({

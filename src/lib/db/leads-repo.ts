@@ -431,12 +431,15 @@ export async function queryLeadPage(options: LeadPageOptions, viewer: ViewerScop
   const pageSize = Math.min(500, Math.max(1, options.pageSize ?? 50));
 
   const scoped = criteriaConditions(criteriaFromLeadFilters(options.filters, true), viewer, now);
-  const withoutTab = criteriaConditions(criteriaFromLeadFilters(options.filters, false), viewer, now);
+  const isAllTab = !options.filters.tab || options.filters.tab === "ALL";
+  const withoutTab = isAllTab
+    ? scoped
+    : criteriaConditions(criteriaFromLeadFilters(options.filters, false), viewer, now);
 
   const sortColumn = SORTABLE[options.sortBy ?? "createdAt"] ?? leads.createdAt;
   const direction = options.sortOrder === "asc" ? asc : desc;
 
-  const [rows, [kpi], [tabs]] = await Promise.all([
+  const [rows, [kpi], maybeTabs] = await Promise.all([
     selectLeadRows()
       .where(and(...scoped))
       // Thêm id vào khóa sắp xếp để phân trang không bị nhảy hàng khi trùng giá trị.
@@ -444,9 +447,10 @@ export async function queryLeadPage(options: LeadPageOptions, viewer: ViewerScop
       .limit(pageSize)
       .offset((page - 1) * pageSize),
     selectLeadCounts(now).where(and(...scoped)),
-    // Số trên tab đếm theo bộ lọc nhưng bỏ qua chính tab đang chọn.
-    selectLeadCounts(now).where(and(...withoutTab)),
+    // Số trên tab đếm theo bộ lọc nhưng bỏ qua chính tab đang chọn (nếu đang ở tab ALL thì dùng chung kpi).
+    isAllTab ? Promise.resolve(null) : selectLeadCounts(now).where(and(...withoutTab)),
   ]);
+  const tabs = maybeTabs ? maybeTabs[0] : kpi;
 
   return {
     rows: rows.map(toLead),
@@ -1524,7 +1528,7 @@ export async function getReferenceData(projectId?: string | null, viewer?: Viewe
         .orderBy(asc(appUsers.fullName))
         .then((rows) => rows.map((r) => r.name));
 
-  const [brandRows, locationRows, assignees, productRows] = await Promise.all([
+  const [brandRows, locationRows, assignees, productRows, attrFields] = await Promise.all([
     db
       .select({ code: brands.code, name: brands.name })
       .from(brands)
@@ -1542,14 +1546,13 @@ export async function getReferenceData(projectId?: string | null, viewer?: Viewe
       .innerJoin(brands, eq(products.brandId, brands.id))
       .where(and(eq(products.active, true), resolvedProjectId ? eq(products.projectId, resolvedProjectId) : undefined))
       .orderBy(asc(brands.sortOrder), asc(brands.code), asc(products.name)),
+    resolvedProjectId ? listAttrFields(resolvedProjectId, { activeOnly: true }) : Promise.resolve([]),
   ]);
 
   const productsByBrand: Record<string, string[]> = {};
   for (const row of productRows) {
     (productsByBrand[row.brand] ??= []).push(row.name);
   }
-
-  const attrFields = resolvedProjectId ? await listAttrFields(resolvedProjectId, { activeOnly: true }) : [];
 
   return {
     project: project ? toProjectInfo(project) : null,

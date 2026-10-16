@@ -2,11 +2,13 @@
 
 import * as React from "react";
 import {
+  Check,
   CheckCircle2,
   ChevronDown,
   Download,
   FileSpreadsheet,
   FileUp,
+  ListFilter,
   Loader2,
   Plus,
   Search,
@@ -18,6 +20,7 @@ import {
 import { ColumnVisibilityPopover } from "@/components/common/column-visibility";
 import { DateRangePicker, resolvePreset, type DateRange, type PresetId } from "@/components/common/date-range-picker";
 import { Pagination } from "@/components/common/pagination";
+import { ProjectSwitcher } from "@/components/layout/project-switcher";
 import { ALL_COLUMN_TOGGLES, LeadTable, type SortState } from "@/components/leads/lead-table";
 import { attrColumnId, buildAttrColumns, columnHeader, DEFAULT_VISIBLE_COLUMNS } from "@/components/leads/columns";
 import { CreateLeadDialog } from "@/components/leads/create-lead-dialog";
@@ -36,7 +39,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLeadLogs } from "@/hooks/use-lead-logs";
 import { useLeadPage } from "@/hooks/use-lead-page";
 import {
@@ -71,11 +73,11 @@ interface LogEntry {
 
 const NO_ATTR_FIELDS: AttrFieldRow[] = [];
 
-const TABS: { id: LeadFilters["tab"]; label: string }[] = [
-  { id: "ALL", label: "Tất cả" },
-  { id: "CHUA_LIEN_HE", label: "Chưa liên hệ" },
-  { id: "DA_LIEN_HE", label: "Đã liên hệ" },
-  { id: "QUA_HAN", label: "Quá hạn" },
+const STATUS_TABS: { id: LeadFilters["tab"]; label: string; buttonLabel: string; dotClass: string }[] = [
+  { id: "ALL", label: "Tất cả trạng thái", buttonLabel: "Tất cả trạng thái", dotClass: "bg-slate-400" },
+  { id: "CHUA_LIEN_HE", label: "Chưa liên hệ", buttonLabel: "Chưa liên hệ", dotClass: "bg-blue-500" },
+  { id: "DA_LIEN_HE", label: "Đã liên hệ", buttonLabel: "Đã liên hệ", dotClass: "bg-emerald-500" },
+  { id: "QUA_HAN", label: "Quá hạn hẹn gọi", buttonLabel: "Quá hạn", dotClass: "bg-rose-500" },
 ];
 
 export function LeadsPage({
@@ -160,9 +162,10 @@ export function LeadsPage({
 
   // Gõ tìm kiếm nhanh nhưng chỉ truy vấn sau khi người dùng ngừng gõ.
   React.useEffect(() => {
+    if (searchInput === filters.search) return;
     const timer = setTimeout(() => setFilters({ search: searchInput }), 300);
     return () => clearTimeout(timer);
-  }, [searchInput, setFilters]);
+  }, [searchInput, filters.search, setFilters]);
 
   // Đổi bộ lọc hoặc cỡ trang thì quay lại trang đầu — điều chỉnh ngay trong lúc
   // render thay vì dùng effect để tránh một lượt truy vấn thừa ở trang cũ.
@@ -202,9 +205,12 @@ export function LeadsPage({
   const { logs: selectedLogs, loading: logsLoading, reload: reloadLogs } = useLeadLogs(selectedId);
 
   const hasActiveFilters =
+    filters.tab !== "ALL" ||
     countActiveFilters(filters) > 0 ||
     Boolean(filters.search.trim()) ||
     Boolean(filters.dateFrom || filters.dateTo);
+
+  const activeStatusTab = STATUS_TABS.find((t) => t.id === filters.tab) ?? STATUS_TABS[0];
 
   const handleResetAllFilters = () => {
     resetFilters();
@@ -373,121 +379,194 @@ export function LeadsPage({
   };
 
   return (
-    <div className="flex h-[calc(100vh-74px)] flex-col gap-3 p-4">
+    <div className="flex h-[calc(100vh-40px)] flex-col gap-3 p-4">
       <LeadKpiHeader kpis={data.kpis} />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xs">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2.5">
-          <Tabs value={filters.tab} onValueChange={(v) => setFilters({ tab: v as LeadFilters["tab"] })}>
-            <TabsList className="gap-0">
-              {TABS.map((tab) => (
-                <TabsTrigger
-                  key={tab.id}
-                  value={tab.id}
-                  className="border-b-0 data-[state=active]:bg-accent data-[state=active]:rounded-md"
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+          {/* Cụm Trái: Dự án, Tìm kiếm & Bộ lọc */}
+          <div className="flex flex-wrap items-center gap-2">
+            <ProjectSwitcher />
+
+            <div className="relative w-52 sm:w-60">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Tìm tên / SĐT..."
+                className="h-8 pl-8 pr-7 text-[13px]"
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchInput("");
+                    setFilters({ search: "" });
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  title="Xóa từ khóa"
                 >
-                  {tab.label}
+                  <X className="size-3" />
+                </button>
+              )}
+            </div>
+
+            <div className="hidden h-4 w-px bg-border lg:block" />
+
+            {/* Dropdown lọc theo Trạng thái liên hệ */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "h-8 gap-1.5 px-2.5 text-[13px] font-medium",
+                    filters.tab !== "ALL" && "border-primary/40 bg-primary/5 text-primary hover:bg-primary/10",
+                  )}
+                >
+                  {filters.tab === "ALL" ? (
+                    <ListFilter className="size-3.5 text-muted-foreground" />
+                  ) : (
+                    <span className={cn("size-2 rounded-full", activeStatusTab.dotClass)} />
+                  )}
+                  <span>{activeStatusTab.buttonLabel}</span>
                   <span
                     className={cn(
-                      "rounded px-1 text-[11px] tabular-nums",
-                      filters.tab === tab.id ? "bg-primary/10 text-primary" : "text-muted-foreground",
+                      "rounded px-1.5 text-[10px] font-semibold tabular-nums",
+                      filters.tab !== "ALL"
+                        ? "bg-primary/15 text-primary"
+                        : "bg-secondary text-secondary-foreground",
                     )}
                   >
-                    {data.tabCounts[tab.id]}
+                    {data.tabCounts[filters.tab]}
                   </span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+                  <ChevronDown className="size-3 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                {STATUS_TABS.map((tab) => {
+                  const isSelected = filters.tab === tab.id;
+                  return (
+                    <DropdownMenuItem
+                      key={tab.id}
+                      onSelect={() => setFilters({ tab: tab.id })}
+                      className={cn(
+                        "flex items-center justify-between gap-2 text-xs",
+                        isSelected && "bg-accent font-semibold text-primary",
+                      )}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className={cn("size-2 rounded-full", tab.dotClass)} />
+                        <span>{tab.label}</span>
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+                          {data.tabCounts[tab.id]}
+                        </span>
+                        {isSelected && <Check className="size-3.5 text-primary" />}
+                      </span>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          <div className="relative w-56">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Tìm tên / SĐT"
-              className="h-8 pl-8 text-[13px]"
+            <DateRangePicker
+              preset={datePreset}
+              range={{ from: filters.dateFrom, to: filters.dateTo }}
+              onChange={handleDateChange}
             />
+
+            <LeadFilterPopover
+              filters={filters}
+              fanpageOptions={fanpageOptions}
+              assigneeOptions={assignees}
+              catalog={catalog}
+              onChange={setFilters}
+              onReset={handleResetAllFilters}
+            />
+
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleResetAllFilters}
+                className="h-8 gap-1 px-2 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+              >
+                <X className="size-3.5" />
+                Xóa lọc
+              </Button>
+            )}
           </div>
 
-          <DateRangePicker
-            preset={datePreset}
-            range={{ from: filters.dateFrom, to: filters.dateTo }}
-            onChange={handleDateChange}
-          />
-
-          <LeadFilterPopover
-            filters={filters}
-            fanpageOptions={fanpageOptions}
-            assigneeOptions={assignees}
-            catalog={catalog}
-            onChange={setFilters}
-            onReset={handleResetAllFilters}
-          />
-
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleResetAllFilters}
-              className="h-8 gap-1 px-2 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-            >
-              <X className="size-3.5" />
-              Xóa lọc
-            </Button>
-          )}
-
+          {/* Cụm Phải: Cột hiển thị, Nhập/Xuất Excel & Tạo lead mới */}
           <div className="ml-auto flex items-center gap-2">
             {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
 
-            {allowCreate && (
-              <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-                <Plus className="size-3.5" />
-                Tạo lead mới
-              </Button>
-            )}
-
-            {allowImport && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    disabled={downloadingTemplate}
-                  >
-                    {downloadingTemplate ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <FileUp className="size-3.5" />
-                    )}
-                    Import lead
-                    <ChevronDown className="size-3 opacity-60" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52">
-                  <DropdownMenuItem onSelect={() => setImportOpen(true)} className="gap-2">
-                    <FileUp className="size-4 text-primary" />
-                    Import lead từ Excel
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={handleDownloadTemplate} className="gap-2">
-                    <FileSpreadsheet className="size-4 text-emerald-600" />
-                    Tải lead mẫu (.xlsx)
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-
-            <Button variant="outline" size="sm" className="gap-2" onClick={handleExport} disabled={exporting}>
-              {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-              Xuất Excel
-            </Button>
             <ColumnVisibilityPopover
               columns={columnToggles}
               visible={visibleColumns}
               onChange={setVisibleColumns}
               defaults={defaultColumns}
             />
+
+            {allowImport ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2.5 text-[13px] font-medium"
+                    disabled={exporting || downloadingTemplate}
+                  >
+                    {exporting || downloadingTemplate ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <FileSpreadsheet className="size-3.5 text-emerald-600" />
+                    )}
+                    Nhập / Xuất Excel
+                    <ChevronDown className="size-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem onSelect={() => void handleExport()} disabled={exporting} className="gap-2 text-xs">
+                    <Download className="size-4 text-slate-600" />
+                    Xuất danh sách Excel (.xlsx)
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => setImportOpen(true)} className="gap-2 text-xs">
+                    <FileUp className="size-4 text-primary" />
+                    Import lead từ file Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => void handleDownloadTemplate()}
+                    disabled={downloadingTemplate}
+                    className="gap-2 text-xs"
+                  >
+                    <FileSpreadsheet className="size-4 text-emerald-600" />
+                    Tải file Excel mẫu (.xlsx)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 px-2.5 text-[13px] font-medium"
+                onClick={handleExport}
+                disabled={exporting}
+              >
+                {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                Xuất Excel
+              </Button>
+            )}
+
+            {allowCreate && (
+              <Button size="sm" className="h-8 gap-1.5 px-3 text-[13px]" onClick={() => setCreateOpen(true)}>
+                <Plus className="size-3.5" />
+                Tạo lead mới
+              </Button>
+            )}
           </div>
         </div>
 

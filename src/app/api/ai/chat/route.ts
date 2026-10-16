@@ -7,7 +7,7 @@ import { catalogFromReference, DEFAULT_AI_CATALOG, type AiCatalog } from "@/lib/
 import { exportSpecSchema, type ExportSpec } from "@/lib/ai/export-spec";
 import { parseExportRequestLocally } from "@/lib/ai/fallback-parser";
 import type { ExportPreview } from "@/lib/ai/export-preview";
-import { estimateCostUsd, resolveModel } from "@/lib/ai/model";
+import { estimateCostUsd, resolveModelCandidates } from "@/lib/ai/model";
 import { buildSystemPrompt } from "@/lib/ai/prompt";
 import { refineSpec } from "@/lib/ai/refine-spec";
 import {
@@ -47,6 +47,7 @@ const requestSchema = z.object({
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(8000) }))
     .min(1)
     .max(60),
+  model: z.string().max(80).optional(),
   mentions: z.array(mentionSchema).max(8).optional(),
   lastSpec: exportSpecSchema.nullable().optional(),
   lastStats: lastStatsSchema.nullable().optional(),
@@ -176,7 +177,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Yêu cầu không hợp lệ" }, { status: 400 });
   }
 
-  const { messages, mentions = [], lastSpec = null, lastStats = null, lastMentions = [] } = parsed.data;
+  const {
+    messages,
+    model: preferredModel,
+    mentions = [],
+    lastSpec = null,
+    lastStats = null,
+    lastMentions = [],
+  } = parsed.data;
   const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const now = new Date();
   const catalog = await loadCatalog(viewer.activeProjectId ?? undefined);
@@ -186,14 +194,14 @@ export async function POST(request: Request) {
   const previousStats = statsFromLastStats(lastStats);
   const cleanUserMessage = stripMentionLabels(lastUserMessage, effectiveMentions);
 
-  const resolved = resolveModel();
-  if (!resolved) {
+  const candidates = resolveModelCandidates(preferredModel);
+  if (candidates.length === 0) {
     return fallbackResponse(lastUserMessage, viewer, now, catalog, effectiveMentions, previousStats, lastSpec);
   }
 
-  // Thử lại một lần: lỗi thoáng qua và lỗi schema đều thường qua ở lần hai.
   let lastError: unknown = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let idx = 0; idx < candidates.length; idx++) {
+    const resolved = candidates[idx]!;
     try {
       const result = await generateObject({
         model: resolved.model,
@@ -205,6 +213,7 @@ export async function POST(request: Request) {
         }),
         messages,
         temperature: 0,
+        maxRetries: 0,
       });
 
       const object = result.object;
@@ -213,6 +222,7 @@ export async function POST(request: Request) {
       const usage = {
         provider: resolved.provider,
         model: resolved.modelId,
+        requestedModel: candidates[0]!.modelId,
         inputTokens,
         outputTokens,
         costUsd: estimateCostUsd(resolved.modelId, inputTokens, outputTokens),
@@ -296,7 +306,7 @@ export async function POST(request: Request) {
         }
       }
 
-      if (validated && !validated.success && attempt === 0) {
+      if (validated && !validated.success && idx < candidates.length - 1) {
         lastError = validated.error;
         continue;
       }
@@ -329,7 +339,7 @@ export async function POST(request: Request) {
     effectiveMentions,
     previousStats,
     lastSpec,
-    `Không gọi được ${resolved.providerLabel} (${detail}). Mình tạm hiểu theo từ khóa:`,
+    `Không gọi được ${candidates[0]!.providerLabel} (${detail}). Mình tạm hiểu theo từ khóa:`,
   );
 }
 

@@ -49,7 +49,14 @@ export function LeadFilterPopover({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn(
+            "h-8 gap-1.5 px-2.5 text-[13px] font-medium",
+            activeCount > 0 && "border-primary/40 bg-primary/5 text-primary hover:bg-primary/10",
+          )}
+        >
           <SlidersHorizontal className="size-3.5" />
           Bộ lọc
           {activeCount > 0 && (
@@ -59,16 +66,47 @@ export function LeadFilterPopover({
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[560px] p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-sm font-semibold">Bộ lọc nâng cao</div>
-          <Button variant="ghost" size="xs" onClick={onReset} className={cn(activeCount === 0 && "invisible")}>
+      <PopoverContent align="start" className="w-[560px] p-4">
+        <div className="mb-3 flex items-center justify-between border-b border-border pb-2.5">
+          <div>
+            <div className="text-sm font-semibold">Bộ lọc nâng cao</div>
+            <p className="text-[11px] text-muted-foreground">
+              Kết hợp nhiều tiêu chí để thu hẹp danh sách lead
+            </p>
+          </div>
+          <Button variant="ghost" size="xs" onClick={onReset} className={cn("text-rose-600 hover:bg-rose-50 hover:text-rose-700", activeCount === 0 && "invisible")}>
             Xóa tất cả
           </Button>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Nguồn">
+          <Field label="Phân loại KH">
+            <MultiSelect
+              options={[
+                { value: "CHUA_PHAN_LOAI", label: "Chưa phân loại" },
+                ...CATEGORY_OPTIONS.map((o) => ({ value: o.value, label: `${o.label} · ${o.hint}` })),
+              ]}
+              selected={filters.categories}
+              onChange={(v) => onChange({ categories: v as LeadCategory[] })}
+              searchable={false}
+            />
+          </Field>
+          <Field label="Lý do loại">
+            <MultiSelect
+              options={FAIL_REASON_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              selected={filters.failReasons}
+              onChange={(v) => onChange({ failReasons: v as FailReason[] })}
+              searchable={false}
+            />
+          </Field>
+          <Field label="Người phụ trách">
+            <MultiSelect
+              options={assigneeSelectOptions}
+              selected={filters.assignees}
+              onChange={(v) => onChange({ assignees: v })}
+            />
+          </Field>
+          <Field label="Nguồn lead">
             <MultiSelect
               options={SOURCE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
               selected={filters.sources}
@@ -90,40 +128,14 @@ export function LeadFilterPopover({
               onChange={(v) => onChange({ brands: v })}
             />
           </Field>
+          <Field label={labels.product}>
+            <MultiSelect options={toOptions(products)} selected={filters.products} onChange={(v) => onChange({ products: v })} />
+          </Field>
           <Field label={labels.location}>
             <MultiSelect
               options={toOptions(catalog.locations)}
               selected={filters.locations}
               onChange={(v) => onChange({ locations: v })}
-            />
-          </Field>
-          <Field label="Phụ trách">
-            <MultiSelect
-              options={assigneeSelectOptions}
-              selected={filters.assignees}
-              onChange={(v) => onChange({ assignees: v })}
-            />
-          </Field>
-          <Field label={labels.product}>
-            <MultiSelect options={toOptions(products)} selected={filters.products} onChange={(v) => onChange({ products: v })} />
-          </Field>
-          <Field label="Phân loại">
-            <MultiSelect
-              options={[
-                { value: "CHUA_PHAN_LOAI", label: "Chưa phân loại" },
-                ...CATEGORY_OPTIONS.map((o) => ({ value: o.value, label: `${o.label} · ${o.hint}` })),
-              ]}
-              selected={filters.categories}
-              onChange={(v) => onChange({ categories: v as LeadCategory[] })}
-              searchable={false}
-            />
-          </Field>
-          <Field label="Lý do loại">
-            <MultiSelect
-              options={FAIL_REASON_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-              selected={filters.failReasons}
-              onChange={(v) => onChange({ failReasons: v as FailReason[] })}
-              searchable={false}
             />
           </Field>
         </div>

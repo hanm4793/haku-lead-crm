@@ -40,6 +40,11 @@ export function canManageSettings(role: UserRole): boolean {
   return role === "SUPER_ADMIN";
 }
 
+/** Đồng bộ dữ liệu Facebook (thủ công hoặc tự động qua API/Cron) — chỉ super admin. */
+export function canSyncFacebook(role: UserRole): boolean {
+  return role === "SUPER_ADMIN";
+}
+
 /** Thêm / sửa / tắt danh mục trên trang Cài đặt (legacy) — chỉ super admin. */
 export function canManageCatalogs(role: UserRole): boolean {
   return canManageSettings(role);

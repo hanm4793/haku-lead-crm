@@ -20,6 +20,7 @@ import {
   canManageSettings,
   canManageUsers,
   canSeeNav,
+  canSyncFacebook,
   canViewProjects,
   canUseAi,
   canViewMarketing,
@@ -72,6 +73,9 @@ describe("menu", () => {
     expect(canSeeNav("STAFF", "settings")).toBe(false);
     expect(canManageSettings("PARTNER_ADMIN")).toBe(false);
     expect(canManageSettings("STAFF")).toBe(false);
+    expect(canSyncFacebook("SUPER_ADMIN")).toBe(true);
+    expect(canSyncFacebook("PARTNER_ADMIN")).toBe(false);
+    expect(canSyncFacebook("STAFF")).toBe(false);
   });
 
   it("settings catalog CRUD remains super-admin-only", () => {

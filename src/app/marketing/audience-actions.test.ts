@@ -4,6 +4,7 @@ const getScopedViewerMock = vi.fn();
 const createAudienceSegmentsMock = vi.fn();
 const syncAudienceSegmentToMetaMock = vi.fn();
 const previewAudienceSegmentMock = vi.fn();
+const analyzeFanpagePersonaMock = vi.fn();
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock("@/lib/db/audiences-repo", () => ({
   createAudienceSegments: (...args: unknown[]) => createAudienceSegmentsMock(...args),
   syncAudienceSegmentToMeta: (...args: unknown[]) => syncAudienceSegmentToMetaMock(...args),
   previewAudienceSegment: (...args: unknown[]) => previewAudienceSegmentMock(...args),
+  analyzeFanpagePersona: (...args: unknown[]) => analyzeFanpagePersonaMock(...args),
   listAudienceSegments: vi.fn(),
   updateAudienceSegment: vi.fn(),
   deleteAudienceSegment: vi.fn(),
@@ -36,6 +38,7 @@ vi.mock("@/lib/facebook/custom-audiences", () => ({
 }));
 
 import {
+  analyzeFanpagePersonaAction,
   createAudienceSegmentAction,
   listAdAccountsForAudienceAction,
   previewAudienceAction,
@@ -46,7 +49,7 @@ describe("audience-actions RBAC & workflow", () => {
     vi.clearAllMocks();
   });
 
-  it("blocks PARTNER_ADMIN and STAFF from accessing audience actions", async () => {
+  it("blocks PARTNER_ADMIN and STAFF from accessing audience and persona actions", async () => {
     for (const role of ["PARTNER_ADMIN", "STAFF"] as const) {
       getScopedViewerMock.mockResolvedValueOnce({
         role,
@@ -58,10 +61,18 @@ describe("audience-actions RBAC & workflow", () => {
       if (!res.ok) {
         expect(res.error).toMatch(/Super Admin/);
       }
+
+      getScopedViewerMock.mockResolvedValueOnce({
+        role,
+        appUserId: "user-1",
+        pageIds: ["page-1"],
+      });
+      const personaRes = await analyzeFanpagePersonaAction({ pageIds: ["page-1"] });
+      expect(personaRes.ok).toBe(false);
     }
   });
 
-  it("allows SUPER_ADMIN to preview, create merged/split multi-fanpage segments, and sync immediately", async () => {
+  it("allows SUPER_ADMIN to preview, analyze persona, create Lookalike + Persona segments, and sync immediately", async () => {
     getScopedViewerMock.mockResolvedValue({
       role: "SUPER_ADMIN",
       appUserId: "super-1",
@@ -112,11 +123,21 @@ describe("audience-actions RBAC & workflow", () => {
     });
 
     const createRes = await createAudienceSegmentAction({
-      name: "[Dự án A · Gộp 2 Fanpage] Khách chất lượng (KHQT+)",
+      name: "CRM- [Dự án A · Gộp 2 Fanpage] Khách chất lượng (KHQT+)",
       projectId: "550e8400-e29b-41d4-a716-446655440000",
       filters: {
         facebookPageIds: ["p1", "p2"],
         categories: ["KHQT", "GDTD", "KHD"],
+        personaConfig: {
+          enableLookalike: true,
+          seedSource: "auto_crm_or_page",
+          lookalikeTiers: ["0_1", "1_3", "3_5"],
+          enableSavedAudience: true,
+          ageMin: 25,
+          ageMax: 44,
+          gender: 1,
+          regionKeys: ["3997"],
+        },
       },
       facebookAdAccountId: "act_123456789",
       mode: "merge",
@@ -135,3 +156,4 @@ describe("audience-actions RBAC & workflow", () => {
     });
   });
 });
+

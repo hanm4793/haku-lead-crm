@@ -459,3 +459,238 @@ export function formatAudienceExport(
     extension: "csv",
   };
 }
+
+export const CRM_AUDIENCE_PREFIX = "CRM- ";
+
+/** Loại bỏ tiền tố `CRM-` ở đầu chuỗi để lấy tên gốc. */
+export function stripCrmPrefix(rawName: string | null | undefined): string {
+  const trimmed = (rawName ?? "").trim();
+  if (!trimmed) return "";
+  return trimmed.replace(/^(?:crm\s*[-–—:]\s*)+/i, "").trim();
+}
+
+/**
+ * Đảm bảo mọi tên tệp khách hàng / Lookalike / Saved Audience tạo từ hệ thống
+ * luôn bắt đầu bằng tiền tố chuẩn `CRM- ` để phân biệt rõ và không bao giờ đè lên tệp cũ.
+ */
+export function ensureCrmPrefix(rawName: string | null | undefined): string {
+  const core = stripCrmPrefix(rawName);
+  if (!core) return `${CRM_AUDIENCE_PREFIX}Tệp khách hàng`;
+  return `${CRM_AUDIENCE_PREFIX}${core}`;
+}
+
+export type LookalikeTierKey =
+  | "0_1"
+  | "0_2"
+  | "0_3"
+  | "1_3"
+  | "3_5"
+  | "5_7"
+  | "7_10";
+
+export interface LookalikeTierOption {
+  key: LookalikeTierKey;
+  label: string;
+  shortLabel: string;
+  desc: string;
+  startRatio: number;
+  endRatio: number;
+}
+
+export const LOOKALIKE_TIER_OPTIONS: LookalikeTierOption[] = [
+  {
+    key: "0_1",
+    label: "LAL 1% (0% – 1%)",
+    shortLabel: "1%",
+    desc: "Sát nhất với tệp gốc — Tỷ lệ chuyển đổi cao nhất",
+    startRatio: 0,
+    endRatio: 0.01,
+  },
+  {
+    key: "0_2",
+    label: "LAL 2% (0% – 2%)",
+    shortLabel: "2%",
+    desc: "Mở rộng nhẹ, cân bằng giữa độ nét và quy mô",
+    startRatio: 0,
+    endRatio: 0.02,
+  },
+  {
+    key: "0_3",
+    label: "LAL 3% (0% – 3%)",
+    shortLabel: "3%",
+    desc: "Chuẩn chạy tỉnh (Đủ rộng khi kẹp thêm vị trí Tỉnh/Thành)",
+    startRatio: 0,
+    endRatio: 0.03,
+  },
+  {
+    key: "1_3",
+    label: "LAL 1% – 3%",
+    shortLabel: "1% to 3%",
+    desc: "Tách riêng lớp 1%–3% để chạy nhóm quảng cáo mở rộng",
+    startRatio: 0.01,
+    endRatio: 0.03,
+  },
+  {
+    key: "3_5",
+    label: "LAL 3% – 5%",
+    shortLabel: "3% to 5%",
+    desc: "Bậc thang mở rộng trung bình (3% đến 5%)",
+    startRatio: 0.03,
+    endRatio: 0.05,
+  },
+  {
+    key: "5_7",
+    label: "LAL 5% – 7%",
+    shortLabel: "5% to 7%",
+    desc: "Bậc thang mở rộng cao (5% đến 7%)",
+    startRatio: 0.05,
+    endRatio: 0.07,
+  },
+  {
+    key: "7_10",
+    label: "LAL 7% – 10%",
+    shortLabel: "7% to 10%",
+    desc: "Bậc thang phủ rộng tối đa (7% đến 10%)",
+    startRatio: 0.07,
+    endRatio: 0.1,
+  },
+];
+
+export interface MetaLookalikeSpecPayload {
+  type: "custom_ratio";
+  country: string;
+  starting_ratio?: number;
+  ratio: number;
+}
+
+/** Sinh cấu trúc `lookalike_spec` đúng chuẩn Meta Marketing API. */
+export function buildMetaLookalikeSpec(
+  tierKey: LookalikeTierKey,
+  country = "VN",
+): MetaLookalikeSpecPayload {
+  const tier =
+    LOOKALIKE_TIER_OPTIONS.find((item) => item.key === tierKey) ??
+    LOOKALIKE_TIER_OPTIONS[0]!;
+
+  if (tier.startRatio > 0) {
+    return {
+      type: "custom_ratio",
+      country,
+      starting_ratio: tier.startRatio,
+      ratio: tier.endRatio,
+    };
+  }
+
+  return {
+    type: "custom_ratio",
+    country,
+    ratio: tier.endRatio,
+  };
+}
+
+/** Đặt tên chuẩn có tiền tố `CRM- LAL (VN, ...)` cho tệp Lookalike tạo mới. */
+export function formatLookalikeAudienceName(
+  baseName: string,
+  tierKey: LookalikeTierKey,
+  country = "VN",
+): string {
+  const tier =
+    LOOKALIKE_TIER_OPTIONS.find((item) => item.key === tierKey) ??
+    LOOKALIKE_TIER_OPTIONS[0]!;
+  const core = stripCrmPrefix(baseName) || "Tệp khách hàng";
+  return ensureCrmPrefix(`LAL (${country}, ${tier.shortLabel}) - ${core}`);
+}
+
+export interface VietnamMetaRegion {
+  key: string;
+  name: string;
+  keywords: string[];
+}
+
+/**
+ * Danh mục mã vùng địa lý (`adgeolocation` region key) chính thức của Meta tại Việt Nam.
+ */
+export const VIETNAM_META_REGIONS: VietnamMetaRegion[] = [
+  { key: "3997", name: "Hà Nam", keywords: ["ha nam", "hà nam", "phủ lý", "phu ly"] },
+  { key: "4148", name: "Bắc Giang", keywords: ["bac giang", "bắc giang"] },
+  { key: "3993", name: "Hòa Bình", keywords: ["hoa binh", "hòa bình", "hoà bình"] },
+  { key: "3961", name: "Bắc Ninh", keywords: ["bac ninh", "bắc ninh"] },
+  { key: "3983", name: "Hà Nội", keywords: ["ha noi", "hà nội", "thủ đô"] },
+  { key: "3992", name: "Hà Tĩnh", keywords: ["ha tinh", "hà tĩnh"] },
+  { key: "3960", name: "Cao Bằng", keywords: ["cao bang", "cao bằng"] },
+  { key: "4156", name: "Thái Nguyên", keywords: ["thai nguyen", "thái nguyên"] },
+  { key: "3982", name: "Vĩnh Phúc", keywords: ["vinh phuc", "vĩnh phúc"] },
+  { key: "4153", name: "Phú Thọ", keywords: ["phu tho", "phú thọ", "việt trì"] },
+  { key: "4147", name: "Hưng Yên", keywords: ["hung yen", "hưng yên"] },
+  { key: "4146", name: "Hải Dương", keywords: ["hai duong", "hải dương"] },
+  { key: "4150", name: "Hải Phòng", keywords: ["hai phong", "hải phòng"] },
+  { key: "3968", name: "Quảng Ninh", keywords: ["quang ninh", "quảng ninh", "hạ long"] },
+  { key: "4149", name: "Nam Định", keywords: ["nam dinh", "nam định"] },
+  { key: "3999", name: "Ninh Bình", keywords: ["ninh binh", "ninh bình"] },
+  { key: "3972", name: "Thái Bình", keywords: ["thai binh", "thái bình"] },
+  { key: "3971", name: "Thanh Hóa", keywords: ["thanh hoa", "thanh hóa", "thanh hoá"] },
+  { key: "3998", name: "Nghệ An", keywords: ["nghe an", "nghệ an", "vinh"] },
+  { key: "3974", name: "Lạng Sơn", keywords: ["lang son", "lạng sơn"] },
+  { key: "4008", name: "Tuyên Quang", keywords: ["tuyen quang", "tuyên quang"] },
+  { key: "4010", name: "Yên Bái", keywords: ["yen bai", "yên bái"] },
+  { key: "3996", name: "Lào Cai", keywords: ["lao cai", "lào cai"] },
+  { key: "3969", name: "Sơn La", keywords: ["son la", "sơn la"] },
+  { key: "4152", name: "Điện Biên", keywords: ["dien bien", "điện biên"] },
+  { key: "3990", name: "Hà Giang", keywords: ["ha giang", "hà giang"] },
+  { key: "4151", name: "Bắc Kạn", keywords: ["bac kan", "bắc kạn", "bắc cạn"] },
+  { key: "4002", name: "Quảng Bình", keywords: ["quang binh", "quảng bình"] },
+  { key: "4004", name: "Quảng Trị", keywords: ["quang tri", "quảng trị"] },
+  { key: "4006", name: "Thừa Thiên - Huế", keywords: ["hue", "huế", "thừa thiên"] },
+  { key: "4155", name: "Đà Nẵng", keywords: ["da nang", "đà nẵng"] },
+  { key: "3967", name: "Quảng Nam", keywords: ["quang nam", "quảng nam"] },
+  { key: "4003", name: "Quảng Ngãi", keywords: ["quang ngai", "quảng ngãi"] },
+  { key: "3994", name: "Khánh Hòa", keywords: ["khanh hoa", "khánh hòa", "nha trang"] },
+  { key: "3976", name: "Đắk Lắk", keywords: ["dak lak", "đắk lắk", "buôn ma thuột"] },
+  { key: "3965", name: "Lâm Đồng", keywords: ["lam dong", "lâm đồng", "đà lạt"] },
+  { key: "3984", name: "TP. Hồ Chí Minh", keywords: ["ho chi minh", "hồ chí minh", "tphcm", "sài gòn"] },
+  { key: "4159", name: "Bình Dương", keywords: ["binh duong", "bình dương"] },
+  { key: "3977", name: "Đồng Nai", keywords: ["dong nai", "đồng nai", "biên hòa"] },
+  { key: "3985", name: "Bà Rịa - Vũng Tàu", keywords: ["vung tau", "vũng tàu", "bà rịa"] },
+  { key: "3988", name: "Cần Thơ", keywords: ["can tho", "cần thơ"] },
+  { key: "3975", name: "An Giang", keywords: ["an giang"] },
+  { key: "3979", name: "Kiên Giang", keywords: ["kien giang", "kiên giang", "rạch giá", "phú quốc"] },
+];
+
+function normalizeTextForMatch(raw: string): string {
+  return raw
+    .toLowerCase()
+    .normalize("NFC")
+    .replace(/[_.,/\\()-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Tự động nhận diện mã Tỉnh/Thành Meta (`regionKeys`) từ tên Fanpage hoặc tên Chiến dịch
+ * (VD: "Peugeot Hà Nam" -> ["3997"], "KIA BẮC GIANG" -> ["4148"], "Mazda Hòa Bình" -> ["3993"]).
+ */
+export function detectVietnamRegionsFromText(
+  texts: Array<string | null | undefined>,
+): string[] {
+  const matched = new Set<string>();
+  for (const raw of texts) {
+    if (!raw) continue;
+    const norm = normalizeTextForMatch(raw);
+    const ascii = norm.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d");
+    for (const region of VIETNAM_META_REGIONS) {
+      for (const kw of region.keywords) {
+        if (norm.includes(kw) || ascii.includes(kw)) {
+          matched.add(region.key);
+          break;
+        }
+      }
+    }
+  }
+  return [...matched];
+}
+
+export function getVietnamRegionNames(keys: string[]): string[] {
+  const byKey = new Map(VIETNAM_META_REGIONS.map((r) => [r.key, r.name]));
+  return keys.map((k) => byKey.get(k) ?? `Vùng ${k}`);
+}
+

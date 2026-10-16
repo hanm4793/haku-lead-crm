@@ -445,9 +445,59 @@ export const leadComments = pgTable(
   ],
 );
 
+export type SeedSourceType =
+  | "auto_crm_or_page"
+  | "crm_contacts"
+  | "page_engagement"
+  | "page_messaged";
+
+export type LookalikeTierKey =
+  | "0_1"
+  | "0_2"
+  | "0_3"
+  | "1_3"
+  | "3_5"
+  | "5_7"
+  | "7_10";
+
+export interface AudiencePersonaConfig {
+  /** Tự động đẻ dàn Tệp Tương Tự (Lookalike) trên Meta */
+  enableLookalike?: boolean;
+  /** Nguồn hạt giống (Seed) dùng để đẻ Lookalike */
+  seedSource?: SeedSourceType;
+  /** Số ngày giữ chân tương tác Fanpage (30..365, mặc định 180 ngày) */
+  pageRetentionDays?: number;
+  /** Các bậc thang tỷ lệ Lookalike tại VN (VD: ["0_1", "1_3", "3_5"]) */
+  lookalikeTiers?: LookalikeTierKey[];
+  /** Tự động đóng gói thành "Đối tượng đã lưu (Saved Audience)" kèm Chân dung (Tuổi, Giới tính, Tỉnh/Thành) */
+  enableSavedAudience?: boolean;
+  /** Độ tuổi tối thiểu (18..65) */
+  ageMin?: number;
+  /** Độ tuổi tối đa (18..65) */
+  ageMax?: number;
+  /** Giới tính: 0 = Tất cả, 1 = Nam, 2 = Nữ */
+  gender?: 0 | 1 | 2;
+  /** Danh sách mã Tỉnh/Thành Meta (VD: ["3997"] cho Hà Nam) */
+  regionKeys?: string[];
+}
+
+export interface CreatedMetaAudienceItem {
+  id: string;
+  name: string;
+  kind: "SEED_CRM" | "SEED_PAGE" | "LOOKALIKE" | "SAVED_AUDIENCE";
+  detail?: string;
+  createdAt?: string;
+}
+
 export interface AudienceFilterConfig {
-  /** Danh sách facebookPageId được chọn. Rỗng = tất cả fanpage/lead trong project. */
+  /** Danh sách projectId nguồn được chọn (hỗ trợ chọn nhiều dự án cùng lúc). Rỗng = dùng projectId mặc định hoặc tất cả dự án. */
+  projectIds?: string[];
+  /** Danh sách facebookPageId được chọn. Rỗng = tất cả fanpage/lead trong phạm vi dự án đã chọn. */
   facebookPageIds?: string[];
+  /** Danh sách tên Chiến dịch quảng cáo (leads.campaign) được chọn. */
+  campaigns?: string[];
+  /** Chi tiết kênh (INBOX, LEAD_FORM, COMMENT, HOTLINE, ZALO_OA, LANDING_PAGE, KHAC) */
+  channelDetails?: ChannelDetail[];
   /** Phân loại chất lượng lead (VD: ["KHQT", "GDTD", "KHD"]) */
   categories?: LeadCategory[];
   /** Trạng thái liên hệ */
@@ -465,6 +515,10 @@ export interface AudienceFilterConfig {
   /** Khoảng ngày tạo lead (YYYY-MM-DD) */
   dateFrom?: string | null;
   dateTo?: string | null;
+  /** Cấu hình sinh Tệp Lookalike & Chân dung khách hàng (Saved Audience) */
+  personaConfig?: AudiencePersonaConfig;
+  /** Lịch sử các tệp (Gốc, Lookalike, Saved Audience) đã tạo mới trên Meta */
+  createdMetaItems?: CreatedMetaAudienceItem[];
 }
 
 /**

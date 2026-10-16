@@ -46,16 +46,22 @@ export function DateRangePicker({
       ? `${range.from ? formatDate(range.from) : "…"} → ${range.to ? formatDate(range.to) : "…"}`
       : (DATE_PRESETS.find((p) => p.id === preset)?.label ?? "Tất cả thời gian");
 
+  const isFiltered = preset !== "ALL" || Boolean(range.from || range.to);
+
   return (
     <Popover>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
           size="sm"
-          className={cn("h-8 gap-2 rounded-lg border-input bg-card px-3 font-medium shadow-xs", className)}
+          className={cn(
+            "h-8 gap-1.5 px-2.5 text-[13px] font-medium",
+            isFiltered && "border-primary/40 bg-primary/5 text-primary hover:bg-primary/10",
+            className,
+          )}
         >
-          <CalendarDays className="size-3.5 text-primary" />
-          <span className="max-w-[220px] truncate">{label}</span>
+          <CalendarDays className={cn("size-3.5", isFiltered ? "text-primary" : "text-muted-foreground")} />
+          <span className="max-w-[200px] truncate">{label}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto overflow-hidden rounded-xl border-border p-0 shadow-lg">

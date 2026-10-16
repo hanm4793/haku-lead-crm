@@ -6,6 +6,7 @@ import { z } from "zod";
 import { canManageAudiences } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import {
+  analyzeFanpagePersona,
   createAudienceSegments,
   deleteAudienceSegment,
   listAudienceSegments,
@@ -19,6 +20,7 @@ import type { AudienceFilterConfig } from "@/lib/db/schema";
 import {
   listAccessibleAdAccounts,
   type AccessibleAdAccount,
+  type FanpagePersonaAnalysis,
   type SyncMetaAudienceResult,
 } from "@/lib/facebook/custom-audiences";
 
@@ -54,8 +56,48 @@ const LEAD_SOURCES = [
   "MANUAL",
 ] as const;
 
+const CHANNEL_DETAILS = [
+  "TIN_NHAN",
+  "FORM",
+  "COMMENT",
+  "CUOC_GOI",
+  "CHAT_WEB",
+] as const;
+
+const SEED_SOURCES = [
+  "auto_crm_or_page",
+  "crm_contacts",
+  "page_engagement",
+  "page_messaged",
+] as const;
+
+const LOOKALIKE_TIERS = [
+  "0_1",
+  "0_2",
+  "0_3",
+  "1_3",
+  "3_5",
+  "5_7",
+  "7_10",
+] as const;
+
+const personaConfigSchema = z.object({
+  enableLookalike: z.boolean().optional(),
+  seedSource: z.enum(SEED_SOURCES).optional(),
+  pageRetentionDays: z.number().int().min(30).max(365).optional(),
+  lookalikeTiers: z.array(z.enum(LOOKALIKE_TIERS)).max(7).optional(),
+  enableSavedAudience: z.boolean().optional(),
+  ageMin: z.number().int().min(18).max(65).optional(),
+  ageMax: z.number().int().min(18).max(65).optional(),
+  gender: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
+  regionKeys: z.array(z.string().trim().min(1).max(20)).max(63).optional(),
+});
+
 const audienceFilterSchema = z.object({
+  projectIds: z.array(z.string().uuid()).max(100).optional(),
   facebookPageIds: z.array(z.string().trim().min(1)).max(200).optional(),
+  campaigns: z.array(z.string().trim().min(1).max(300)).max(200).optional(),
+  channelDetails: z.array(z.enum(CHANNEL_DETAILS)).optional(),
   categories: z.array(z.enum(LEAD_CATEGORIES)).optional(),
   contactStatuses: z.array(z.enum(CONTACT_STATUSES)).optional(),
   failReasons: z.array(z.enum(FAIL_REASONS)).optional(),
@@ -65,6 +107,7 @@ const audienceFilterSchema = z.object({
   locationIds: z.array(z.string().uuid()).max(100).optional(),
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  personaConfig: personaConfigSchema.optional(),
 });
 
 const previewSchema = z.object({
@@ -314,3 +357,38 @@ export async function syncAudienceToFacebookAction(input: {
     };
   }
 }
+
+const analyzePersonaSchema = z.object({
+  projectId: z.string().uuid().nullable().optional(),
+  pageIds: z.array(z.string().trim().min(1)).max(200).optional(),
+});
+
+export async function analyzeFanpagePersonaAction(input: {
+  projectId?: string | null;
+  pageIds?: string[];
+}): Promise<{ ok: true; analysis: FanpagePersonaAnalysis } | { ok: false; error: string }> {
+  const gate = await requireAudienceAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
+
+  const parsed = analyzePersonaSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Tham số phân tích chân dung không hợp lệ." };
+  }
+
+  try {
+    const analysis = await analyzeFanpagePersona({
+      projectId: parsed.data.projectId ?? null,
+      pageIds: parsed.data.pageIds ?? [],
+    });
+    return { ok: true, analysis };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Không thể phân tích chân dung khách hàng từ Meta Graph API.",
+    };
+  }
+}
+

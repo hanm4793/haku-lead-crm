@@ -2,13 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildMetaCustomAudiencePayload,
+  buildMetaLookalikeSpec,
   chunkMetaAudiencePayload,
   deduplicateAudienceContacts,
+  detectVietnamRegionsFromText,
+  ensureCrmPrefix,
   extractAudienceEmail,
   formatAudienceExport,
+  formatLookalikeAudienceName,
+  getVietnamRegionNames,
   normalizeAudiencePhone,
   sha256Hex,
   splitAudienceName,
+  stripCrmPrefix,
   type RawAudienceLead,
 } from "./customer-audience";
 
@@ -76,7 +82,6 @@ describe("deduplicateAudienceContacts & multi-fanpage merge", () => {
     },
     {
       id: "lead-2",
-      // Cùng SĐT ở định dạng +84 từ Fanpage thứ 2 trong cùng dự án, có thêm email và đã chốt KHD
       name: null,
       phone: "+84 988 111 222",
       attrs: { email: "nguyenvana@gmail.com" },
@@ -128,7 +133,7 @@ describe("deduplicateAudienceContacts & multi-fanpage merge", () => {
     expect(merged).toBeDefined();
     expect(merged?.fullName).toBe("Nguyễn Văn A");
     expect(merged?.email).toBe("nguyenvana@gmail.com");
-    expect(merged?.category).toBe("KHD"); // Nâng lên phân loại cao nhất
+    expect(merged?.category).toBe("KHD");
     expect(merged?.facebookLeadId).toBe("fb-lead-1");
     expect(merged?.phoneDigitsIntl).toBe("84988111222");
     expect(merged?.phoneE164).toBe("+84988111222");
@@ -163,3 +168,40 @@ describe("deduplicateAudienceContacts & multi-fanpage merge", () => {
     expect(zaloExport.content).toBe("0988111222\r\n0912999888");
   });
 });
+
+describe("CRM- prefix, Lookalike specs & Vietnam province auto-detection", () => {
+  it("normalizes CRM- prefix without duplicating", () => {
+    expect(ensureCrmPrefix("Peugeot Hà Nam")).toBe("CRM- Peugeot Hà Nam");
+    expect(ensureCrmPrefix("CRM- Peugeot Hà Nam")).toBe("CRM- Peugeot Hà Nam");
+    expect(ensureCrmPrefix("crm - CRM- Kia Bắc Giang")).toBe("CRM- Kia Bắc Giang");
+    expect(stripCrmPrefix("CRM- Peugeot Hà Nam")).toBe("Peugeot Hà Nam");
+  });
+
+  it("builds Meta lookalike_spec and formatted names with CRM- prefix", () => {
+    expect(buildMetaLookalikeSpec("0_1", "VN")).toEqual({
+      type: "custom_ratio",
+      country: "VN",
+      ratio: 0.01,
+    });
+    expect(buildMetaLookalikeSpec("3_5", "VN")).toEqual({
+      type: "custom_ratio",
+      country: "VN",
+      starting_ratio: 0.03,
+      ratio: 0.05,
+    });
+    expect(formatLookalikeAudienceName("CRM- Peugeot Hà Nam", "3_5", "VN")).toBe(
+      "CRM- LAL (VN, 3% to 5%) - Peugeot Hà Nam",
+    );
+  });
+
+  it("detects Vietnam Meta region keys from Fanpage names", () => {
+    const keys = detectVietnamRegionsFromText([
+      "Peugeot Hà Nam",
+      "KIA BẮC GIANG",
+      "MAZDA HÒA BÌNH",
+    ]);
+    expect(keys).toEqual(["3997", "4148", "3993"]);
+    expect(getVietnamRegionNames(keys)).toEqual(["Hà Nam", "Bắc Giang", "Hòa Bình"]);
+  });
+});
+

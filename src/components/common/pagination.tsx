@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, formatNumber } from "@/lib/utils";
 
-const PAGE_SIZES = [25, 50, 100, 200];
+const DEFAULT_PAGE_SIZES = [10, 25, 50, 100, 200];
 
 export function Pagination({
   page,
@@ -14,13 +14,15 @@ export function Pagination({
   onPageChange,
   onPageSizeChange,
   unit = "khách",
+  pageSizes = DEFAULT_PAGE_SIZES,
 }: {
   page: number;
   pageSize: number;
   total: number;
   unit?: string;
+  pageSizes?: number[];
   onPageChange: (page: number) => void;
-  onPageSizeChange: (size: number) => void;
+  onPageSizeChange?: (size: number) => void;
 }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -34,17 +36,19 @@ export function Pagination({
         <span className="text-muted-foreground">
           Hiển thị {formatNumber(first)}–{formatNumber(last)} / {formatNumber(total)} {unit}
         </span>
-        <select
-          value={pageSize}
-          onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          className="h-7 rounded-md border border-input bg-card px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-        >
-          {PAGE_SIZES.map((size) => (
-            <option key={size} value={size}>
-              {size}/trang
-            </option>
-          ))}
-        </select>
+        {onPageSizeChange && pageSizes.length > 1 && (
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            className="h-7 rounded-md border border-input bg-card px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          >
+            {pageSizes.map((size) => (
+              <option key={size} value={size}>
+                {size}/trang
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="flex items-center gap-1">

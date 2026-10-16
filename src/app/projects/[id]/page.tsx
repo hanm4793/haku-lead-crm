@@ -53,24 +53,37 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   const project = toProjectInfo(projectRow);
   const labels = getCatalogLabels(projectRow);
-  const catalog = await listCatalog(id).catch(() => EMPTY_CATALOG);
-  const attrFields = await listAttrFields(id).catch(() => []);
-  const rawPages = await listFacebookPages({ projectId: id }).catch(() => []);
   const canManageProject = canManageProjects(viewer.role);
-  const allPages = canManageProject ? await listFacebookPages().catch(() => []) : [];
+
+  const [
+    catalog,
+    attrFields,
+    rawPages,
+    allPages,
+    rawPartners,
+    partnersAvailable,
+    adAccounts,
+    lastLeadSync,
+  ] = await Promise.all([
+    listCatalog(id).catch(() => EMPTY_CATALOG),
+    listAttrFields(id).catch(() => []),
+    listFacebookPages({ projectId: id }).catch(() => []),
+    canManageProject ? listFacebookPages().catch(() => []) : Promise.resolve([]),
+    listPartnersInProject(id).catch(() => []),
+    canManageProject ? listPartnersNotInProject(id).catch(() => []) : Promise.resolve([]),
+    viewer.role === "SUPER_ADMIN" ? listAdAccounts(id).catch(() => []) : Promise.resolve([]),
+    canManageProject ? loadLastProjectSync("leads", id).catch(() => null) : Promise.resolve(null),
+  ]);
+
   const unassignedPages = allPages.filter((p) => !p.projectId);
   const pagesForPanel =
     viewer.role === "SUPER_ADMIN"
       ? [...rawPages, ...unassignedPages]
       : rawPages.filter((p) => isPageVisible(viewer, p.facebookPageId));
-  const rawPartners = await listPartnersInProject(id).catch(() => []);
   const partners =
     viewer.role === "SUPER_ADMIN"
       ? rawPartners
       : rawPartners.filter((p) => p.id === viewer.appUserId);
-  const partnersAvailable = canManageProject ? await listPartnersNotInProject(id).catch(() => []) : [];
-  const adAccounts = viewer.role === "SUPER_ADMIN" ? await listAdAccounts(id).catch(() => []) : [];
-  const lastLeadSync = canManageProject ? await loadLastProjectSync("leads", id).catch(() => null) : null;
   const canEditLabels = canManageProject || canManageCatalogsInProject(viewer, id);
   const canManageCatalog = canManageCatalogsInProject(viewer, id) || canManageAttrFieldsInProject(viewer, id);
 

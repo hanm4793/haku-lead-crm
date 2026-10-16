@@ -7,9 +7,7 @@ import { getScopedViewer } from "@/lib/auth/viewer";
 import { catalogOptionsFromReference, DEFAULT_LEAD_CATALOG } from "@/lib/catalog";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
-import { listAttrFields } from "@/lib/db/attr-fields-repo";
 import { getReferenceData, queryLeadPage } from "@/lib/db/leads-repo";
-import { listAssignableStaff } from "@/lib/db/users-repo";
 import { EMPTY_FILTERS } from "@/lib/filters";
 import type { LeadSearchInput } from "@/lib/leads/query";
 
@@ -48,18 +46,18 @@ export default async function Page() {
 
   const projectId = viewer.activeProjectId ?? undefined;
   const now = new Date();
-  const [initialData, facebookPages, assignees, reference, attrFields] = await Promise.all([
+  const [initialData, facebookPages, reference] = await Promise.all([
     queryLeadPage({ ...INITIAL_REQUEST, now }, viewer),
     projectId
       ? listFacebookPages({ projectId })
       : viewer.role === "SUPER_ADMIN"
         ? listFacebookPages()
         : Promise.resolve([]),
-    listAssignableStaff(viewer),
     getReferenceData(projectId, viewer).catch(() => null),
-    projectId ? listAttrFields(projectId, { activeOnly: true }).catch(() => []) : Promise.resolve([]),
   ]);
   const catalog = reference ? catalogOptionsFromReference(reference) : DEFAULT_LEAD_CATALOG;
+  const assignees = reference?.assignees ?? [];
+  const attrFields = reference?.attrFields ?? [];
 
   const fanpageOptions = facebookPages
     .filter((page) => page.active && isPageVisible(viewer, page.facebookPageId))

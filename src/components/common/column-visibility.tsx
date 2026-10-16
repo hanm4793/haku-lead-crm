@@ -29,10 +29,10 @@ export function ColumnVisibilityPopover({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
-          <Columns3 className="size-3.5" />
+        <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-[13px] font-medium">
+          <Columns3 className="size-3.5 text-muted-foreground" />
           Cột hiển thị
-          <span className="rounded bg-secondary px-1.5 text-[10px] font-semibold text-secondary-foreground">
+          <span className="rounded bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-secondary-foreground">
             {visible.length}/{columns.length}
           </span>
         </Button>
