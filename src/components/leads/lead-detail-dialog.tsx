@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  ExternalLink,
   FileText,
   History,
   Lightbulb,
@@ -1089,9 +1090,27 @@ function LeadDetailDialogBody({
                       </p>
                     ) : (
                       <dl className="space-y-2.5 text-sm">
-                        {leftoverAttrs.map(([key, value]) => (
-                          <Row key={key} label={key} value={value} />
-                        ))}
+                        {leftoverAttrs.map(([key, value]) => {
+                          const trimmed = (value ?? "").trim();
+                          const isUrl = /^https?:\/\//i.test(trimmed);
+                          if (isUrl) {
+                            const isFbInbox = key === "inbox_url" || /facebook\.com|fb\.com/i.test(trimmed);
+                            return (
+                              <RowControl key={key} label={key}>
+                                <a
+                                  href={trimmed}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-800"
+                                >
+                                  <span>{isFbInbox ? "Mở Inbox Facebook" : "Mở liên kết"}</span>
+                                  <ExternalLink className="size-3.5" />
+                                </a>
+                              </RowControl>
+                            );
+                          }
+                          return <Row key={key} label={key} value={value} />;
+                        })}
                       </dl>
                     )}
                   </div>
