@@ -1,7 +1,7 @@
-import { and, desc, eq, like } from "drizzle-orm";
+import { and, desc, eq, like, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
-import { metaSyncRuns } from "@/lib/db/schema";
+import { leads, metaSyncRuns } from "@/lib/db/schema";
 
 import { syncScopeTag } from "./sync-scope";
 
@@ -26,4 +26,40 @@ export async function loadLastProjectSync(kind: "leads", projectId: string): Pro
     status: row.status,
     message: row.message?.startsWith(tag) ? row.message.slice(tag.length) : row.message,
   };
+}
+
+/**
+ * Thời điểm dữ liệu CRM được cập nhật mới nhất (lấy mốc mới nhất giữa lần đồng bộ
+ * Facebook gần nhất và lần tạo/cập nhật lead gần nhất).
+ */
+export async function getLatestDataTimestamp(projectId?: string | null): Promise<string | null> {
+  try {
+    const db = getDb();
+    const [[syncRow], [leadRow]] = await Promise.all([
+      db
+        .select({
+          at: sql<Date | null>`max(coalesce(${metaSyncRuns.finishedAt}, ${metaSyncRuns.startedAt}))`,
+        })
+        .from(metaSyncRuns),
+      projectId
+        ? db
+            .select({
+              at: sql<Date | null>`max(greatest(${leads.updatedAt}, ${leads.createdAt}))`,
+            })
+            .from(leads)
+            .where(eq(leads.projectId, projectId))
+        : db
+            .select({
+              at: sql<Date | null>`max(greatest(${leads.updatedAt}, ${leads.createdAt}))`,
+            })
+            .from(leads),
+    ]);
+
+    const t1 = syncRow?.at ? new Date(syncRow.at).getTime() : 0;
+    const t2 = leadRow?.at ? new Date(leadRow.at).getTime() : 0;
+    const maxMs = Math.max(t1, t2);
+    return maxMs > 0 ? new Date(maxMs).toISOString() : null;
+  } catch {
+    return null;
+  }
 }

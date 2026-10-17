@@ -33,6 +33,7 @@ import {
   UNASSIGNED_ASSIGNMENT_LABEL,
   UNASSIGNED_FILTER_VALUE,
 } from "@/lib/constants";
+import { getLatestDataTimestamp } from "@/lib/facebook/last-sync";
 import { normalizePhone, phoneKey, validatePhone } from "@/lib/leads/phone";
 import { ratio } from "@/lib/utils";
 
@@ -410,6 +411,7 @@ export interface LeadPage {
   total: number;
   kpis: LeadKpis;
   tabCounts: Record<LeadFilters["tab"], number>;
+  lastUpdatedAt?: string | null;
 }
 
 export interface LeadPageOptions {
@@ -439,7 +441,7 @@ export async function queryLeadPage(options: LeadPageOptions, viewer: ViewerScop
   const sortColumn = SORTABLE[options.sortBy ?? "createdAt"] ?? leads.createdAt;
   const direction = options.sortOrder === "asc" ? asc : desc;
 
-  const [rows, [kpi], maybeTabs] = await Promise.all([
+  const [rows, [kpi], maybeTabs, lastUpdatedAt] = await Promise.all([
     selectLeadRows()
       .where(and(...scoped))
       // Thêm id vào khóa sắp xếp để phân trang không bị nhảy hàng khi trùng giá trị.
@@ -449,6 +451,7 @@ export async function queryLeadPage(options: LeadPageOptions, viewer: ViewerScop
     selectLeadCounts(now).where(and(...scoped)),
     // Số trên tab đếm theo bộ lọc nhưng bỏ qua chính tab đang chọn (nếu đang ở tab ALL thì dùng chung kpi).
     isAllTab ? Promise.resolve(null) : selectLeadCounts(now).where(and(...withoutTab)),
+    getLatestDataTimestamp(viewer.activeProjectId),
   ]);
   const tabs = maybeTabs ? maybeTabs[0] : kpi;
 
@@ -474,6 +477,7 @@ export async function queryLeadPage(options: LeadPageOptions, viewer: ViewerScop
       DA_LIEN_HE: tabs.contacted,
       QUA_HAN: tabs.overdue,
     },
+    lastUpdatedAt,
   };
 }
 

@@ -494,10 +494,21 @@ export function MarketingPage({
           <p className="text-[13px] text-muted-foreground">
             Hiệu quả chiến dịch QC & quản lý tệp KH
             {span.from && span.to ? ` · ${formatDate(span.from)} – ${formatDate(span.to)}` : ""}
-            {syncedAt ? ` · đồng bộ ${formatDateTime(syncedAt)}` : ""}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {syncedAt && (
+            <button
+              type="button"
+              onClick={() => router.refresh()}
+              title="Nhấn để làm mới dữ liệu trang Marketing"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15"
+            >
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              <span>Cập nhật mới nhất: {formatDateTime(syncedAt)}</span>
+              <RefreshCw className={cn("size-3 opacity-70", pending && "animate-spin")} />
+            </button>
+          )}
           {canSync && activeTab === "campaigns" ? (
             <>
               <Select value={autoSyncMinutes} onValueChange={handleAutoSyncChange}>

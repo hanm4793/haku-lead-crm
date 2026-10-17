@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { BarChart3, Loader2, RotateCcw, Table2 } from "lucide-react";
+import { BarChart3, Loader2, RefreshCw, RotateCcw, Table2 } from "lucide-react";
 
 import { updateLeadAction } from "@/app/leads/actions";
 import { DateRangePicker, resolvePreset, type DateRange, type PresetId } from "@/components/common/date-range-picker";
@@ -23,7 +23,7 @@ import { countActiveFilters, EMPTY_FILTERS } from "@/lib/filters";
 import type { PivotDimension } from "@/lib/metrics";
 import type { ReportSummary } from "@/lib/reports/summary";
 import type { ActivityKind, Lead, LeadFilters } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 
 interface LogEntry {
   kind: ActivityKind;
@@ -168,7 +168,19 @@ export function ReportsPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          {summary.lastUpdatedAt && (
+            <button
+              type="button"
+              onClick={() => setRefreshTick((t) => t + 1)}
+              title="Nhấn để làm mới số liệu báo cáo"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15"
+            >
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              <span>Cập nhật mới nhất: {formatDateTime(summary.lastUpdatedAt)}</span>
+              <RefreshCw className={cn("size-3 opacity-70", loading && "animate-spin")} />
+            </button>
+          )}
+          {!summary.lastUpdatedAt && loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
           {filterCount > 0 && (
             <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground" onClick={resetAllFilters}>
               <RotateCcw className="size-3.5" />

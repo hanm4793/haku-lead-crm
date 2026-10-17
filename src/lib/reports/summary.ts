@@ -11,6 +11,7 @@ import {
   queryReportKpis,
 } from "@/lib/db/report-queries";
 import { previousCalendarRange } from "@/lib/date-range";
+import { getLatestDataTimestamp } from "@/lib/facebook/last-sync";
 import type {
   CategoryShare,
   DailyPoint,
@@ -37,6 +38,7 @@ export interface ReportSummary {
   kpis: LeadKpis;
   previousKpis: LeadKpis | null;
   totalLeads: number;
+  lastUpdatedAt?: string | null;
   overview: {
     daily: DailyPoint[];
     funnel: FunnelStep[];
@@ -97,6 +99,7 @@ export async function buildReportSummary(
     byModel,
     callList,
     splitPivot,
+    lastUpdatedAt,
     ...exportPivots
   ] = await Promise.all([
     queryReportKpis(filters, viewer, now),
@@ -108,6 +111,7 @@ export async function buildReportSummary(
     queryByProduct(filters, viewer, now, 12),
     queryCallList(filters, viewer, now, 25),
     splitBy ? queryPivot(filters, viewer, now, groupBy, splitBy) : Promise.resolve(null),
+    getLatestDataTimestamp(viewer.activeProjectId),
     ...exportDims.map((dim) => queryPivot(filters, viewer, now, dim, null)),
   ]);
 
@@ -122,6 +126,7 @@ export async function buildReportSummary(
     kpis,
     previousKpis,
     totalLeads: kpis.total,
+    lastUpdatedAt,
     overview: {
       daily,
       funnel,

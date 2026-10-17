@@ -11,6 +11,7 @@ import {
   ListFilter,
   Loader2,
   Plus,
+  RefreshCw,
   Search,
   Shuffle,
   UserPlus,
@@ -62,7 +63,7 @@ import { filtersToExportSpec } from "@/lib/export/from-filters";
 import { countActiveFilters } from "@/lib/filters";
 import type { LeadSearchInput } from "@/lib/leads/query";
 import type { ActivityKind, ContactStatus, FailReason, Lead, LeadCategory, LeadFilters } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import { useLeadStore } from "@/store/lead-store";
 
 interface LogEntry {
@@ -500,8 +501,20 @@ export function LeadsPage({
           </div>
 
           {/* Cụm Phải: Cột hiển thị, Nhập/Xuất Excel & Tạo lead mới */}
-          <div className="ml-auto flex items-center gap-2">
-            {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {data.lastUpdatedAt && (
+              <button
+                type="button"
+                onClick={() => refetch()}
+                title="Nhấn để làm mới dữ liệu ngay"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15"
+              >
+                <span className="size-1.5 rounded-full bg-emerald-500" />
+                <span>Cập nhật mới nhất: {formatDateTime(data.lastUpdatedAt)}</span>
+                <RefreshCw className={cn("size-3 opacity-70", loading && "animate-spin")} />
+              </button>
+            )}
+            {!data.lastUpdatedAt && loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
 
             <ColumnVisibilityPopover
               columns={columnToggles}

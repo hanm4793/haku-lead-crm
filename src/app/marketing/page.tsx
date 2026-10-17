@@ -29,6 +29,7 @@ import {
   toProjectViewer,
 } from "@/lib/db/project-repo";
 import { getFacebookConfig } from "@/lib/facebook/env";
+import { getLatestDataTimestamp } from "@/lib/facebook/last-sync";
 import { toDateInputValue } from "@/lib/utils";
 
 export const metadata = { title: "Marketing — SEMTOP Marketing CRM" };
@@ -63,6 +64,7 @@ export default async function Page() {
     audienceCampaigns,
     hasSynced,
     latestSync,
+    latestDataAt,
     crmRows,
     reference,
   ] = await Promise.all([
@@ -76,6 +78,7 @@ export default async function Page() {
     canManageAudiences(viewer.role) ? listAudienceCampaignOptions().catch(() => []) : Promise.resolve([]),
     hasSyncedInsights(),
     latestInsightSync(),
+    getLatestDataTimestamp(projectId),
     queryCrmAttributionByPage({ pageIds: viewerScopedPageIds }).catch(() => []),
     getReferenceData(projectId).catch(() => null),
   ]);
@@ -99,6 +102,7 @@ export default async function Page() {
   const projectOptions = accessibleProjects.map((p) => ({ id: p.id, name: p.name }));
   const brandOptions = reference?.brands.map((b) => ({ code: b.code, name: b.name })) ?? [];
   const config = getFacebookConfig();
+  const syncedAt = latestSync?.finishedAt ?? latestDataAt ?? null;
 
   return (
     <MarketingPage
@@ -117,7 +121,7 @@ export default async function Page() {
       hasSynced={hasSynced}
       configured={Boolean(config?.adAccountId)}
       adAccountId={config?.adAccountId ?? null}
-      syncedAt={latestSync?.finishedAt ?? null}
+      syncedAt={syncedAt}
       today={toDateInputValue(new Date().toISOString())}
       canSync={canManageSettings(viewer.role)}
     />
