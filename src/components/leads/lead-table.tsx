@@ -29,6 +29,9 @@ export interface SortState {
 
 export function LeadTable({
   leads,
+  page = 1,
+  pageSize = 50,
+  loading = false,
   visibleColumns,
   sort,
   onSortChange,
@@ -47,6 +50,9 @@ export function LeadTable({
   onResetFilters,
 }: {
   leads: Lead[];
+  page?: number;
+  pageSize?: number;
+  loading?: boolean;
   visibleColumns: string[];
   sort: SortState;
   onSortChange: (next: SortState) => void;
@@ -66,6 +72,12 @@ export function LeadTable({
   onResetFilters?: () => void;
 }) {
   const now = useNow();
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [page, pageSize]);
+
   const attrLabels = React.useMemo(() => {
     const map: Record<string, string> = {};
     for (const f of attrFields ?? []) map[f.key] = f.label;
@@ -114,9 +126,10 @@ export function LeadTable({
   };
 
   const selectable = Boolean(onSelectedIdsChange);
+  const rowIndexOffset = Math.max(0, (page - 1) * pageSize);
 
   return (
-    <div className="thin-scrollbar relative flex-1 overflow-auto">
+    <div ref={scrollRef} className="thin-scrollbar relative min-h-0 flex-1 overflow-auto">
       <table className="w-max min-w-full border-collapse text-[13px]">
         <thead className="sticky top-0 z-20">
           <tr>
@@ -133,6 +146,12 @@ export function LeadTable({
                 />
               </th>
             )}
+            <th
+              style={{ width: 48, minWidth: 48 }}
+              className="border-b border-border bg-[#f8fafc] px-2.5 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+            >
+              #
+            </th>
             {columns.map((column) => {
               const active = sort.columnId === column.id;
               const headerText = columnHeader(column.id, labels, attrLabels);
@@ -166,11 +185,11 @@ export function LeadTable({
             })}
           </tr>
         </thead>
-        <tbody>
+        <tbody className={cn("transition-opacity", loading && "opacity-60")}>
           {leads.length === 0 && (
             <tr>
               <td
-                colSpan={columns.length + (selectable ? 1 : 0)}
+                colSpan={columns.length + (selectable ? 2 : 1)}
                 className="px-3 py-16 text-center text-sm text-muted-foreground"
               >
                 <div className="flex flex-col items-center justify-center gap-2.5">
@@ -186,8 +205,9 @@ export function LeadTable({
             </tr>
           )}
 
-          {leads.map((lead) => {
+          {leads.map((lead, idx) => {
             const isSelected = selectedSet.has(lead.id);
+            const rowNumber = rowIndexOffset + idx + 1;
             return (
               <tr
                 key={lead.id}
@@ -211,6 +231,12 @@ export function LeadTable({
                     />
                   </td>
                 )}
+                <td
+                  style={{ width: 48, minWidth: 48 }}
+                  className="px-2.5 py-2 text-center align-middle text-xs tabular-nums text-slate-400"
+                >
+                  {rowNumber}
+                </td>
                 {columns.map((column) => (
                   <td
                     key={column.id}

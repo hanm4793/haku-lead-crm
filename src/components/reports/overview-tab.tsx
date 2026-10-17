@@ -1,7 +1,9 @@
 "use client";
 
+import * as React from "react";
 import { PhoneCall } from "lucide-react";
 
+import { Pagination } from "@/components/common/pagination";
 import {
   CarModelChart,
   CategoryDonut,
@@ -17,6 +19,8 @@ import { isOverdue } from "@/lib/filters";
 import type { ReportSummary } from "@/lib/reports/summary";
 import type { CatalogLabels, Lead } from "@/lib/types";
 import { cn, formatDateTime, formatNumber, formatPercent } from "@/lib/utils";
+
+const REPORT_TABLE_PAGE_SIZES = [10, 25, 50];
 
 export function OverviewTab({
   data,
@@ -41,6 +45,47 @@ export function OverviewTab({
     byFanpage = [],
     callList,
   } = data;
+
+  const [assigneePage, setAssigneePage] = React.useState(1);
+  const [assigneePageSize, setAssigneePageSize] = React.useState(10);
+  const [fanpagePage, setFanpagePage] = React.useState(1);
+  const [fanpagePageSize, setFanpagePageSize] = React.useState(10);
+  const [callPage, setCallPage] = React.useState(1);
+  const [callPageSize, setCallPageSize] = React.useState(10);
+
+  const [prevByAssignee, setPrevByAssignee] = React.useState(byAssignee);
+  if (prevByAssignee !== byAssignee) {
+    setPrevByAssignee(byAssignee);
+    setAssigneePage(1);
+  }
+  const [prevByFanpage, setPrevByFanpage] = React.useState(byFanpage);
+  if (prevByFanpage !== byFanpage) {
+    setPrevByFanpage(byFanpage);
+    setFanpagePage(1);
+  }
+  const [prevCallList, setPrevCallList] = React.useState(callList);
+  if (prevCallList !== callList) {
+    setPrevCallList(callList);
+    setCallPage(1);
+  }
+
+  const safeAssigneePage = Math.min(Math.max(1, assigneePage), Math.max(1, Math.ceil(byAssignee.length / assigneePageSize)));
+  const pagedAssignees = byAssignee.slice(
+    (safeAssigneePage - 1) * assigneePageSize,
+    safeAssigneePage * assigneePageSize,
+  );
+
+  const safeFanpagePage = Math.min(Math.max(1, fanpagePage), Math.max(1, Math.ceil(byFanpage.length / fanpagePageSize)));
+  const pagedFanpages = byFanpage.slice(
+    (safeFanpagePage - 1) * fanpagePageSize,
+    safeFanpagePage * fanpagePageSize,
+  );
+
+  const safeCallPage = Math.min(Math.max(1, callPage), Math.max(1, Math.ceil(callList.length / callPageSize)));
+  const pagedCallList = callList.slice(
+    (safeCallPage - 1) * callPageSize,
+    safeCallPage * callPageSize,
+  );
 
   const totalFailed = failReasons.reduce((sum, item) => sum + item.count, 0);
 
@@ -132,54 +177,70 @@ export function OverviewTab({
             {byAssignee.length === 0 ? (
               <p className="py-6 text-center text-xs text-muted-foreground">Chưa có dữ liệu phân bổ nhân sự trong kỳ.</p>
             ) : (
-              <div className="thin-scrollbar overflow-x-auto rounded-lg border border-border">
-                <table className="w-full min-w-[520px] text-[12px]">
-                  <thead>
-                    <tr className="bg-[#f8fafc] text-[10px] uppercase tracking-wide text-slate-500">
-                      <th className="px-3 py-2 text-left font-semibold">Phụ trách</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">Lead</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">Chưa LH</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">Tỷ lệ LH</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">KHQT+</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">KHĐ</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">Quá hạn</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {byAssignee.slice(0, 10).map((row) => (
-                      <tr key={row.key} className="border-t border-border/70 hover:bg-[#f6f9ff]">
-                        <td className="px-3 py-2 font-medium text-slate-800">{row.key}</td>
-                        <td className="px-2.5 py-2 text-right font-semibold tabular-nums">{formatNumber(row.leads)}</td>
-                        <td
-                          className={cn(
-                            "px-2.5 py-2 text-right tabular-nums",
-                            row.uncontacted > 0 ? "font-semibold text-amber-600" : "text-slate-500",
-                          )}
-                        >
-                          {formatNumber(row.uncontacted)}
-                        </td>
-                        <td className="px-2.5 py-2 text-right tabular-nums text-slate-600">
-                          {formatPercent(row.contactRate)}
-                        </td>
-                        <td className="px-2.5 py-2 text-right tabular-nums text-slate-700">
-                          <span className="font-semibold text-emerald-700">{formatNumber(row.khqt)}</span>{" "}
-                          <span className="text-[10px] text-slate-400">({formatPercent(row.khqtRate)})</span>
-                        </td>
-                        <td className="px-2.5 py-2 text-right font-semibold tabular-nums text-primary">
-                          {formatNumber(row.khd)}
-                        </td>
-                        <td
-                          className={cn(
-                            "px-2.5 py-2 text-right tabular-nums",
-                            row.overdue > 0 ? "font-semibold text-rose-600" : "text-slate-400",
-                          )}
-                        >
-                          {formatNumber(row.overdue)}
-                        </td>
+              <div className="overflow-hidden rounded-lg border border-border">
+                <div className="thin-scrollbar overflow-x-auto">
+                  <table className="w-full min-w-[520px] text-[12px]">
+                    <thead>
+                      <tr className="bg-[#f8fafc] text-[10px] uppercase tracking-wide text-slate-500">
+                        <th className="px-3 py-2 text-left font-semibold">Phụ trách</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">Lead</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">Chưa LH</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">Tỷ lệ LH</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">KHQT+</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">KHĐ</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">Quá hạn</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {pagedAssignees.map((row) => (
+                        <tr key={row.key} className="border-t border-border/70 hover:bg-[#f6f9ff]">
+                          <td className="px-3 py-2 font-medium text-slate-800">{row.key}</td>
+                          <td className="px-2.5 py-2 text-right font-semibold tabular-nums">{formatNumber(row.leads)}</td>
+                          <td
+                            className={cn(
+                              "px-2.5 py-2 text-right tabular-nums",
+                              row.uncontacted > 0 ? "font-semibold text-amber-600" : "text-slate-500",
+                            )}
+                          >
+                            {formatNumber(row.uncontacted)}
+                          </td>
+                          <td className="px-2.5 py-2 text-right tabular-nums text-slate-600">
+                            {formatPercent(row.contactRate)}
+                          </td>
+                          <td className="px-2.5 py-2 text-right tabular-nums text-slate-700">
+                            <span className="font-semibold text-emerald-700">{formatNumber(row.khqt)}</span>{" "}
+                            <span className="text-[10px] text-slate-400">({formatPercent(row.khqtRate)})</span>
+                          </td>
+                          <td className="px-2.5 py-2 text-right font-semibold tabular-nums text-primary">
+                            {formatNumber(row.khd)}
+                          </td>
+                          <td
+                            className={cn(
+                              "px-2.5 py-2 text-right tabular-nums",
+                              row.overdue > 0 ? "font-semibold text-rose-600" : "text-slate-400",
+                            )}
+                          >
+                            {formatNumber(row.overdue)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {byAssignee.length > 10 && (
+                  <Pagination
+                    page={safeAssigneePage}
+                    pageSize={assigneePageSize}
+                    total={byAssignee.length}
+                    unit="nhân sự"
+                    pageSizes={REPORT_TABLE_PAGE_SIZES}
+                    onPageChange={setAssigneePage}
+                    onPageSizeChange={(size) => {
+                      setAssigneePageSize(size);
+                      setAssigneePage(1);
+                    }}
+                  />
+                )}
               </div>
             )}
           </CardContent>
@@ -196,45 +257,61 @@ export function OverviewTab({
             {byFanpage.length === 0 ? (
               <p className="py-6 text-center text-xs text-muted-foreground">Chưa có dữ liệu Fanpage trong kỳ.</p>
             ) : (
-              <div className="thin-scrollbar overflow-x-auto rounded-lg border border-border">
-                <table className="w-full min-w-[520px] text-[12px]">
-                  <thead>
-                    <tr className="bg-[#f8fafc] text-[10px] uppercase tracking-wide text-slate-500">
-                      <th className="px-3 py-2 text-left font-semibold">Fanpage</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">Lead</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">Tỷ trọng</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">KHQT+</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">Tỷ lệ KHQT+</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">KHĐ</th>
-                      <th className="px-2.5 py-2 text-right font-semibold">Tỷ lệ loại</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {byFanpage.slice(0, 10).map((row) => (
-                      <tr key={row.key} className="border-t border-border/70 hover:bg-[#f6f9ff]">
-                        <td className="max-w-[200px] truncate px-3 py-2 font-medium text-slate-800" title={row.key}>
-                          {row.key}
-                        </td>
-                        <td className="px-2.5 py-2 text-right font-semibold tabular-nums">{formatNumber(row.leads)}</td>
-                        <td className="px-2.5 py-2 text-right tabular-nums text-slate-500">
-                          {formatPercent(row.leadShare)}
-                        </td>
-                        <td className="px-2.5 py-2 text-right font-semibold tabular-nums text-emerald-700">
-                          {formatNumber(row.khqt)}
-                        </td>
-                        <td className="px-2.5 py-2 text-right tabular-nums text-slate-600">
-                          {formatPercent(row.khqtRate)}
-                        </td>
-                        <td className="px-2.5 py-2 text-right font-semibold tabular-nums text-primary">
-                          {formatNumber(row.khd)}
-                        </td>
-                        <td className="px-2.5 py-2 text-right tabular-nums text-rose-600">
-                          {formatPercent(row.failRate)}
-                        </td>
+              <div className="overflow-hidden rounded-lg border border-border">
+                <div className="thin-scrollbar overflow-x-auto">
+                  <table className="w-full min-w-[520px] text-[12px]">
+                    <thead>
+                      <tr className="bg-[#f8fafc] text-[10px] uppercase tracking-wide text-slate-500">
+                        <th className="px-3 py-2 text-left font-semibold">Fanpage</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">Lead</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">Tỷ trọng</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">KHQT+</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">Tỷ lệ KHQT+</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">KHĐ</th>
+                        <th className="px-2.5 py-2 text-right font-semibold">Tỷ lệ loại</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {pagedFanpages.map((row) => (
+                        <tr key={row.key} className="border-t border-border/70 hover:bg-[#f6f9ff]">
+                          <td className="max-w-[200px] truncate px-3 py-2 font-medium text-slate-800" title={row.key}>
+                            {row.key}
+                          </td>
+                          <td className="px-2.5 py-2 text-right font-semibold tabular-nums">{formatNumber(row.leads)}</td>
+                          <td className="px-2.5 py-2 text-right tabular-nums text-slate-500">
+                            {formatPercent(row.leadShare)}
+                          </td>
+                          <td className="px-2.5 py-2 text-right font-semibold tabular-nums text-emerald-700">
+                            {formatNumber(row.khqt)}
+                          </td>
+                          <td className="px-2.5 py-2 text-right tabular-nums text-slate-600">
+                            {formatPercent(row.khqtRate)}
+                          </td>
+                          <td className="px-2.5 py-2 text-right font-semibold tabular-nums text-primary">
+                            {formatNumber(row.khd)}
+                          </td>
+                          <td className="px-2.5 py-2 text-right tabular-nums text-rose-600">
+                            {formatPercent(row.failRate)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {byFanpage.length > 10 && (
+                  <Pagination
+                    page={safeFanpagePage}
+                    pageSize={fanpagePageSize}
+                    total={byFanpage.length}
+                    unit="fanpage"
+                    pageSizes={REPORT_TABLE_PAGE_SIZES}
+                    onPageChange={setFanpagePage}
+                    onPageSizeChange={(size) => {
+                      setFanpagePageSize(size);
+                      setFanpagePage(1);
+                    }}
+                  />
+                )}
               </div>
             )}
           </CardContent>
@@ -255,56 +332,70 @@ export function OverviewTab({
               Không có lead quá hạn hoặc hẹn gọi trong hôm nay.
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[640px] text-[13px]">
-                <thead>
-                  <tr className="bg-[#f8fafc] text-[11px] uppercase tracking-wide text-slate-500">
-                    <th className="px-3 py-2 text-left font-semibold">Khách hàng</th>
-                    <th className="px-3 py-2 text-left font-semibold">SĐT</th>
-                    <th className="px-3 py-2 text-left font-semibold">Phân loại</th>
-                    <th className="px-3 py-2 text-left font-semibold">Nguồn</th>
-                    <th className="px-3 py-2 text-left font-semibold">Phụ trách</th>
-                    <th className="px-3 py-2 text-left font-semibold">Lịch hẹn gọi lại</th>
-                    <th className="px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {callList.map((lead) => {
-                    const overdue = isOverdue(lead, now);
-                    return (
-                      <tr
-                        key={lead.id}
-                        className="cursor-pointer border-t border-border/70 hover:bg-[#f6f9ff]"
-                        onClick={() => onSelectLead(lead)}
-                      >
-                        <td className="px-3 py-2 font-medium text-slate-800">{lead.name ?? "—"}</td>
-                        <td className="px-3 py-2 tabular-nums text-slate-600">{lead.phone}</td>
-                        <td className="px-3 py-2 text-slate-600">{CATEGORY_SHORT_LABEL[lead.category]}</td>
-                        <td className="px-3 py-2 text-slate-600">{SOURCE_LABEL[lead.source]}</td>
-                        <td className="px-3 py-2 text-slate-600">{lead.assignee ?? "Chưa giao"}</td>
-                        <td className="px-3 py-2">
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className={overdue ? "font-medium text-rose-600" : "text-slate-700"}>
-                              {formatDateTime(lead.callbackAt)}
+            <div className="overflow-hidden rounded-lg border border-border">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-[13px]">
+                  <thead>
+                    <tr className="bg-[#f8fafc] text-[11px] uppercase tracking-wide text-slate-500">
+                      <th className="px-3 py-2 text-left font-semibold">Khách hàng</th>
+                      <th className="px-3 py-2 text-left font-semibold">SĐT</th>
+                      <th className="px-3 py-2 text-left font-semibold">Phân loại</th>
+                      <th className="px-3 py-2 text-left font-semibold">Nguồn</th>
+                      <th className="px-3 py-2 text-left font-semibold">Phụ trách</th>
+                      <th className="px-3 py-2 text-left font-semibold">Lịch hẹn gọi lại</th>
+                      <th className="px-3 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedCallList.map((lead) => {
+                      const overdue = isOverdue(lead, now);
+                      return (
+                        <tr
+                          key={lead.id}
+                          className="cursor-pointer border-t border-border/70 hover:bg-[#f6f9ff]"
+                          onClick={() => onSelectLead(lead)}
+                        >
+                          <td className="px-3 py-2 font-medium text-slate-800">{lead.name ?? "—"}</td>
+                          <td className="px-3 py-2 tabular-nums text-slate-600">{lead.phone}</td>
+                          <td className="px-3 py-2 text-slate-600">{CATEGORY_SHORT_LABEL[lead.category]}</td>
+                          <td className="px-3 py-2 text-slate-600">{SOURCE_LABEL[lead.source]}</td>
+                          <td className="px-3 py-2 text-slate-600">{lead.assignee ?? "Chưa giao"}</td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className={overdue ? "font-medium text-rose-600" : "text-slate-700"}>
+                                {formatDateTime(lead.callbackAt)}
+                              </span>
+                              <span
+                                className={cn(
+                                  "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                                  overdue ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-700",
+                                )}
+                              >
+                                {overdue ? "Quá hạn" : "Hôm nay"}
+                              </span>
                             </span>
-                            <span
-                              className={cn(
-                                "rounded px-1.5 py-0.5 text-[10px] font-semibold",
-                                overdue ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-700",
-                              )}
-                            >
-                              {overdue ? "Quá hạn" : "Hôm nay"}
-                            </span>
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <PhoneCall className="ml-auto size-3.5 text-primary" />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <PhoneCall className="ml-auto size-3.5 text-primary" />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <Pagination
+                page={safeCallPage}
+                pageSize={callPageSize}
+                total={callList.length}
+                unit="khách"
+                pageSizes={REPORT_TABLE_PAGE_SIZES}
+                onPageChange={setCallPage}
+                onPageSizeChange={(size) => {
+                  setCallPageSize(size);
+                  setCallPage(1);
+                }}
+              />
             </div>
           )}
         </CardContent>

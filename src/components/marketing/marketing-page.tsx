@@ -330,32 +330,35 @@ export function MarketingPage({
     ? seriesByDate(chartRows).slice().sort((left, right) => right.date.localeCompare(left.date))
     : [];
   const [fanpagePage, setFanpagePage] = React.useState(1);
+  const [fanpagePageSize, setFanpagePageSize] = React.useState(TABLE_PAGE_SIZE);
   const [campaignPage, setCampaignPage] = React.useState(1);
+  const [campaignPageSize, setCampaignPageSize] = React.useState(TABLE_PAGE_SIZE);
   const [dailyPage, setDailyPage] = React.useState(1);
+  const [dailyPageSize, setDailyPageSize] = React.useState(TABLE_PAGE_SIZE);
 
   const sortedPages = React.useMemo(
     () => ratedPages.items.slice().sort((left, right) => right.spend - left.spend),
     [ratedPages.items],
   );
-  const fanpagePageCount = Math.max(1, Math.ceil(sortedPages.length / TABLE_PAGE_SIZE));
-  const safeFanpagePage = Math.min(fanpagePage, fanpagePageCount);
+  const fanpagePageCount = Math.max(1, Math.ceil(sortedPages.length / fanpagePageSize));
+  const safeFanpagePage = Math.min(Math.max(1, fanpagePage), fanpagePageCount);
   const pagedFanpages = sortedPages.slice(
-    (safeFanpagePage - 1) * TABLE_PAGE_SIZE,
-    safeFanpagePage * TABLE_PAGE_SIZE,
+    (safeFanpagePage - 1) * fanpagePageSize,
+    safeFanpagePage * fanpagePageSize,
   );
 
-  const campaignPageCount = Math.max(1, Math.ceil(campaigns.length / TABLE_PAGE_SIZE));
-  const safeCampaignPage = Math.min(campaignPage, campaignPageCount);
+  const campaignPageCount = Math.max(1, Math.ceil(campaigns.length / campaignPageSize));
+  const safeCampaignPage = Math.min(Math.max(1, campaignPage), campaignPageCount);
   const pagedCampaigns = campaigns.slice(
-    (safeCampaignPage - 1) * TABLE_PAGE_SIZE,
-    safeCampaignPage * TABLE_PAGE_SIZE,
+    (safeCampaignPage - 1) * campaignPageSize,
+    safeCampaignPage * campaignPageSize,
   );
 
-  const dailyPageCount = Math.max(1, Math.ceil(dailyRows.length / TABLE_PAGE_SIZE));
-  const safeDailyPage = Math.min(dailyPage, dailyPageCount);
+  const dailyPageCount = Math.max(1, Math.ceil(dailyRows.length / dailyPageSize));
+  const safeDailyPage = Math.min(Math.max(1, dailyPage), dailyPageCount);
   const pagedDailyRows = dailyRows.slice(
-    (safeDailyPage - 1) * TABLE_PAGE_SIZE,
-    safeDailyPage * TABLE_PAGE_SIZE,
+    (safeDailyPage - 1) * dailyPageSize,
+    safeDailyPage * dailyPageSize,
   );
 
   const filtersActive =
@@ -391,6 +394,7 @@ export function MarketingPage({
 
   function toggleBrand(brand: CampaignBrandId) {
     setBrands((current) => (current.includes(brand) ? current.filter((item) => item !== brand) : [...current, brand]));
+    setFanpagePage(1);
     setCampaignPage(1);
   }
 
@@ -830,10 +834,14 @@ export function MarketingPage({
                 </div>
                 <Pagination
                   page={safeFanpagePage}
-                  pageSize={TABLE_PAGE_SIZE}
+                  pageSize={fanpagePageSize}
                   total={sortedPages.length}
                   unit="fanpage"
                   onPageChange={setFanpagePage}
+                  onPageSizeChange={(size) => {
+                    setFanpagePageSize(size);
+                    setFanpagePage(1);
+                  }}
                 />
               </>
             )}
@@ -973,10 +981,14 @@ export function MarketingPage({
                 </div>
                 <Pagination
                   page={safeCampaignPage}
-                  pageSize={TABLE_PAGE_SIZE}
+                  pageSize={campaignPageSize}
                   total={campaigns.length}
                   unit="chiến dịch"
                   onPageChange={setCampaignPage}
+                  onPageSizeChange={(size) => {
+                    setCampaignPageSize(size);
+                    setCampaignPage(1);
+                  }}
                 />
               </>
             )}
@@ -1016,10 +1028,14 @@ export function MarketingPage({
               </div>
               <Pagination
                 page={safeDailyPage}
-                pageSize={TABLE_PAGE_SIZE}
+                pageSize={dailyPageSize}
                 total={dailyRows.length}
                 unit="ngày"
                 onPageChange={setDailyPage}
+                onPageSizeChange={(size) => {
+                  setDailyPageSize(size);
+                  setDailyPage(1);
+                }}
               />
             </section>
           ) : null}

@@ -24,22 +24,28 @@ export function Pagination({
   onPageChange: (page: number) => void;
   onPageSizeChange?: (size: number) => void;
 }) {
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const last = Math.min(page * pageSize, total);
+  const safePageSize = Math.max(1, pageSize);
+  const pageCount = Math.max(1, Math.ceil(total / safePageSize));
+  const safePage = Math.min(Math.max(1, page), pageCount);
+  const first = total === 0 ? 0 : (safePage - 1) * safePageSize + 1;
+  const last = total === 0 ? 0 : Math.min(safePage * safePageSize, total);
 
-  const pages = buildPageList(page, pageCount);
+  const pages = buildPageList(safePage, pageCount);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-4 py-2.5 text-[13px]">
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-4 py-2.5 text-[13px]">
       <div className="flex items-center gap-3">
         <span className="text-muted-foreground">
           Hiển thị {formatNumber(first)}–{formatNumber(last)} / {formatNumber(total)} {unit}
         </span>
         {onPageSizeChange && pageSizes.length > 1 && (
           <select
-            value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            value={safePageSize}
+            onChange={(e) => {
+              const nextSize = Number(e.target.value);
+              onPageSizeChange(nextSize);
+              onPageChange(1);
+            }}
             className="h-7 rounded-md border border-input bg-card px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
           >
             {pageSizes.map((size) => (
@@ -52,7 +58,13 @@ export function Pagination({
       </div>
 
       <div className="flex items-center gap-1">
-        <Button variant="outline" size="iconSm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="iconSm"
+          disabled={safePage <= 1}
+          onClick={() => onPageChange(Math.max(1, safePage - 1))}
+        >
           <ChevronLeft className="size-3.5" />
         </Button>
         {pages.map((p, i) =>
@@ -64,10 +76,12 @@ export function Pagination({
             <button
               key={p}
               type="button"
-              onClick={() => onPageChange(p)}
+              onClick={() => {
+                if (p !== safePage) onPageChange(p);
+              }}
               className={cn(
                 "h-7 min-w-7 rounded-md border px-2 text-[13px] transition-colors",
-                p === page
+                p === safePage
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-input bg-card hover:bg-accent",
               )}
@@ -76,7 +90,13 @@ export function Pagination({
             </button>
           ),
         )}
-        <Button variant="outline" size="iconSm" disabled={page >= pageCount} onClick={() => onPageChange(page + 1)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="iconSm"
+          disabled={safePage >= pageCount}
+          onClick={() => onPageChange(Math.min(pageCount, safePage + 1))}
+        >
           <ChevronRight className="size-3.5" />
         </Button>
       </div>

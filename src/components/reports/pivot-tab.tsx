@@ -4,6 +4,7 @@ import * as React from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ChevronsUpDown, Download, Loader2 } from "lucide-react";
 
 import { ColumnVisibilityPopover } from "@/components/common/column-visibility";
+import { Pagination } from "@/components/common/pagination";
 import { useToast } from "@/components/providers/toast-provider";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -74,6 +75,13 @@ export function PivotTab({
   const [sortOrder, setSortOrder] = React.useState<"asc" | "desc">("desc");
   const [exporting, setExporting] = React.useState(false);
   const [collapsedKeys, setCollapsedKeys] = React.useState<string[]>([]);
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
+  const [prevPivotRows, setPrevPivotRows] = React.useState(pivot.rows);
+  if (prevPivotRows !== pivot.rows) {
+    setPrevPivotRows(pivot.rows);
+    setPage(1);
+  }
 
   const visibleMetrics = METRIC_COLUMNS.filter((c) => metrics.includes(c.id as string));
 
@@ -85,9 +93,14 @@ export function PivotTab({
     });
   }, [pivot.rows, sortBy, sortOrder]);
 
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(Math.max(1, page), pageCount);
+  const pagedRows = rows.slice((safePage - 1) * pageSize, safePage * pageSize);
+
   const maxLeads = Math.max(...pivot.rows.map((r) => r.leads), 1);
 
   const toggleSort = (id: keyof PivotRow) => {
+    setPage(1);
     if (sortBy === id) setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
     else {
       setSortBy(id);
@@ -183,6 +196,7 @@ export function PivotTab({
             value={groupBy}
             onValueChange={(v) => {
               setCollapsedKeys([]);
+              setPage(1);
               onGroupByChange(v as PivotDimension);
             }}
           >
@@ -207,6 +221,7 @@ export function PivotTab({
             value={splitBy}
             onValueChange={(v) => {
               setCollapsedKeys([]);
+              setPage(1);
               onSplitByChange(v as PivotDimension | "NONE");
             }}
           >
@@ -249,7 +264,7 @@ export function PivotTab({
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card shadow-xs">
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
         <div className="px-5 pt-4">
           <div className="text-[15px] font-semibold">
             Bảng chỉ số theo {PIVOT_DIMENSIONS[groupBy].toLowerCase()}
@@ -284,7 +299,7 @@ export function PivotTab({
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {pagedRows.length === 0 ? (
                 <tr>
                   <td
                     colSpan={visibleMetrics.length + 1}
@@ -294,7 +309,7 @@ export function PivotTab({
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => {
+                pagedRows.map((row) => {
                   const isCollapsed = collapsedKeys.includes(row.key);
                   const hasChildren =
                     splitBy !== "NONE" &&
@@ -399,7 +414,19 @@ export function PivotTab({
           </table>
         </div>
 
-        <p className="px-5 py-3 text-[11px] text-muted-foreground">
+        <Pagination
+          page={safePage}
+          pageSize={pageSize}
+          total={rows.length}
+          unit="nhóm"
+          onPageChange={setPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+        />
+
+        <p className="border-t border-border px-5 py-3 text-[11px] text-muted-foreground">
           Xuất Excel gồm bảng đang xem (kèm các dòng con nếu chọn “Chi tiết theo”) + sheet cho từng chiều phân tích
           chính (nguồn, fanpage, phụ trách, trạng thái, sản phẩm).
         </p>

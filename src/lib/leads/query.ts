@@ -24,7 +24,7 @@ export const leadFiltersSchema = z.object({
   products: z.array(z.string().max(80)).default([]),
   categories: z.array(enumOf([...CATEGORY_OPTIONS.map((o) => o.value), "CHUA_PHAN_LOAI"])).default([]),
   failReasons: z.array(enumOf(FAIL_REASON_OPTIONS.map((o) => o.value))).default([]),
-  facebookPageIds: z.array(z.string().regex(/^\d{5,}$/)).default([]),
+  facebookPageIds: z.array(z.string().min(1).max(120)).default([]),
 });
 
 export const leadSearchSchema = z.object({

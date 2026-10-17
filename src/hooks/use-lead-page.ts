@@ -49,11 +49,12 @@ export function useLeadPage(
   React.useEffect(() => {
     if (lastHydratedVersion.current !== hydratedVersion) {
       lastHydratedVersion.current = hydratedVersion;
-      lastFetchedSignature.current = fetchSignature;
-      return;
+      lastFetchedSignature.current = `${initialKey}|${reloadToken}`;
+      if (lastFetchedSignature.current === fetchSignature) {
+        return;
+      }
     }
     if (lastFetchedSignature.current === fetchSignature) return;
-    lastFetchedSignature.current = fetchSignature;
 
     const controller = new AbortController();
     setLoading(true);
@@ -69,17 +70,23 @@ export function useLeadPage(
         return response.json() as Promise<LeadPage>;
       })
       .then((next) => {
+        if (controller.signal.aborted) return;
+        lastFetchedSignature.current = fetchSignature;
         setData(next);
         setError(null);
       })
       .catch((e: unknown) => {
-        if (e instanceof DOMException && e.name === "AbortError") return;
+        if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
         setError(e instanceof Error ? e.message : "Không tải được danh sách.");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
 
     return () => controller.abort();
-  }, [key, fetchSignature, hydratedVersion]);
+  }, [key, initialKey, reloadToken, fetchSignature, hydratedVersion]);
 
   // Ảnh chụp dữ liệu hiện tại để hoàn tác được khi server từ chối thay đổi.
   const snapshot = React.useRef(data);

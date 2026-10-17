@@ -75,6 +75,13 @@ export function DataTable<T>({
   const [sort, setSort] = React.useState<SortState | null>(defaultSort ?? null);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(initialPageSize);
+  const [prevRows, setPrevRows] = React.useState(rows);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  if (prevRows !== rows) {
+    setPrevRows(rows);
+    setPage(1);
+  }
 
   const sorted = React.useMemo(() => {
     const column = sort ? columns.find((c) => c.id === sort.columnId) : null;
@@ -85,8 +92,12 @@ export function DataTable<T>({
   }, [rows, columns, sort]);
 
   const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const safePage = Math.min(page, pageCount);
+  const safePage = Math.min(Math.max(1, page), pageCount);
   const visible = sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  React.useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [safePage, pageSize]);
 
   const toggleSort = (column: DataColumn<T>) => {
     if (!column.sortValue) return;
@@ -100,7 +111,7 @@ export function DataTable<T>({
 
   return (
     <>
-      <div className={cn("thin-scrollbar relative overflow-auto", maxHeightClass)}>
+      <div ref={scrollRef} className={cn("thin-scrollbar relative min-h-0 overflow-auto", maxHeightClass)}>
         <table className="w-max min-w-full border-collapse text-[13px]">
           <thead className="sticky top-0 z-10">
             <tr>

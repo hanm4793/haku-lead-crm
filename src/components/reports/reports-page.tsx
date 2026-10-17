@@ -101,7 +101,6 @@ export function ReportsPage({
     }
     // Server đã hydrate sẵn bản đầu — bỏ qua nếu chữ ký truy vấn chưa đổi.
     if (lastFetchedSignature.current === fetchSignature) return;
-    lastFetchedSignature.current = fetchSignature;
 
     const controller = new AbortController();
     setLoading(true);
@@ -117,14 +116,20 @@ export function ReportsPage({
         return response.json() as Promise<ReportSummary>;
       })
       .then((data) => {
+        if (controller.signal.aborted) return;
+        lastFetchedSignature.current = fetchSignature;
         setSummary(data);
         setCallList(data.overview.callList);
       })
       .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
         toast.error("Không tải được báo cáo", err instanceof Error ? err.message : "Lỗi không xác định");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
 
     return () => controller.abort();
   }, [requestKey, fetchSignature, hydratedVersion, toast]);

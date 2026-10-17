@@ -124,6 +124,7 @@ export function LeadsPage({
   const [sort, setSort] = React.useState<SortState>({ columnId: "createdAt", order: "desc" });
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(initialRequest.pageSize);
+  const [prevInitialData, setPrevInitialData] = React.useState(initialData);
   const [datePreset, setDatePreset] = React.useState<PresetId>("ALL");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
@@ -138,6 +139,11 @@ export function LeadsPage({
     setLastStoreSearch(filters.search);
     setSearchInput(filters.search);
   }
+  if (prevInitialData !== initialData) {
+    setPrevInitialData(initialData);
+    setPage(1);
+    setSelectedIds([]);
+  }
 
   // Đọc tham số ?page= hoặc ?search= từ URL (ví dụ liên kết sâu từ trợ lý AI)
   React.useEffect(() => {
@@ -147,10 +153,18 @@ export function LeadsPage({
     const searchParam = params.get("search")?.trim();
     const nextPatch: Partial<LeadFilters> = {};
     if (pageParam) {
-      const matchedPage = fanpageOptions.find(
-        (fp) => fp.value === pageParam || fp.label.toLowerCase() === pageParam.toLowerCase(),
-      );
-      nextPatch.facebookPageIds = [matchedPage ? matchedPage.value : pageParam];
+      if (/^\d{1,4}$/.test(pageParam)) {
+        setPage(Math.max(1, Number(pageParam)));
+      } else {
+        const matchedPage = fanpageOptions.find(
+          (fp) => fp.value === pageParam || fp.label.toLowerCase() === pageParam.toLowerCase(),
+        );
+        if (matchedPage) {
+          nextPatch.facebookPageIds = [matchedPage.value];
+        } else if (/^\d{5,}$/.test(pageParam)) {
+          nextPatch.facebookPageIds = [pageParam];
+        }
+      }
     }
     if (searchParam) {
       nextPatch.search = searchParam;
@@ -184,6 +198,11 @@ export function LeadsPage({
   );
 
   const { data, loading, error, patchRows, refetch } = useLeadPage(initialData, initialRequest, request);
+
+  const maxPage = Math.max(1, Math.ceil(data.total / pageSize));
+  if (!loading && page > maxPage) {
+    setPage(maxPage);
+  }
 
   React.useEffect(() => {
     if (error) toast.error("Không tải được danh sách lead", error);
@@ -660,6 +679,9 @@ export function LeadsPage({
 
         <LeadTable
           leads={data.rows}
+          page={page}
+          pageSize={pageSize}
+          loading={loading}
           visibleColumns={visibleColumns}
           sort={sort}
           onSortChange={setSort}
@@ -686,7 +708,11 @@ export function LeadsPage({
             setPage(nextPage);
             setSelectedIds([]);
           }}
-          onPageSizeChange={setPageSize}
+          onPageSizeChange={(nextSize) => {
+            setPageSize(nextSize);
+            setPage(1);
+            setSelectedIds([]);
+          }}
         />
       </div>
 

@@ -303,12 +303,12 @@ export function AudienceBuilderPanel({
   }, [initialSegments, listSearch, listProjectIds, listPageIds, listSyncStatus]);
 
   const [listPage, setListPage] = React.useState(1);
-  const AUDIENCE_PAGE_SIZE = 10;
-  const listPageCount = Math.max(1, Math.ceil(filteredSegments.length / AUDIENCE_PAGE_SIZE));
-  const safeListPage = Math.min(listPage, listPageCount);
+  const [listPageSize, setListPageSize] = React.useState(10);
+  const listPageCount = Math.max(1, Math.ceil(filteredSegments.length / listPageSize));
+  const safeListPage = Math.min(Math.max(1, listPage), listPageCount);
   const pagedSegments = filteredSegments.slice(
-    (safeListPage - 1) * AUDIENCE_PAGE_SIZE,
-    safeListPage * AUDIENCE_PAGE_SIZE,
+    (safeListPage - 1) * listPageSize,
+    safeListPage * listPageSize,
   );
 
   const hasListFilters =
@@ -735,7 +735,10 @@ export function AudienceBuilderPanel({
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={listSearch}
-              onChange={(e) => setListSearch(e.target.value)}
+              onChange={(e) => {
+                setListSearch(e.target.value);
+                setListPage(1);
+              }}
               placeholder="Tìm tên tệp, ghi chú, ID..."
               className="h-8 pl-8 text-[13px]"
             />
@@ -747,6 +750,7 @@ export function AudienceBuilderPanel({
               selected={listProjectIds}
               onChange={(nextProjIds) => {
                 setListProjectIds(nextProjIds);
+                setListPage(1);
                 if (nextProjIds.length > 0) {
                   const allowed = new Set(
                     allPages
@@ -767,7 +771,10 @@ export function AudienceBuilderPanel({
           <MultiSelect
             options={listPageSelectOptions}
             selected={listPageIds}
-            onChange={setListPageIds}
+            onChange={(next) => {
+              setListPageIds(next);
+              setListPage(1);
+            }}
             placeholder="Tất cả fanpage"
             className="h-8 w-[190px] text-[13px]"
             contentClassName="w-[280px]"
@@ -775,7 +782,10 @@ export function AudienceBuilderPanel({
 
           <Select
             value={listSyncStatus}
-            onValueChange={(val) => setListSyncStatus(val as SyncFilterStatus)}
+            onValueChange={(val) => {
+              setListSyncStatus(val as SyncFilterStatus);
+              setListPage(1);
+            }}
           >
             <SelectTrigger className="h-8 w-[160px] text-[13px]">
               <SelectValue placeholder="Trạng thái" />
@@ -1169,10 +1179,14 @@ export function AudienceBuilderPanel({
             </table>
             <Pagination
               page={safeListPage}
-              pageSize={AUDIENCE_PAGE_SIZE}
+              pageSize={listPageSize}
               total={filteredSegments.length}
               unit="tệp KH"
               onPageChange={setListPage}
+              onPageSizeChange={(size) => {
+                setListPageSize(size);
+                setListPage(1);
+              }}
             />
           </div>
         )}
