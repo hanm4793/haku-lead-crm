@@ -46,15 +46,19 @@ export function ImportLeadsDialog({
   const [fileName, setFileName] = React.useState<string | null>(null);
   const [validating, setValidating] = React.useState(false);
   const [committing, setCommitting] = React.useState(false);
+  const [commitProgress, setCommitProgress] = React.useState<{ done: number; total: number } | null>(null);
   const [report, setReport] = React.useState<ImportValidationReport | null>(null);
   const [filter, setFilter] = React.useState<RowFilter>("ALL");
+  const [visibleLimit, setVisibleLimit] = React.useState(100);
 
   const reset = React.useCallback(() => {
     setFileName(null);
     setValidating(false);
     setCommitting(false);
+    setCommitProgress(null);
     setReport(null);
     setFilter("ALL");
+    setVisibleLimit(100);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
@@ -71,6 +75,7 @@ export function ImportLeadsDialog({
     setFileName(file.name);
     setValidating(true);
     setReport(null);
+    setVisibleLimit(100);
 
     try {
       const formData = new FormData();
@@ -101,21 +106,34 @@ export function ImportLeadsDialog({
     }
 
     setCommitting(true);
+    setCommitProgress({ done: 0, total: payloads.length });
+    const CHUNK_SIZE = 400;
+    let totalImported = 0;
+
     try {
-      const res = await commitLeadImportAction({ rows: payloads });
-      if (!res.ok) {
-        toast.error("Import thất bại", res.error);
-        return;
+      for (let i = 0; i < payloads.length; i += CHUNK_SIZE) {
+        const chunk = payloads.slice(i, i + CHUNK_SIZE);
+        const res = await commitLeadImportAction({ rows: chunk });
+        if (!res.ok) {
+          toast.error("Import thất bại", res.error);
+          return;
+        }
+        totalImported += res.importedCount;
+        setCommitProgress({
+          done: Math.min(i + chunk.length, payloads.length),
+          total: payloads.length,
+        });
       }
       toast.success(
         "Import lead thành công",
-        `Đã thêm ${res.importedCount} lead vào danh sách.`,
+        `Đã thêm ${totalImported} lead vào danh sách.`,
       );
       reset();
       onOpenChange(false);
-      onImported(res.importedCount);
+      onImported(totalImported);
     } finally {
       setCommitting(false);
+      setCommitProgress(null);
     }
   };
 
@@ -132,6 +150,11 @@ export function ImportLeadsDialog({
         return report.rows;
     }
   }, [report, filter]);
+
+  const displayedRows = React.useMemo(
+    () => filteredRows.slice(0, visibleLimit),
+    [filteredRows, visibleLimit],
+  );
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -308,14 +331,14 @@ export function ImportLeadsDialog({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border bg-white">
-                      {filteredRows.length === 0 ? (
+                      {displayedRows.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">
                             Không có dòng nào trong nhóm lọc này.
                           </td>
                         </tr>
                       ) : (
-                        filteredRows.map((row) => (
+                        displayedRows.map((row) => (
                           <tr
                             key={row.rowNumber}
                             className={cn(
@@ -397,6 +420,23 @@ export function ImportLeadsDialog({
                     </tbody>
                   </table>
                 </div>
+                {filteredRows.length > visibleLimit && (
+                  <div className="flex items-center justify-between border-t border-border bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
+                    <span>
+                      Đang hiển thị <strong>{displayedRows.length}</strong> /{" "}
+                      <strong>{filteredRows.length}</strong> dòng trong nhóm lọc
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setVisibleLimit((prev) => prev + 200)}
+                    >
+                      Xem thêm 200 dòng
+                    </Button>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -424,9 +464,11 @@ export function ImportLeadsDialog({
             ) : (
               <Upload className="size-3.5" />
             )}
-            {report && report.importableCount > 0
-              ? `Import ${report.importableCount} lead hợp lệ`
-              : "Import lead"}
+            {committing && commitProgress
+              ? `Đang lưu (${commitProgress.done}/${commitProgress.total})...`
+              : report && report.importableCount > 0
+                ? `Import ${report.importableCount} lead hợp lệ`
+                : "Import lead"}
           </Button>
         </DialogFooter>
       </DialogContent>
