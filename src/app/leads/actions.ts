@@ -47,7 +47,7 @@ const ACTIVITY_KINDS = [
 ] as const;
 
 const patchSchema = z.object({
-  name: z.string().max(120, "Họ tên tối đa 120 ký tự.").nullable().optional(),
+  name: z.string().max(250, "Họ tên tối đa 250 ký tự.").nullable().optional(),
   phone: z.string().max(30, "Số điện thoại quá dài.").optional(),
   createdAt: z.string().optional(),
   contactStatus: z.enum(["CHUA_LIEN_HE", "DA_LIEN_HE"]).optional(),
@@ -173,7 +173,7 @@ export async function addLeadCommentAction(input: unknown): Promise<AddLeadComme
 }
 
 const createManualLeadSchema = z.object({
-  name: z.string().trim().min(1, "Vui lòng nhập họ tên khách hàng.").max(120, "Họ tên tối đa 120 ký tự."),
+  name: z.string().trim().min(1, "Vui lòng nhập họ tên khách hàng.").max(250, "Họ tên tối đa 250 ký tự."),
   phone: z.string().trim().min(1, "Vui lòng nhập số điện thoại.").max(30, "Số điện thoại quá dài."),
   email: z.string().max(160).nullable().optional(),
   brand: z.string().max(40).nullable().optional(),

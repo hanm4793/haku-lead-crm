@@ -305,9 +305,11 @@ function extractCellString(value: ExcelJS.CellValue, isPhoneCol = false): string
   if (value === null || value === undefined) return "";
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return "";
-    const yyyy = value.getUTCFullYear();
-    const mm = String(value.getUTCMonth() + 1).padStart(2, "0");
-    const dd = String(value.getUTCDate()).padStart(2, "0");
+    const vnDate = new Date(value.getTime() + 7 * 3600_000);
+    const yyyy = vnDate.getUTCFullYear();
+    if (yyyy < 1900 || yyyy > 2100) return "";
+    const mm = String(vnDate.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(vnDate.getUTCDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
   }
   if (typeof value === "number") {
@@ -429,9 +431,38 @@ function validateCustomField(def: AttrFieldRow, raw: string): { ok: true; value:
 }
 
 type ColumnTarget =
+  | { kind: "ignore" }
   | { kind: "fixed"; id: "name" | "phone" | "email" | "brand" | "product" | "location" | "channelDetail" | "category" | "failReason" | "assignee" | "callbackAt" | "careNote" }
   | { kind: "attr"; def: AttrFieldRow }
   | { kind: "unknown"; header: string };
+
+const HEADER_DETECT_ANCHORS = new Set([
+  "số điện thoại",
+  "so dien thoai",
+  "sđt",
+  "sdt",
+  "phone",
+  "họ tên",
+  "ho ten",
+  "tên khách hàng",
+  "ten khach hang",
+]);
+
+function findHeaderRowIndex(sheet: ExcelJS.Worksheet): number {
+  const maxScan = Math.min(10, sheet.rowCount);
+  for (let r = 1; r <= maxScan; r++) {
+    const row = sheet.getRow(r);
+    let matchedAnchor = false;
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      const norm = normalizeHeader(extractCellString(cell.value));
+      if (HEADER_DETECT_ANCHORS.has(norm)) {
+        matchedAnchor = true;
+      }
+    });
+    if (matchedAnchor) return r;
+  }
+  return 1;
+}
 
 /**
  * Đọc và kiểm tra toàn bộ dữ liệu từ file Excel (.xlsx) được upload.
@@ -467,7 +498,8 @@ export async function parseAndValidateImportWorkbook(
   const activeAttrs = context.attrFields.filter((f) => f.active);
   const { labels } = context.catalog;
 
-  const headerRow = sheet.getRow(1);
+  const headerRowIndex = findHeaderRowIndex(sheet);
+  const headerRow = sheet.getRow(headerRowIndex);
   const columnMap = new Map<number, ColumnTarget>();
   const unrecognizedColumns: string[] = [];
 
@@ -476,15 +508,19 @@ export async function parseAndValidateImportWorkbook(
     if (!rawHeader) return;
     const norm = normalizeHeader(rawHeader);
 
-    if (["họ tên", "ho ten", "khách hàng", "tên khách hàng", "name"].includes(norm)) {
+    if (["stt", "số thứ tự", "so thu tu", "no", "#"].includes(norm)) {
+      columnMap.set(colNumber, { kind: "ignore" });
+      return;
+    }
+    if (["họ tên", "ho ten", "khách hàng", "khach hang", "tên khách hàng", "ten khach hang", "name"].includes(norm)) {
       columnMap.set(colNumber, { kind: "fixed", id: "name" });
       return;
     }
-    if (["số điện thoại", "so dien thoai", "sđt", "sdt", "phone"].includes(norm)) {
+    if (["số điện thoại", "so dien thoai", "sđt", "sdt", "điện thoại", "dien thoai", "phone"].includes(norm)) {
       columnMap.set(colNumber, { kind: "fixed", id: "phone" });
       return;
     }
-    if (["email", "e-mail", "thư điện tử"].includes(norm)) {
+    if (["email", "e-mail", "thư điện tử", "thu dien tu"].includes(norm)) {
       const customEmail = activeAttrs.find((f) => f.key.toLowerCase() === "email");
       if (customEmail) {
         columnMap.set(colNumber, { kind: "attr", def: customEmail });
@@ -493,15 +529,42 @@ export async function parseAndValidateImportWorkbook(
       }
       return;
     }
-    if ([normalizeHeader(labels.brand), "thương hiệu", "thuong hieu", "brand"].includes(norm)) {
+    if ([normalizeHeader(labels.brand), "thương hiệu", "thuong hieu", "hãng", "hang", "brand"].includes(norm)) {
       columnMap.set(colNumber, { kind: "fixed", id: "brand" });
       return;
     }
-    if ([normalizeHeader(labels.product), "dòng xe", "dong xe", "sản phẩm", "san pham", "product"].includes(norm)) {
+    if (
+      [
+        normalizeHeader(labels.product),
+        "dòng xe",
+        "dong xe",
+        "loại xe",
+        "loai xe",
+        "mẫu xe",
+        "mau xe",
+        "sản phẩm",
+        "san pham",
+        "product",
+      ].includes(norm)
+    ) {
       columnMap.set(colNumber, { kind: "fixed", id: "product" });
       return;
     }
-    if ([normalizeHeader(labels.location), "đại lý", "dai ly", "chi nhánh", "địa điểm", "location"].includes(norm)) {
+    if (
+      [
+        normalizeHeader(labels.location),
+        "đại lý",
+        "dai ly",
+        "tên đại lý",
+        "ten dai ly",
+        "showroom",
+        "chi nhánh",
+        "chi nhanh",
+        "địa điểm",
+        "dia diem",
+        "location",
+      ].includes(norm)
+    ) {
       columnMap.set(colNumber, { kind: "fixed", id: "location" });
       return;
     }
@@ -561,7 +624,7 @@ export async function parseAndValidateImportWorkbook(
 
   const validatedRows: ValidatedImportRow[] = [];
 
-  for (let r = 2; r <= sheet.rowCount; r++) {
+  for (let r = headerRowIndex + 1; r <= sheet.rowCount; r++) {
     const row = sheet.getRow(r);
     const fixedValues: Record<string, string> = {};
     const attrRawValues: Record<string, string> = {};
@@ -569,6 +632,7 @@ export async function parseAndValidateImportWorkbook(
     let hasAnyValue = false;
 
     for (const [colNumber, target] of columnMap.entries()) {
+      if (target.kind === "ignore") continue;
       const isPhone = target.kind === "fixed" && target.id === "phone";
       const val = extractCellString(row.getCell(colNumber).value, isPhone);
       if (val !== "") hasAnyValue = true;
@@ -595,8 +659,8 @@ export async function parseAndValidateImportWorkbook(
       const msg = "Họ tên đang để trống";
       invalidFields.push({ field: "Họ tên", value: "(trống)", error: msg });
       blockingError = blockingError ?? msg;
-    } else if (rawName.length > 120) {
-      const msg = "Tối đa 120 ký tự";
+    } else if (rawName.length > 250) {
+      const msg = "Tối đa 250 ký tự";
       invalidFields.push({ field: "Họ tên", value: `${rawName.slice(0, 25)}…`, error: msg });
       blockingError = blockingError ?? msg;
     } else {
@@ -638,7 +702,6 @@ export async function parseAndValidateImportWorkbook(
       if (!EMAIL_RE.test(rawEmail)) {
         const msg = "Email không đúng định dạng";
         invalidFields.push({ field: "Email", value: rawEmail, error: msg });
-        blockingError = blockingError ?? msg;
       } else {
         const eKey = rawEmail.toLowerCase();
         const dupEmailDb = existingEmailMap.get(eKey);

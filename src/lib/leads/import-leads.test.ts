@@ -271,4 +271,43 @@ describe("lead import template & validator", () => {
     expect(report.rows[2].status).toBe("partial");
     expect(report.rows[2].payload?.callbackAt).toBeNull();
   });
+
+  it("auto-detects header row when row 1 has group titles, ignores STT, maps LOẠI XE / TÊN ĐẠI LÝ, and treats malformed email as partial warning", async () => {
+    const wb = new ExcelJS.Workbook();
+    const sheet = wb.addWorksheet("Sheet0");
+    // Row 1: Group headers
+    sheet.addRow(["STT", "Thông tin đại lý", "Thông tin khách hàng", "Thông tin khách hàng", "Thông tin khách hàng", "Thông tin xe"]);
+    // Row 2: Actual column headers
+    sheet.addRow(["STT", "TÊN ĐẠI LÝ", "TÊN KHÁCH HÀNG", "SDT", "EMAIL", "LOẠI XE"]);
+    // Row 3: Data row with long company name and phone in email cell
+    const longCompanyName = "CÔNG TY CỔ PHẦN ĐẦU TƯ VÀ PHÁT TRIỂN THƯƠNG MẠI DỊCH VỤ VẬN TẢI QUỐC TẾ ĐÔNG DƯƠNG VIỆT NAM CHI NHÁNH MIỀN BẮC - VĂN PHÒNG ĐẠI DIỆN TẠI THÀNH PHỐ HÀ NỘI";
+    sheet.addRow([1, "Phạm Văn Đồng", longCompanyName, "0901234567", "0901234567", "New Seltos"]);
+
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+    const report = await parseAndValidateImportWorkbook(buf, {
+      catalog: DEFAULT_LEAD_CATALOG,
+      attrFields: [],
+      assignees: [],
+      existingLeads: [],
+      viewer: { role: "SUPER_ADMIN", appUserId: "admin-1" },
+    });
+
+    expect(report.unrecognizedColumns).toEqual([]);
+    expect(report.totalRows).toBe(1);
+    expect(report.importableCount).toBe(1);
+    expect(report.partialValidCount).toBe(1);
+    expect(report.rows[0].status).toBe("partial");
+    expect(report.rows[0].payload).toMatchObject({
+      name: longCompanyName,
+      phone: "0901234567",
+      email: null,
+      brand: "KIA",
+      product: "New Seltos",
+      location: "Phạm Văn Đồng",
+    });
+    expect(report.rows[0].invalidFields).toEqual([
+      expect.objectContaining({ field: "Email", value: "0901234567" }),
+    ]);
+  });
 });
+

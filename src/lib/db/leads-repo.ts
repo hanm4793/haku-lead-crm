@@ -1057,7 +1057,7 @@ export async function createManualLead(
 
   const name = input.name.trim();
   if (!name) throw new Error("Họ tên khách hàng không được để trống.");
-  if (name.length > 120) throw new Error("Họ tên tối đa 120 ký tự.");
+  if (name.length > 250) throw new Error("Họ tên tối đa 250 ký tự.");
 
   const phoneProblem = validatePhone(input.phone);
   if (phoneProblem) throw new Error(phoneProblem);
@@ -1204,7 +1204,7 @@ export async function insertImportedLeads(
 
   for (const row of rows) {
     const name = row.name?.trim() ?? "";
-    if (!name || name.length > 120) continue;
+    if (!name || name.length > 250) continue;
 
     const phone = normalizePhone(row.phone);
     if (!phone || validatePhone(phone)) continue;
@@ -1278,23 +1278,27 @@ export async function insertImportedLeads(
 
   if (leadsToInsert.length === 0) return { importedCount: 0 };
 
+  const BATCH_SIZE = 250;
   await db.transaction(async (tx) => {
-    const insertedRows = await tx
-      .insert(leads)
-      .values(leadsToInsert)
-      .returning({ id: leads.id });
+    for (let i = 0; i < leadsToInsert.length; i += BATCH_SIZE) {
+      const chunk = leadsToInsert.slice(i, i + BATCH_SIZE);
+      const insertedRows = await tx
+        .insert(leads)
+        .values(chunk)
+        .returning({ id: leads.id });
 
-    if (insertedRows.length > 0) {
-      await tx.insert(activityLogs).values(
-        insertedRows.map((ins) => ({
-          leadId: ins.id,
-          kind: "CREATE" as const,
-          message: "Import lead từ file Excel.",
-          actorId: actor.appUserId ?? null,
-          actorName: actor.fullName,
-          byAi: false,
-        })),
-      );
+      if (insertedRows.length > 0) {
+        await tx.insert(activityLogs).values(
+          insertedRows.map((ins) => ({
+            leadId: ins.id,
+            kind: "CREATE" as const,
+            message: "Import lead từ file Excel.",
+            actorId: actor.appUserId ?? null,
+            actorName: actor.fullName,
+            byAi: false,
+          })),
+        );
+      }
     }
   });
 
