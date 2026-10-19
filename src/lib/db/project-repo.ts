@@ -4,7 +4,7 @@ import { and, asc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import type { UserRole } from "@/lib/auth/roles";
 import { DEFAULT_CATALOG_LABELS, DEFAULT_PROJECT_NAME, DEFAULT_PROJECT_SLUG } from "@/lib/constants";
 import { getDb } from "@/lib/db/client";
-import { appUsers, facebookPages, projectAdAccounts, projectMembers, projects } from "@/lib/db/schema";
+import { appUsers, facebookPages, leads, projectAdAccounts, projectMembers, projects } from "@/lib/db/schema";
 import type { CatalogLabels, ProjectInfo } from "@/lib/types";
 
 export const ACTIVE_PROJECT_COOKIE = "semtop_project_id";
@@ -275,7 +275,8 @@ export async function updateProject(
 }
 
 export async function assignFacebookPageToProject(pageId: string, projectId: string | null) {
-  const [row] = await getDb()
+  const db = getDb();
+  const [row] = await db
     .update(facebookPages)
     .set({ projectId, updatedAt: new Date() })
     .where(eq(facebookPages.id, pageId))
@@ -287,6 +288,12 @@ export async function assignFacebookPageToProject(pageId: string, projectId: str
       active: facebookPages.active,
     });
   if (!row) throw new Error("Không tìm thấy Fanpage.");
+  if (projectId) {
+    await db
+      .update(leads)
+      .set({ projectId, updatedAt: new Date() })
+      .where(eq(leads.facebookPageId, row.facebookPageId));
+  }
   return row;
 }
 

@@ -197,6 +197,7 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
               ...(mapped.name !== null ? { name: mapped.name } : {}),
               ...(mapped.campaign !== null ? { campaign: mapped.campaign } : {}),
               ...(mapped.adContent !== null ? { adContent: mapped.adContent } : {}),
+              ...(projectId ? { projectId } : {}),
               // Field phụ của form đi vào attrs; form không có field phụ thì giữ attrs cũ.
               ...(hasAttrs ? { attrs: mapped.attrs } : {}),
               facebookFormId: form.id,

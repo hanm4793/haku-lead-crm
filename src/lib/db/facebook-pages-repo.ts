@@ -2,7 +2,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 
 import { getDb, isDatabaseConfigured } from "@/lib/db/client";
 import { ensureDefaultProject } from "@/lib/db/project-repo";
-import { facebookPages } from "@/lib/db/schema";
+import { facebookPages, leads } from "@/lib/db/schema";
 import { parseFacebookPageIds } from "@/lib/facebook/env";
 import { graphGet } from "@/lib/facebook/graph-client";
 
@@ -192,6 +192,12 @@ export async function addFacebookPage(
         projectId: facebookPages.projectId,
         active: facebookPages.active,
       });
+    if (resolvedProjectId) {
+      await db
+        .update(leads)
+        .set({ projectId: resolvedProjectId, updatedAt: new Date() })
+        .where(eq(leads.facebookPageId, facebookPageId));
+    }
     return row!;
   }
 
@@ -205,6 +211,12 @@ export async function addFacebookPage(
       projectId: facebookPages.projectId,
       active: facebookPages.active,
     });
+  if (resolvedProjectId) {
+    await db
+      .update(leads)
+      .set({ projectId: resolvedProjectId, updatedAt: new Date() })
+      .where(eq(leads.facebookPageId, facebookPageId));
+  }
   return row!;
 }
 
