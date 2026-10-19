@@ -5,12 +5,14 @@ const MAX_PAGING_PAGES = 50;
 export class FacebookGraphError extends Error {
   status: number;
   code?: number;
+  subcode?: number;
 
-  constructor(message: string, status: number, code?: number) {
+  constructor(message: string, status: number, code?: number, subcode?: number) {
     super(message);
     this.name = "FacebookGraphError";
     this.status = status;
     this.code = code;
+    this.subcode = subcode;
   }
 }
 
@@ -18,6 +20,9 @@ type GraphErrorBody = {
   error?: {
     message?: string;
     code?: number;
+    error_subcode?: number;
+    error_user_title?: string;
+    error_user_msg?: string;
   };
 };
 
@@ -67,14 +72,22 @@ async function readGraphJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = `Facebook Graph request failed (${res.status})`;
     let code: number | undefined;
+    let subcode: number | undefined;
     try {
       const body = (await res.json()) as GraphErrorBody;
-      if (body.error?.message) message = body.error.message;
-      if (body.error?.code != null) code = body.error.code;
+      const err = body.error;
+      if (err?.message) message = err.message;
+      if (err?.error_user_msg) {
+        message = `${message} — ${err.error_user_msg}`;
+      } else if (err?.error_user_title) {
+        message = `${message} — ${err.error_user_title}`;
+      }
+      if (err?.code != null) code = err.code;
+      if (err?.error_subcode != null) subcode = err.error_subcode;
     } catch {
       // ignore non-JSON error bodies
     }
-    throw new FacebookGraphError(message, res.status, code);
+    throw new FacebookGraphError(message, res.status, code, subcode);
   }
   return res.json() as Promise<T>;
 }

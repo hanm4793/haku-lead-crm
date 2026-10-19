@@ -113,11 +113,12 @@ function formatMetaAudienceError(error: unknown, adAccountId: string): Error {
   const msg = error.message || "";
 
   if (
-    /terms of service|custom audience terms|tos/i.test(msg) ||
-    error.code === 2655
+    /terms of service|custom audience terms|customaudiences\/tos|điều khoản về đối tượng tùy chỉnh|tos/i.test(msg) ||
+    error.code === 2655 ||
+    error.subcode === 1870090
   ) {
     return new Error(
-      `Tài khoản quảng cáo (${adAccountId}) chưa chấp nhận Điều khoản Custom Audience của Meta. Vui lòng mở link: https://business.facebook.com/ads/manage/customaudiences/tos/?act=${cleanAct} bấm Chấp nhận (Accept) rồi thử lại. (${msg})`,
+      `Tài khoản quảng cáo (${adAccountId}) chưa chấp nhận Điều khoản Đối tượng tùy chỉnh (Custom Audience) của Meta. Vui lòng mở link: https://business.facebook.com/ads/manage/customaudiences/tos/?act=${cleanAct} bấm Chấp nhận (Accept) rồi thử lại.`,
     );
   }
 

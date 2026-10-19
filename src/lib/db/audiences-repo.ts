@@ -562,6 +562,14 @@ export async function syncAudienceSegmentToMeta(input: {
           .where(and(eq(facebookPages.projectId, segment.projectId), eq(facebookPages.active, true)));
         targetPageIds = projPages.map((p) => p.facebookPageId);
       }
+      if (targetPageIds.length === 0) {
+        const fallbackPages = await db
+          .select({ facebookPageId: facebookPages.facebookPageId })
+          .from(facebookPages)
+          .where(eq(facebookPages.active, true))
+          .limit(3);
+        targetPageIds = fallbackPages.map((p) => p.facebookPageId);
+      }
     }
 
     // Nếu tệp này đã từng đẩy trước đó, gắn thêm nhãn thời gian ngắn để tệp mới trên Meta không trùng tên với tệp cũ
