@@ -314,6 +314,7 @@ export const metaAdInsights = pgTable(
   "meta_ad_insights",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    adAccountId: text("ad_account_id"),
     level: metaInsightLevelEnum("level").notNull(),
     objectId: text("object_id").notNull(),
     objectName: text("object_name"),
@@ -336,10 +337,11 @@ export const metaAdInsights = pgTable(
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    unique("meta_ad_insights_level_object_date").on(t.level, t.objectId, t.dateStart),
+    unique("meta_ad_insights_acct_level_object_date").on(t.adAccountId, t.level, t.objectId, t.dateStart),
     index("meta_ad_insights_page_idx").on(t.pageId),
     index("meta_ad_insights_campaign_idx").on(t.campaignId),
     index("meta_ad_insights_level_date_idx").on(t.level, t.dateStart),
+    index("meta_ad_insights_ad_account_idx").on(t.adAccountId),
   ],
 );
 

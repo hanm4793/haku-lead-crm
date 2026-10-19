@@ -5,7 +5,8 @@ import { ensureDiscoveredFacebookPages } from "@/lib/db/facebook-pages-repo";
 import { metaAdInsights, metaSyncRuns } from "@/lib/db/schema";
 
 import { pageIdFromCreative, type AdCreative } from "./ad-page";
-import { getFacebookConfig } from "./env";
+import { listAccessibleAdAccounts } from "./custom-audiences";
+import { getFacebookConfig, normalizeAdAccountId } from "./env";
 import { FacebookGraphError, graphGetAllData } from "./graph-client";
 
 export interface SyncInsightsResult {
@@ -17,6 +18,8 @@ export interface SyncInsightsResult {
   runId: string;
   since: string;
   until: string;
+  /** Danh sách TKQC đã đồng bộ thành công. */
+  syncedAdAccounts?: string[];
 }
 
 type ActionValue = {
@@ -202,13 +205,158 @@ async function withGraphRetry<T>(request: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * Đồng bộ Insights cho **1 tài khoản quảng cáo**.
+ * Ghi `adAccountId` vào mỗi row `meta_ad_insights`.
+ */
+async function syncInsightsForAccount(
+  adAccountId: string,
+  since: string,
+  until: string,
+): Promise<{ imported: number; updated: number; skipped: number; errors: number; errorMessages: string[] }> {
+  const db = getDb();
+  const counts = { imported: 0, updated: 0, skipped: 0, errors: 0 };
+  const errorMessages: string[] = [];
+
+  const campaignRows: FacebookInsight[] = [];
+  for (const window of dateWindows(since, until, 7)) {
+    const chunk = await withGraphRetry(() =>
+      graphGetAllData<FacebookInsight>(`/${adAccountId}/insights`, {
+        level: "campaign",
+        time_increment: "1",
+        time_range: JSON.stringify(window),
+        limit: INSIGHT_LIMIT,
+        fields: CAMPAIGN_FIELDS,
+      }),
+    );
+    campaignRows.push(...chunk);
+  }
+  const adRows: FacebookInsight[] = [];
+  for (const window of dateWindows(since, until, 7)) {
+    const chunk = await withGraphRetry(() =>
+      graphGetAllData<FacebookInsight>(`/${adAccountId}/insights`, {
+        level: "ad",
+        time_increment: "1",
+        time_range: JSON.stringify(window),
+        limit: INSIGHT_LIMIT,
+        fields: AD_FIELDS,
+      }),
+    );
+    adRows.push(...chunk);
+  }
+
+  let pageByAd = new Map<string, string>();
+  try {
+    pageByAd = await loadPageByAdId(adAccountId);
+  } catch (error) {
+    counts.errors += 1;
+    errorMessages.push(errorMessage(error));
+  }
+  try {
+    await ensureDiscoveredFacebookPages([...pageByAd.values()]);
+  } catch {
+    // Tên fanpage chỉ để hiển thị. Thiếu tên không làm hỏng số liệu ads.
+  }
+
+  const writes: Array<typeof metaAdInsights.$inferInsert> = [];
+  for (const row of campaignRows) {
+    const objectId = optionalText(row.campaign_id);
+    const dateStart = row.date_start ? parseUtcDate(row.date_start) : null;
+    if (!objectId || !dateStart) {
+      counts.skipped += 1;
+      continue;
+    }
+    const objectName = optionalText(row.campaign_name);
+    writes.push({
+      adAccountId,
+      level: "campaign",
+      objectId,
+      objectName,
+      campaignId: objectId,
+      campaignName: objectName,
+      adsetId: null,
+      adsetName: null,
+      pageId: null,
+      dateStart,
+      ...metricValues(row),
+    });
+  }
+  for (const row of adRows) {
+    const objectId = optionalText(row.ad_id);
+    const dateStart = row.date_start ? parseUtcDate(row.date_start) : null;
+    if (!objectId || !dateStart) {
+      counts.skipped += 1;
+      continue;
+    }
+    writes.push({
+      adAccountId,
+      level: "ad",
+      objectId,
+      objectName: optionalText(row.ad_name),
+      campaignId: optionalText(row.campaign_id),
+      campaignName: optionalText(row.campaign_name),
+      adsetId: optionalText(row.adset_id),
+      adsetName: optionalText(row.adset_name),
+      pageId: pageByAd.get(objectId) ?? null,
+      dateStart,
+      ...metricValues(row),
+    });
+  }
+
+  for (const values of writes) {
+    try {
+      const [upserted] = await db
+        .insert(metaAdInsights)
+        .values(values)
+        .onConflictDoUpdate({
+          target: [metaAdInsights.adAccountId, metaAdInsights.level, metaAdInsights.objectId, metaAdInsights.dateStart],
+          set: {
+            objectName: values.objectName,
+            campaignId: values.campaignId,
+            campaignName: values.campaignName,
+            adsetId: values.adsetId,
+            adsetName: values.adsetName,
+            pageId: values.pageId,
+            dateStop: values.dateStop,
+            spend: values.spend,
+            impressions: values.impressions,
+            clicks: values.clicks,
+            reach: values.reach,
+            leads: values.leads,
+            cpc: values.cpc,
+            cpm: values.cpm,
+            ctr: values.ctr,
+            costPerLead: values.costPerLead,
+            syncedAt: values.syncedAt,
+          },
+        })
+        .returning({ inserted: sql<boolean>`(xmax = 0)` });
+
+      if (!upserted) throw new Error(`Could not upsert Insight for ${values.objectId}`);
+      if (upserted.inserted) counts.imported += 1;
+      else counts.updated += 1;
+    } catch (error) {
+      counts.errors += 1;
+      if (errorMessages.length < 5) errorMessages.push(errorMessage(error));
+    }
+  }
+
+  return { ...counts, errorMessages };
+}
+
+/**
+ * Đồng bộ Insights cho tất cả TKQC Meta mà token có quyền (cùng Business).
+ * Nếu truyền `adAccountIds` thì chỉ sync các TKQC được chỉ định.
+ * Nếu không truyền, tự động phát hiện tất cả TKQC accessible qua `GET /me/adaccounts`.
+ */
 export async function syncFacebookInsights(options?: {
   since?: string;
   until?: string;
+  /** Chỉ sync các TKQC được liệt kê. Nếu bỏ trống: sync tất cả TKQC accessible. */
+  adAccountIds?: string[];
 }): Promise<SyncInsightsResult> {
   const config = getFacebookConfig();
   if (!config) throw new Error("Facebook Graph is not configured");
-  if (!config.adAccountId) throw new Error("Thiếu FACEBOOK_AD_ACCOUNT_ID");
 
   const { since, until } = resolveRange(options);
   const db = getDb();
@@ -223,151 +371,69 @@ export async function syncFacebookInsights(options?: {
 
   if (!run) throw new Error("Could not create Facebook Insights sync run");
 
-  const counts = { imported: 0, updated: 0, skipped: 0, errors: 0 };
-  const errors: string[] = [];
+  const totals = { imported: 0, updated: 0, skipped: 0, errors: 0 };
+  const allErrors: string[] = [];
+  const syncedAdAccounts: string[] = [];
 
   try {
-    const campaignRows: FacebookInsight[] = [];
-    for (const window of dateWindows(since, until, 7)) {
-      const chunk = await withGraphRetry(() =>
-        graphGetAllData<FacebookInsight>(`/${config.adAccountId}/insights`, {
-          level: "campaign",
-          time_increment: "1",
-          time_range: JSON.stringify(window),
-          limit: INSIGHT_LIMIT,
-          fields: CAMPAIGN_FIELDS,
-        }),
-      );
-      campaignRows.push(...chunk);
-    }
-    const adRows: FacebookInsight[] = [];
-    for (const window of dateWindows(since, until, 7)) {
-      const chunk = await withGraphRetry(() =>
-        graphGetAllData<FacebookInsight>(`/${config.adAccountId}/insights`, {
-          level: "ad",
-          time_increment: "1",
-          time_range: JSON.stringify(window),
-          limit: INSIGHT_LIMIT,
-          fields: AD_FIELDS,
-        }),
-      );
-      adRows.push(...chunk);
-    }
-
-    let pageByAd = new Map<string, string>();
-    try {
-      pageByAd = await loadPageByAdId(config.adAccountId);
-    } catch (error) {
-      counts.errors += 1;
-      errors.push(errorMessage(error));
-    }
-    try {
-      await ensureDiscoveredFacebookPages([...pageByAd.values()]);
-    } catch {
-      // Tên fanpage chỉ để hiển thị. Thiếu tên không làm hỏng số liệu ads.
-    }
-
-    const writes: Array<typeof metaAdInsights.$inferInsert> = [];
-    for (const row of campaignRows) {
-      const objectId = optionalText(row.campaign_id);
-      const dateStart = row.date_start ? parseUtcDate(row.date_start) : null;
-      if (!objectId || !dateStart) {
-        counts.skipped += 1;
-        continue;
-      }
-      const objectName = optionalText(row.campaign_name);
-      writes.push({
-        level: "campaign",
-        objectId,
-        objectName,
-        campaignId: objectId,
-        campaignName: objectName,
-        adsetId: null,
-        adsetName: null,
-        pageId: null,
-        dateStart,
-        ...metricValues(row),
-      });
-    }
-    for (const row of adRows) {
-      const objectId = optionalText(row.ad_id);
-      const dateStart = row.date_start ? parseUtcDate(row.date_start) : null;
-      if (!objectId || !dateStart) {
-        counts.skipped += 1;
-        continue;
-      }
-      writes.push({
-        level: "ad",
-        objectId,
-        objectName: optionalText(row.ad_name),
-        campaignId: optionalText(row.campaign_id),
-        campaignName: optionalText(row.campaign_name),
-        adsetId: optionalText(row.adset_id),
-        adsetName: optionalText(row.adset_name),
-        pageId: pageByAd.get(objectId) ?? null,
-        dateStart,
-        ...metricValues(row),
-      });
-    }
-
-    for (const values of writes) {
+    // Xác định danh sách TKQC cần sync
+    let targetAccountIds: string[];
+    if (options?.adAccountIds && options.adAccountIds.length > 0) {
+      targetAccountIds = options.adAccountIds.map((id) => normalizeAdAccountId(id)).filter((id): id is string => id !== null);
+    } else {
+      // Tự động phát hiện tất cả TKQC accessible
       try {
-        const [upserted] = await db
-          .insert(metaAdInsights)
-          .values(values)
-          .onConflictDoUpdate({
-            target: [metaAdInsights.level, metaAdInsights.objectId, metaAdInsights.dateStart],
-            set: {
-              objectName: values.objectName,
-              campaignId: values.campaignId,
-              campaignName: values.campaignName,
-              adsetId: values.adsetId,
-              adsetName: values.adsetName,
-              pageId: values.pageId,
-              dateStop: values.dateStop,
-              spend: values.spend,
-              impressions: values.impressions,
-              clicks: values.clicks,
-              reach: values.reach,
-              leads: values.leads,
-              cpc: values.cpc,
-              cpm: values.cpm,
-              ctr: values.ctr,
-              costPerLead: values.costPerLead,
-              syncedAt: values.syncedAt,
-            },
-          })
-          .returning({ inserted: sql<boolean>`(xmax = 0)` });
-
-        if (!upserted) throw new Error(`Could not upsert Insight for ${values.objectId}`);
-        if (upserted.inserted) counts.imported += 1;
-        else counts.updated += 1;
-      } catch (error) {
-        counts.errors += 1;
-        if (errors.length < 5) errors.push(errorMessage(error));
+        const accessible = await listAccessibleAdAccounts();
+        targetAccountIds = accessible.map((acc) => acc.id);
+      } catch {
+        // Fallback về env var nếu không list được
+        if (!config.adAccountId) throw new Error("Thiếu FACEBOOK_AD_ACCOUNT_ID và không thể liệt kê TKQC.");
+        targetAccountIds = [config.adAccountId];
       }
     }
 
-    const summary = `Imported ${counts.imported}, updated ${counts.updated}, skipped ${counts.skipped}, errors ${counts.errors}.`;
-    const message = errors.length ? `${summary} Error details: ${errors.join("; ")}` : summary;
+    if (targetAccountIds.length === 0) {
+      throw new Error("Không tìm thấy Tài khoản Quảng cáo Meta nào để đồng bộ.");
+    }
+
+    // Sync tuần tự từng TKQC (tránh rate limit)
+    for (const accountId of targetAccountIds) {
+      try {
+        const result = await syncInsightsForAccount(accountId, since, until);
+        totals.imported += result.imported;
+        totals.updated += result.updated;
+        totals.skipped += result.skipped;
+        totals.errors += result.errors;
+        allErrors.push(...result.errorMessages);
+        syncedAdAccounts.push(accountId);
+      } catch (error) {
+        totals.errors += 1;
+        if (allErrors.length < 10) {
+          allErrors.push(`[${accountId}] ${errorMessage(error)}`);
+        }
+      }
+    }
+
+    const summary = `Synced ${syncedAdAccounts.length}/${targetAccountIds.length} TKQC. Imported ${totals.imported}, updated ${totals.updated}, skipped ${totals.skipped}, errors ${totals.errors}.`;
+    const message = allErrors.length ? `${summary} Error details: ${allErrors.join("; ")}` : summary;
     await db
       .update(metaSyncRuns)
       .set({
-        status: counts.errors === 0 || counts.imported + counts.updated > 0 ? "ok" : "error",
+        status: totals.errors === 0 || totals.imported + totals.updated > 0 ? "ok" : "error",
         finishedAt: new Date(),
-        ...counts,
+        ...totals,
         message,
       })
       .where(eq(metaSyncRuns.id, run.id));
 
-    return { ...counts, message, runId: run.id, since, until };
+    return { ...totals, message, runId: run.id, since, until, syncedAdAccounts };
   } catch (error) {
     await db
       .update(metaSyncRuns)
       .set({
         status: "error",
         finishedAt: new Date(),
-        ...counts,
+        ...totals,
         message: errorMessage(error),
       })
       .where(eq(metaSyncRuns.id, run.id));

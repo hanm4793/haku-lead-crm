@@ -119,7 +119,7 @@ export default async function Page() {
       canManageAudiences={canManageAudiences(viewer.role)}
       tokenConfigured={Boolean(config?.token)}
       hasSynced={hasSynced}
-      configured={Boolean(config?.adAccountId)}
+      configured={Boolean(config?.adAccountId) || Boolean(config?.token)}
       adAccountId={config?.adAccountId ?? null}
       syncedAt={syncedAt}
       today={toDateInputValue(new Date().toISOString())}

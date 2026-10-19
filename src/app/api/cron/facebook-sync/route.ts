@@ -76,7 +76,8 @@ async function handleSync(request: NextRequest) {
 
   const tokenOk = isFacebookTokenConfigured();
   const fbConfig = getFacebookConfig();
-  const insightsOk = Boolean(fbConfig?.adAccountId);
+  // Auto-discovery: chỉ cần token là đủ, không cần adAccountId env var nữa
+  const insightsOk = tokenOk;
 
   let leadsOutcome:
     | { status: "synced"; result: SyncLeadsResult }
