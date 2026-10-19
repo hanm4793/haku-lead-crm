@@ -56,10 +56,13 @@ export function ProjectFacebookSync({
         toast.error("Đồng bộ lead thất bại", outcome.error);
         return;
       }
-      const { imported, updated, skipped, errors, message } = outcome.result;
+      const { imported, updated, skipped, errors, message, warnings } = outcome.result;
       const detail = `${message} (mới: ${imported}, cập nhật: ${updated}, bỏ qua: ${skipped}, lỗi: ${errors})`;
-      if (errors > 0) toast.warning("Đồng bộ lead xong nhưng có lỗi", detail);
-      else toast.success("Đã đồng bộ lead", detail);
+      if (errors > 0 || (warnings && warnings.length > 0)) {
+        toast.warning("Đã đồng bộ lead (có lưu ý)", detail);
+      } else {
+        toast.success("Đã đồng bộ lead (Form + Tin nhắn + Comment)", detail);
+      }
       router.refresh();
     } finally {
       setRunning(false);
@@ -69,7 +72,9 @@ export function ProjectFacebookSync({
   return (
     <div className="space-y-2 rounded-xl border border-border bg-card px-3 py-2.5 text-[13px] shadow-xs">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-slate-800">Đồng bộ lead Facebook</span>
+        <span className="font-medium text-slate-800">
+          Đồng bộ lead Facebook (Form · Tin nhắn · Comment)
+        </span>
         <Badge variant={tokenConfigured ? "success" : "warning"}>{tokenConfigured ? "Token OK" : "Thiếu token"}</Badge>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -86,10 +91,12 @@ export function ProjectFacebookSync({
         </div>
       </div>
 
-      <div className="text-[12px]">
+      <div className="space-y-1 text-[12px]">
         <LastSync label="Lần đồng bộ gần nhất" sync={lastLeadSync} />
+        {lastLeadSync?.message && (
+          <p className="text-[11px] text-muted-foreground">{lastLeadSync.message}</p>
+        )}
       </div>
-
     </div>
   );
 }

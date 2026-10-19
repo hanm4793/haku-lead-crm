@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray, isNotNull } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { activityLogs, facebookPages, leads, metaSyncRuns } from "@/lib/db/schema";
@@ -9,8 +9,15 @@ import {
   resolveActiveFacebookPageIds,
 } from "@/lib/db/facebook-pages-repo";
 import { getDefaultProject } from "@/lib/db/project-repo";
-import { FacebookGraphError, graphGetAllData } from "./graph-client";
-import { mapFacebookLeadFields, type FacebookFieldDatum } from "./map-lead";
+import { FacebookGraphError, graphGet, graphGetAllData } from "./graph-client";
+import {
+  mapFacebookCommentLead,
+  mapFacebookConversationLead,
+  mapFacebookLeadFields,
+  type FacebookCommentNode,
+  type FacebookConversationNode,
+  type FacebookFieldDatum,
+} from "./map-lead";
 import { resolvePageAccessTokens } from "./page-tokens";
 import { syncScopeTag } from "./sync-scope";
 
@@ -21,6 +28,12 @@ export interface SyncLeadsResult {
   errors: number;
   message: string;
   runId: string;
+  byChannel?: {
+    form: number;
+    message: number;
+    comment: number;
+  };
+  warnings?: string[];
 }
 
 type FacebookForm = {
@@ -38,6 +51,12 @@ type FacebookLead = {
   adset_name?: string;
   campaign_id?: string;
   campaign_name?: string;
+};
+
+type FacebookPostNode = {
+  id: string;
+  message?: string;
+  created_time?: string;
 };
 
 const DETAILED_LEAD_FIELDS =
@@ -59,13 +78,32 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown sync error";
 }
 
+function isPermissionError(error: unknown): boolean {
+  if (!(error instanceof FacebookGraphError)) return false;
+  return (
+    error.code === 200 ||
+    error.code === 10 ||
+    error.code === 190 ||
+    /requires?\b.*\bpermission/i.test(error.message)
+  );
+}
+
 function resultMessage(
-  counts: Omit<SyncLeadsResult, "message" | "runId">,
+  counts: { imported: number; updated: number; skipped: number; errors: number },
+  byChannel: { form: number; message: number; comment: number },
+  warnings: string[],
   errorDetails: string[],
 ): string {
-  const summary = `Imported ${counts.imported}, updated ${counts.updated}, skipped ${counts.skipped}, errors ${counts.errors}.`;
-  if (errorDetails.length === 0) return summary;
-  return `${summary} Error details: ${errorDetails.join("; ")}`;
+  const channelSummary = `(Form: ${byChannel.form}, Tin nhắn: ${byChannel.message}, Comment: ${byChannel.comment})`;
+  const summary = `Imported ${counts.imported}, updated ${counts.updated}, skipped ${counts.skipped}, errors ${counts.errors} ${channelSummary}.`;
+  const parts = [summary];
+  if (warnings.length > 0) {
+    parts.push(`Lưu ý quyền Token: ${warnings.join("; ")}`);
+  }
+  if (errorDetails.length > 0) {
+    parts.push(`Error details: ${errorDetails.join("; ")}`);
+  }
+  return parts.join(" ");
 }
 
 function isInvalidFieldError(error: unknown): error is FacebookGraphError {
@@ -133,16 +171,36 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
   }
 
   const counts = { imported: 0, updated: 0, skipped: 0, errors: 0 };
+  const byChannel = { form: 0, message: 0, comment: 0 };
   const errorDetails: string[] = [];
+  const warningSet = new Set<string>();
 
   function recordError(error: unknown) {
     counts.errors += 1;
     if (errorDetails.length < 5) errorDetails.push(errorMessage(error));
   }
 
+  function recordWarning(msg: string) {
+    if (warningSet.size < 5) warningSet.add(msg);
+  }
+
   try {
     const pageTokens = await resolvePageAccessTokens(pageIds);
     const fallbackProjectId = (await getDefaultProject().catch(() => null))?.id ?? null;
+
+    async function findExistingLead(fbLeadId: string) {
+      const [row] = await db
+        .select({
+          id: leads.id,
+          phone: leads.phone,
+          careNote: leads.careNote,
+          attrs: leads.attrs,
+        })
+        .from(leads)
+        .where(eq(leads.facebookLeadId, fbLeadId))
+        .limit(1);
+      return row ?? null;
+    }
 
     for (const pageId of pageIds) {
       const projectId = (await getFacebookPageProjectId(pageId)) ?? fallbackProjectId;
@@ -158,7 +216,10 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
 
       await refreshFacebookPageName(pageId, pageAuth.name).catch(() => undefined);
 
-      let forms: FacebookForm[];
+      // =======================================================================
+      // KÊNH 1: LEAD FORM (`/{pageId}/leadgen_forms` -> `channelDetail: "FORM"`)
+      // =======================================================================
+      let forms: FacebookForm[] = [];
       try {
         forms = await graphGetAllData<FacebookForm>(
           `/${pageId}/leadgen_forms`,
@@ -166,8 +227,7 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
           { accessToken: pageAuth.token },
         );
       } catch (error) {
-        recordError(new Error(`Page ${pageId}: ${errorMessage(error)}`));
-        continue;
+        recordError(new Error(`Page ${pageId} (Lead Form): ${errorMessage(error)}`));
       }
 
       for (const form of forms) {
@@ -186,20 +246,14 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
           });
 
           try {
-            const [existing] = await db
-              .select({ id: leads.id })
-              .from(leads)
-              .where(eq(leads.facebookLeadId, facebookLead.id))
-              .limit(1);
-
+            const existing = await findExistingLead(facebookLead.id);
             const hasAttrs = Object.keys(mapped.attrs).length > 0;
             const facebookMetadata = {
               ...(mapped.name !== null ? { name: mapped.name } : {}),
               ...(mapped.campaign !== null ? { campaign: mapped.campaign } : {}),
               ...(mapped.adContent !== null ? { adContent: mapped.adContent } : {}),
               ...(projectId ? { projectId } : {}),
-              // Field phụ của form đi vào attrs; form không có field phụ thì giữ attrs cũ.
-              ...(hasAttrs ? { attrs: mapped.attrs } : {}),
+              ...(hasAttrs ? { attrs: { ...(existing?.attrs ?? {}), ...mapped.attrs } } : {}),
               facebookFormId: form.id,
               facebookPageId: pageId,
               facebookAdId: optionalText(facebookLead.ad_id),
@@ -213,6 +267,7 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
                 .set({ ...facebookMetadata, updatedAt: new Date() })
                 .where(eq(leads.id, existing.id));
               counts.updated += 1;
+              byChannel.form += 1;
               continue;
             }
 
@@ -244,19 +299,217 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
               await tx.insert(activityLogs).values({
                 leadId: inserted.id,
                 kind: "CREATE",
-                message: "Lead created from Facebook Lead Ads.",
+                message: "Lead created from Facebook Lead Ads (Form).",
                 actorName: "Facebook sync",
               });
             });
             counts.imported += 1;
+            byChannel.form += 1;
           } catch (error) {
             recordError(error);
           }
         }
       }
+
+      // =======================================================================
+      // KÊNH 2: LEAD TIN NHẮN (`/{pageId}/conversations` -> `channelDetail: "TIN_NHAN"`)
+      // =======================================================================
+      try {
+        const convRes = await graphGet<{ data?: FacebookConversationNode[] }>(
+          `/${pageId}/conversations`,
+          {
+            fields:
+              "id,updated_time,link,participants,messages.limit(20){id,message,from,created_time}",
+            limit: "50",
+          },
+          { accessToken: pageAuth.token },
+        );
+        const conversations = convRes?.data ?? [];
+
+        for (const conv of conversations) {
+          const mapped = mapFacebookConversationLead(conv, pageId);
+          if (!mapped) continue;
+
+          try {
+            const existing = await findExistingLead(mapped.facebookLeadId);
+            if (existing) {
+              const nextAttrs = { ...(existing.attrs ?? {}), ...mapped.attrs };
+              const nextPhone = !existing.phone && mapped.phone ? mapped.phone : existing.phone;
+              const nextCareNote =
+                !existing.careNote && mapped.careNote ? mapped.careNote : existing.careNote;
+
+              await db
+                .update(leads)
+                .set({
+                  ...(mapped.name ? { name: mapped.name } : {}),
+                  ...(nextPhone !== undefined ? { phone: nextPhone } : {}),
+                  ...(nextCareNote !== undefined ? { careNote: nextCareNote } : {}),
+                  attrs: nextAttrs,
+                  ...(projectId ? { projectId } : {}),
+                  facebookPageId: pageId,
+                  updatedAt: new Date(),
+                })
+                .where(eq(leads.id, existing.id));
+              counts.updated += 1;
+              byChannel.message += 1;
+              continue;
+            }
+
+            await db.transaction(async (tx) => {
+              const [inserted] = await tx
+                .insert(leads)
+                .values({
+                  name: mapped.name,
+                  phone: mapped.phone,
+                  source: "FACEBOOK",
+                  channelDetail: "TIN_NHAN",
+                  facebookLeadId: mapped.facebookLeadId,
+                  facebookPageId: pageId,
+                  projectId,
+                  ...(mapped.createdAt ? { createdAt: mapped.createdAt } : {}),
+                  careNote: mapped.careNote ?? "",
+                  attrs: mapped.attrs,
+                })
+                .returning({ id: leads.id });
+
+              if (!inserted) {
+                throw new Error(`Could not insert Messenger lead ${mapped.facebookLeadId}`);
+              }
+
+              await tx.insert(activityLogs).values({
+                leadId: inserted.id,
+                kind: "CREATE",
+                message: "Lead đồng bộ từ Hộp thư Tin nhắn Fanpage (Messenger).",
+                actorName: "Facebook sync",
+              });
+            });
+            counts.imported += 1;
+            byChannel.message += 1;
+          } catch (error) {
+            recordError(error);
+          }
+        }
+      } catch (error) {
+        if (isPermissionError(error)) {
+          recordWarning(
+            `Thiếu quyền "pages_messaging" trên FACEBOOK_ACCESS_TOKEN để đồng bộ Lead Tin nhắn (Messenger)`,
+          );
+        } else {
+          recordError(new Error(`Page ${pageId} (Messenger): ${errorMessage(error)}`));
+        }
+      }
+
+      // =======================================================================
+      // KÊNH 3: LEAD BÌNH LUẬN (`/{pageId}/published_posts` -> `/{postId}/comments` -> `channelDetail: "COMMENT"`)
+      // =======================================================================
+      try {
+        const postsRes = await graphGet<{ data?: FacebookPostNode[] }>(
+          `/${pageId}/published_posts`,
+          { fields: "id,message,created_time", limit: "15" },
+          { accessToken: pageAuth.token },
+        );
+        const posts = postsRes?.data ?? [];
+
+        for (const post of posts) {
+          let comments: FacebookCommentNode[] = [];
+          try {
+            const commentsRes = await graphGet<{ data?: FacebookCommentNode[] }>(
+              `/${post.id}/comments`,
+              {
+                fields: "id,message,from,created_time,permalink_url",
+                filter: "stream",
+                limit: "50",
+              },
+              { accessToken: pageAuth.token },
+            );
+            comments = commentsRes?.data ?? [];
+          } catch (commentErr) {
+            if (isPermissionError(commentErr)) {
+              recordWarning(
+                `Thiếu quyền "pages_read_user_content" trên FACEBOOK_ACCESS_TOKEN để đồng bộ Lead Bình luận (Comment)`,
+              );
+              break;
+            }
+            continue;
+          }
+
+          for (const comment of comments) {
+            const mapped = mapFacebookCommentLead(comment, pageId, {
+              postId: post.id,
+              postMessage: post.message,
+            });
+            if (!mapped) continue;
+
+            try {
+              const existing = await findExistingLead(mapped.facebookLeadId);
+              if (existing) {
+                const nextAttrs = { ...(existing.attrs ?? {}), ...mapped.attrs };
+                const nextPhone = !existing.phone && mapped.phone ? mapped.phone : existing.phone;
+                await db
+                  .update(leads)
+                  .set({
+                    ...(mapped.name ? { name: mapped.name } : {}),
+                    ...(nextPhone !== undefined ? { phone: nextPhone } : {}),
+                    attrs: nextAttrs,
+                    ...(projectId ? { projectId } : {}),
+                    facebookPageId: pageId,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(leads.id, existing.id));
+                counts.updated += 1;
+                byChannel.comment += 1;
+                continue;
+              }
+
+              await db.transaction(async (tx) => {
+                const [inserted] = await tx
+                  .insert(leads)
+                  .values({
+                    name: mapped.name,
+                    phone: mapped.phone,
+                    source: "FACEBOOK",
+                    channelDetail: "COMMENT",
+                    facebookLeadId: mapped.facebookLeadId,
+                    facebookPageId: pageId,
+                    projectId,
+                    ...(mapped.createdAt ? { createdAt: mapped.createdAt } : {}),
+                    adContent: mapped.adContent,
+                    careNote: mapped.careNote ?? "",
+                    attrs: mapped.attrs,
+                  })
+                  .returning({ id: leads.id });
+
+                if (!inserted) {
+                  throw new Error(`Could not insert Comment lead ${mapped.facebookLeadId}`);
+                }
+
+                await tx.insert(activityLogs).values({
+                  leadId: inserted.id,
+                  kind: "CREATE",
+                  message: "Lead đồng bộ từ Bình luận Fanpage (Comment).",
+                  actorName: "Facebook sync",
+                });
+              });
+              counts.imported += 1;
+              byChannel.comment += 1;
+            } catch (error) {
+              recordError(error);
+            }
+          }
+        }
+      } catch (error) {
+        if (isPermissionError(error)) {
+          recordWarning(
+            `Thiếu quyền "pages_read_user_content" trên FACEBOOK_ACCESS_TOKEN để đồng bộ Lead Bình luận (Comment)`,
+          );
+        } else {
+          recordError(new Error(`Page ${pageId} (Comments): ${errorMessage(error)}`));
+        }
+      }
     }
 
-    const message = resultMessage(counts, errorDetails);
+    const warnings = [...warningSet];
+    const message = resultMessage(counts, byChannel, warnings, errorDetails);
     await db
       .update(metaSyncRuns)
       .set({
@@ -267,7 +520,7 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
       })
       .where(eq(metaSyncRuns.id, run.id));
 
-    return { ...counts, message, runId: run.id };
+    return { ...counts, byChannel, warnings, message, runId: run.id };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Facebook lead sync failed.";
     await db

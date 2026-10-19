@@ -6,6 +6,7 @@ import { FacebookGraphError } from "./graph-client";
 const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   getFacebookConfig: vi.fn(),
+  graphGet: vi.fn(),
   graphGetAllData: vi.fn(),
   resolveActiveFacebookPageIds: vi.fn(),
   getFacebookPageProjectId: vi.fn(),
@@ -25,7 +26,7 @@ vi.mock("./page-tokens", () => ({
 }));
 vi.mock("./graph-client", async (importOriginal) => {
   const original = await importOriginal<typeof import("./graph-client")>();
-  return { ...original, graphGetAllData: mocks.graphGetAllData };
+  return { ...original, graphGet: mocks.graphGet, graphGetAllData: mocks.graphGetAllData };
 });
 
 import { syncFacebookLeads } from "./sync-leads";
@@ -93,6 +94,7 @@ describe("syncFacebookLeads", () => {
       adAccountId: null,
       graphVersion: "v21.0",
     });
+    mocks.graphGet.mockResolvedValue({ data: [] });
     mocks.resolveActiveFacebookPageIds.mockResolvedValue(["page-1"]);
     mocks.resolvePageAccessTokens.mockResolvedValue(
       new Map([["page-1", { token: "page-token-1", name: "Page One" }]]),
@@ -276,4 +278,75 @@ describe("syncFacebookLeads", () => {
       }),
     });
   });
+
+  it("imports Messenger (TIN_NHAN) and Post Comment (COMMENT) leads alongside Form leads", async () => {
+    const { db, inserted } = createDb();
+    mocks.getDb.mockReturnValue(db);
+    mocks.graphGetAllData.mockResolvedValueOnce([]);
+    mocks.graphGet
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "conv-1",
+            updated_time: "2026-10-18T10:00:00+0000",
+            participants: { data: [{ id: "page-1" }, { id: "cust-1", name: "Khách Messenger" }] },
+            messages: {
+              data: [
+                {
+                  id: "m-1",
+                  message: "Báo giá xe Mazda CX5 số 0912345678",
+                  created_time: "2026-10-18T10:00:00+0000",
+                  from: { id: "cust-1", name: "Khách Messenger" },
+                },
+              ],
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        data: [{ id: "post-1", message: "Khuyến mãi tháng 10" }],
+      })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "cmt-1",
+            message: "Tư vấn trả góp giúp mình 0987654321",
+            created_time: "2026-10-18T11:00:00+0000",
+            from: { id: "cust-2", name: "Khách Comment" },
+          },
+        ],
+      });
+
+    const result = await syncFacebookLeads();
+
+    expect(result).toMatchObject({
+      imported: 2,
+      updated: 0,
+      errors: 0,
+      byChannel: { form: 0, message: 1, comment: 1 },
+    });
+    expect(inserted).toContainEqual({
+      table: leads,
+      values: expect.objectContaining({
+        facebookLeadId: "msg_conv-1",
+        name: "Khách Messenger",
+        phone: "0912345678",
+        source: "FACEBOOK",
+        channelDetail: "TIN_NHAN",
+      }),
+      inTransaction: true,
+    });
+    expect(inserted).toContainEqual({
+      table: leads,
+      values: expect.objectContaining({
+        facebookLeadId: "cmt_cmt-1",
+        name: "Khách Comment",
+        phone: "0987654321",
+        source: "FACEBOOK",
+        channelDetail: "COMMENT",
+      }),
+      inTransaction: true,
+    });
+  });
 });
+
