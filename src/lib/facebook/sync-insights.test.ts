@@ -6,11 +6,16 @@ const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   getFacebookConfig: vi.fn(),
   graphGetAllData: vi.fn(),
+  listAccessibleAdAccounts: vi.fn(),
+  normalizeAdAccountId: vi.fn((id: string) => id),
+  ensureDiscoveredFacebookPages: vi.fn(async () => {}),
 }));
 
 vi.mock("@/lib/db/client", () => ({ getDb: mocks.getDb }));
-vi.mock("./env", () => ({ getFacebookConfig: mocks.getFacebookConfig }));
-vi.mock("./graph-client", () => ({ graphGetAllData: mocks.graphGetAllData }));
+vi.mock("./env", () => ({ getFacebookConfig: mocks.getFacebookConfig, normalizeAdAccountId: mocks.normalizeAdAccountId }));
+vi.mock("./graph-client", () => ({ graphGetAllData: mocks.graphGetAllData, FacebookGraphError: class extends Error {} }));
+vi.mock("./custom-audiences", () => ({ listAccessibleAdAccounts: mocks.listAccessibleAdAccounts }));
+vi.mock("@/lib/db/facebook-pages-repo", () => ({ ensureDiscoveredFacebookPages: mocks.ensureDiscoveredFacebookPages }));
 
 import { syncFacebookInsights } from "./sync-insights";
 
@@ -83,6 +88,8 @@ describe("syncFacebookInsights", () => {
       adAccountId: "act_123",
       graphVersion: "v21.0",
     });
+    mocks.listAccessibleAdAccounts.mockResolvedValue([{ id: "act_123", name: "Test Account" }]);
+    mocks.normalizeAdAccountId.mockImplementation((id: string) => id);
   });
 
   it("uses the last 30 UTC dates and preserves missing metrics as null", async () => {
@@ -309,6 +316,8 @@ describe("syncFacebookInsights", () => {
   });
 
   it("requires an ad account before creating a sync run", async () => {
+    const { db } = createDb();
+    mocks.getDb.mockReturnValue(db);
     mocks.getFacebookConfig.mockReturnValue({
       token: "test-token",
       pageId: "page-1",
@@ -316,9 +325,10 @@ describe("syncFacebookInsights", () => {
       adAccountId: null,
       graphVersion: "v21.0",
     });
+    // No accessible ad accounts and no env var fallback
+    mocks.listAccessibleAdAccounts.mockResolvedValue([]);
 
-    await expect(syncFacebookInsights()).rejects.toThrow("Thiếu FACEBOOK_AD_ACCOUNT_ID");
-    expect(mocks.getDb).not.toHaveBeenCalled();
+    await expect(syncFacebookInsights()).rejects.toThrow("Không tìm thấy Tài khoản Quảng cáo Meta nào để đồng bộ");
     expect(mocks.graphGetAllData).not.toHaveBeenCalled();
   });
 });

@@ -127,6 +127,13 @@
       "when": 1791600000000,
       "tag": "0017_multi_ad_account",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791700000000,
+      "tag": "0018_crm_indexes",
+      "breakpoints": true
     }
   ]
 }
