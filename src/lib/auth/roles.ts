@@ -76,6 +76,15 @@ export function canManageAttrFieldsInProject(
   return canManageCatalogsInProject(viewer, projectId);
 }
 
+/** Tự động phân tích & tạo nhanh field phụ từ file dữ liệu mẫu bằng AI. */
+export function canSuggestAttrFieldsFromSample(
+  viewer: { role: UserRole; projectIds?: readonly string[] },
+  projectId?: string,
+): boolean {
+  if (projectId) return canManageAttrFieldsInProject(viewer, projectId);
+  return canManageAttrFields(viewer.role);
+}
+
 /** Tạo/sửa project, gán fanpage / partner / tài khoản ads. */
 export function canManageProjects(role: UserRole): boolean {
   return role === "SUPER_ADMIN";

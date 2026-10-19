@@ -312,7 +312,10 @@ export function ImportLeadsDialog({
                   <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
                   <div>
                     <strong>Cột không khớp cấu hình dự án:</strong>{" "}
-                    {report.unrecognizedColumns.join(", ")}. Các cột này sẽ bị bỏ qua khi import; những trường hợp lệ khác vẫn được lưu bình thường.
+                    {report.unrecognizedColumns.join(", ")}. Các cột này sẽ bị bỏ qua khi import; những trường hợp lệ khác vẫn được lưu bình thường.{" "}
+                    <span className="font-medium text-amber-900">
+                      (Mẹo: Vào mục Dự án → Tab Field phụ → bấm «Tạo nhanh từ file mẫu (AI)» để hệ thống tự động tạo các trường này trước khi import).
+                    </span>
                   </div>
                 </div>
               )}

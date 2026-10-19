@@ -20,6 +20,7 @@ import {
   canManageSettings,
   canManageUsers,
   canSeeNav,
+  canSuggestAttrFieldsFromSample,
   canSyncFacebook,
   canViewProjects,
   canUseAi,
@@ -85,11 +86,19 @@ describe("menu", () => {
   });
 
   it("partner manages catalog on member projects only", () => {
+    const superAdmin = { role: "SUPER_ADMIN" as const, projectIds: [] };
     const partner = { role: "PARTNER_ADMIN" as const, projectIds: ["proj-a"] };
+    const staff = { role: "STAFF" as const, projectIds: ["proj-a"] };
     expect(canManageCatalogsInProject(partner, "proj-a")).toBe(true);
     expect(canManageCatalogsInProject(partner, "proj-b")).toBe(false);
     expect(canManageAttrFieldsInProject(partner, "proj-a")).toBe(true);
     expect(canManageAttrFields("PARTNER_ADMIN")).toBe(false);
+    expect(canSuggestAttrFieldsFromSample(superAdmin)).toBe(true);
+    expect(canSuggestAttrFieldsFromSample(superAdmin, "proj-b")).toBe(true);
+    expect(canSuggestAttrFieldsFromSample(partner, "proj-a")).toBe(true);
+    expect(canSuggestAttrFieldsFromSample(partner, "proj-b")).toBe(false);
+    expect(canSuggestAttrFieldsFromSample(partner)).toBe(false);
+    expect(canSuggestAttrFieldsFromSample(staff, "proj-a")).toBe(false);
   });
 
   it("projects menu and create gate", () => {

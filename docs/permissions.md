@@ -19,6 +19,7 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 | Tự động đồng bộ dữ liệu Facebook (`/api/cron/facebook-sync`, `canSyncFacebook`) | Có (hoặc `CRON_SECRET`) | Không, API trả 403 | Không, API trả 403 |
 | Danh mục / field phụ trên **Cài đặt** | Có. `canManageCatalogs` / `canManageAttrFields` | Không | Không |
 | Danh mục / field phụ trên **Dự án → chi tiết** | Có | Có trên project là thành viên. `canManageCatalogsInProject` | Không |
+| Tạo nhanh field phụ từ file dữ liệu mẫu bằng AI (`canSuggestAttrFieldsFromSample`) | Có | Có trên project là thành viên | Không |
 | Quản lý project (tạo, thêm fanpage từ danh sách Facebook cấp quyền, bật tắt, gỡ, kiểm tra, gán partner, ads) | Có. `canManageProjects` | Không (xem danh sách read-only) | Không |
 | Đổi project đang xem (switcher header) | Có. Cookie `semtop_project_id` | Có. Membership ≥ 1 (hiện cả khi 1 project) | Có khi > 1 membership (kế thừa partner) |
 | Đổi mật khẩu khi đã đăng nhập | Có | Có | Có |

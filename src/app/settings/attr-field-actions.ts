@@ -3,17 +3,28 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { canManageAttrFields, canManageAttrFieldsInProject } from "@/lib/auth/roles";
+import {
+  canManageAttrFields,
+  canManageAttrFieldsInProject,
+  canSuggestAttrFieldsFromSample,
+} from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import {
   createAttrField,
   deleteAttrField,
   getAttrField,
   isListAttrFieldType,
+  listAttrFields,
   updateAttrField,
   type AttrFieldType,
 } from "@/lib/db/attr-fields-repo";
+import { getReferenceData } from "@/lib/db/leads-repo";
 import { assertCanAccessProject, resolveActiveProject, toProjectViewer } from "@/lib/db/project-repo";
+import {
+  analyzeExcelForAttrFields,
+  slugifyAttrKey,
+  type AnalyzeAttrFieldsReport,
+} from "@/lib/leads/analyze-attr-fields";
 
 export type AttrFieldActionResult = { ok: true } | { ok: false; error: string };
 
@@ -176,3 +187,136 @@ export async function deleteAttrFieldAction(input: unknown): Promise<AttrFieldAc
     await deleteAttrField(parsed.data.id);
   }, "Xóa field thất bại.", parsed.data.projectId);
 }
+
+export type AnalyzeAttrFieldsResult =
+  | { ok: true; report: AnalyzeAttrFieldsReport }
+  | { ok: false; error: string };
+
+export async function analyzeAttrFieldsFromExcelAction(
+  formData: FormData,
+): Promise<AnalyzeAttrFieldsResult> {
+  const rawProjectId = formData.get("projectId");
+  const explicitProjectId =
+    typeof rawProjectId === "string" && rawProjectId.trim() ? rawProjectId.trim() : undefined;
+
+  const viewer = await getScopedViewer();
+  if (!viewer) return { ok: false, error: "Phiên đăng nhập đã hết hạn." };
+  if (!canSuggestAttrFieldsFromSample(viewer, explicitProjectId)) {
+    return { ok: false, error: "Bạn không có quyền thiết lập field phụ từ file mẫu." };
+  }
+
+  const gate = await requireAttrFieldAdmin(explicitProjectId);
+  if ("error" in gate) return { ok: false, error: gate.error };
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { ok: false, error: "Vui lòng chọn file Excel (.xlsx)." };
+  }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) {
+    return { ok: false, error: "Chỉ hỗ trợ định dạng file Excel (.xlsx)." };
+  }
+
+  try {
+    const [arrayBuffer, existingFields, reference] = await Promise.all([
+      file.arrayBuffer(),
+      listAttrFields(gate.projectId),
+      getReferenceData(gate.projectId, viewer).catch(() => null),
+    ]);
+
+    const report = await analyzeExcelForAttrFields(arrayBuffer, {
+      existingFields,
+      labels: reference?.labels,
+      enableAi: true,
+    });
+
+    return { ok: true, report };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Không phân tích được file Excel.",
+    };
+  }
+}
+
+const bulkCreateFieldsSchema = scopedSchema.extend({
+  fields: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(120),
+        key: z.string().trim().max(64).optional(),
+        fieldType: fieldTypeSchema.default("text"),
+        options: z.array(z.string().max(200)).optional(),
+        required: z.boolean().optional(),
+      }),
+    )
+    .min(1)
+    .max(100),
+});
+
+export type BulkCreateAttrFieldsResult =
+  | { ok: true; createdCount: number; skippedCount: number }
+  | { ok: false; error: string };
+
+export async function bulkCreateAttrFieldsAction(
+  input: unknown,
+): Promise<BulkCreateAttrFieldsResult> {
+  const parsed = bulkCreateFieldsSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Danh sách field cần tạo không hợp lệ." };
+  }
+
+  const { projectId: explicitProjectId, fields } = parsed.data;
+  const viewer = await getScopedViewer();
+  if (!viewer) return { ok: false, error: "Phiên đăng nhập đã hết hạn." };
+  if (!canSuggestAttrFieldsFromSample(viewer, explicitProjectId)) {
+    return { ok: false, error: "Bạn không có quyền tạo nhanh field phụ." };
+  }
+
+  const gate = await requireAttrFieldAdmin(explicitProjectId);
+  if ("error" in gate) return { ok: false, error: gate.error };
+
+  try {
+    const existing = await listAttrFields(gate.projectId);
+    const existingKeys = new Set(existing.map((f) => f.key.toLowerCase()));
+    let nextSortOrder =
+      existing.reduce((max, f) => Math.max(max, f.sortOrder), 0) + 1;
+
+    let createdCount = 0;
+    let skippedCount = 0;
+
+    for (const item of fields) {
+      const key = slugifyAttrKey(item.key?.trim() || item.label);
+      if (!key || existingKeys.has(key)) {
+        skippedCount++;
+        continue;
+      }
+      const options = isListAttrFieldType(item.fieldType)
+        ? (item.options ?? []).map((o) => o.trim()).filter(Boolean)
+        : [];
+      if (isListAttrFieldType(item.fieldType) && options.length === 0) {
+        skippedCount++;
+        continue;
+      }
+      await createAttrField({
+        projectId: gate.projectId,
+        label: item.label,
+        key,
+        fieldType: item.fieldType,
+        options,
+        required: Boolean(item.required),
+        sortOrder: nextSortOrder++,
+      });
+      existingKeys.add(key);
+      createdCount++;
+    }
+
+    revalidateAttrFieldPages(gate.projectId);
+    return { ok: true, createdCount, skippedCount };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Tạo hàng loạt field phụ thất bại.",
+    };
+  }
+}
+

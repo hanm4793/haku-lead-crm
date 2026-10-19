@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, Sparkles, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -28,6 +28,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AttrFieldRow, AttrFieldType } from "@/lib/db/attr-fields-repo";
 import { useToast } from "@/components/providers/toast-provider";
+
+import { ImportAttrFieldsDialog } from "./import-attr-fields-dialog";
 
 function isListAttrFieldType(type: AttrFieldType): boolean {
   return type === "select" || type === "multiselect";
@@ -99,6 +101,7 @@ export function AttrFieldsPanel({
   const [pending, setPending] = React.useState(false);
 
   const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [importSampleOpen, setImportSampleOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<AttrFieldRow | null>(null);
   const [form, setForm] = React.useState<FormState>(EMPTY_FORM);
   const [deleting, setDeleting] = React.useState<AttrFieldRow | null>(null);
@@ -260,10 +263,22 @@ export function AttrFieldsPanel({
             }
             actions={
               isAdmin && (
-                <Button size="sm" className="gap-1.5" onClick={openCreate}>
-                  <Plus className="size-3.5" />
-                  Thêm field phụ
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
+                    onClick={() => setImportSampleOpen(true)}
+                  >
+                    <Sparkles className="size-3.5" />
+                    Tạo nhanh từ file mẫu (AI)
+                  </Button>
+                  <Button size="sm" className="gap-1.5" onClick={openCreate}>
+                    <Plus className="size-3.5" />
+                    Thêm field phụ
+                  </Button>
+                </div>
               )
             }
           />
@@ -428,6 +443,15 @@ export function AttrFieldsPanel({
           setDeleting(null);
         }}
       />
+
+      {isAdmin && (
+        <ImportAttrFieldsDialog
+          open={importSampleOpen}
+          onOpenChange={setImportSampleOpen}
+          projectId={projectId}
+          onCreated={() => router.refresh()}
+        />
+      )}
     </div>
   );
 }
