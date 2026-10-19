@@ -72,7 +72,7 @@ import {
   CONTACT_STATUS_LABEL,
   CONTACT_STATUS_OPTIONS,
   FAIL_REASON_OPTIONS,
-  NO_PROJECT_FILTER_VALUE,
+  NO_PAGE_FILTER_VALUE,
 } from "@/lib/constants";
 import type {
   AudienceCampaignOption,
@@ -174,7 +174,7 @@ export function AudienceBuilderPanel({
   const [createOpen, setCreateOpen] = React.useState<boolean>(false);
 
   const [selectedProjectIds, setSelectedProjectIds] = React.useState<string[]>(
-    activeProjectId ? [activeProjectId] : [],
+    activeProjectId ? [activeProjectId] : projects[0]?.id ? [projects[0].id] : [],
   );
   const [selectedPageIds, setSelectedPageIds] = React.useState<string[]>([]);
   const [selectedCampaigns, setSelectedCampaigns] = React.useState<string[]>([]);
@@ -222,55 +222,51 @@ export function AudienceBuilderPanel({
   const [prevActiveProjectId, setPrevActiveProjectId] = React.useState(activeProjectId);
   if (activeProjectId !== prevActiveProjectId) {
     setPrevActiveProjectId(activeProjectId);
-    setSelectedProjectIds(activeProjectId ? [activeProjectId] : []);
+    setSelectedProjectIds(
+      activeProjectId ? [activeProjectId] : projects[0]?.id ? [projects[0].id] : [],
+    );
     setSelectedPageIds([]);
     setSelectedCampaigns([]);
   }
 
   const effectiveProjectId =
-    selectedProjectIds.length === 1 && selectedProjectIds[0] !== NO_PROJECT_FILTER_VALUE
-      ? selectedProjectIds[0]!
-      : null;
+    selectedProjectIds.length === 1 ? selectedProjectIds[0]! : null;
 
   const projectNameById = React.useMemo(
-    () =>
-      new Map([
-        [NO_PROJECT_FILTER_VALUE, "Chưa gắn dự án"],
-        ...projects.map((p) => [p.id, p.name] as [string, string]),
-      ]),
+    () => new Map(projects.map((p) => [p.id, p.name])),
     [projects],
   );
 
   const pageNameById = React.useMemo(
     () =>
-      new Map(
-        allPages.map((p) => [p.id, p.name?.trim() || `Fanpage ${p.id}`]),
-      ),
+      new Map([
+        [NO_PAGE_FILTER_VALUE, "Không có Fanpage"],
+        ...allPages.map(
+          (p) => [p.id, p.name?.trim() || `Fanpage ${p.id}`] as [string, string],
+        ),
+      ]),
     [allPages],
   );
 
   const projectSelectOptions = React.useMemo(
-    () => [
-      { value: NO_PROJECT_FILTER_VALUE, label: "Chưa gắn dự án (Không thuộc dự án)" },
-      ...projects.map((p) => ({ value: p.id, label: p.name })),
-    ],
+    () => projects.map((p) => ({ value: p.id, label: p.name })),
     [projects],
   );
 
   const listPageSelectOptions = React.useMemo(() => {
     const pages =
       listProjectIds.length > 0
-        ? allPages.filter((p) => {
-            if (listProjectIds.includes(NO_PROJECT_FILTER_VALUE) && !p.projectId) {
-              return true;
-            }
-            return Boolean(p.projectId && listProjectIds.includes(p.projectId));
-          })
+        ? allPages.filter((p) =>
+            Boolean(p.projectId && listProjectIds.includes(p.projectId)),
+          )
         : allPages;
-    return pages.map((p) => ({
-      value: p.id,
-      label: p.name?.trim() || `Fanpage ${p.id}`,
-    }));
+    return [
+      { value: NO_PAGE_FILTER_VALUE, label: "Không có Fanpage (Nhập tay / Khác)" },
+      ...pages.map((p) => ({
+        value: p.id,
+        label: p.name?.trim() || `Fanpage ${p.id}`,
+      })),
+    ];
   }, [allPages, listProjectIds]);
 
   const filteredSegments = React.useMemo(() => {
@@ -291,18 +287,18 @@ export function AudienceBuilderPanel({
             : seg.projectId
               ? [seg.projectId]
               : [];
-        const matchNoProj =
-          listProjectIds.includes(NO_PROJECT_FILTER_VALUE) &&
-          (segProjIds.length === 0 || segProjIds.includes(NO_PROJECT_FILTER_VALUE));
-        const matchSomeProj = segProjIds.some((id) => listProjectIds.includes(id));
-        if (!matchNoProj && !matchSomeProj) {
+        if (!segProjIds.some((id) => listProjectIds.includes(id))) {
           return false;
         }
       }
 
       if (listPageIds.length > 0) {
         const segPageIds = seg.filters.facebookPageIds ?? [];
-        if (!segPageIds.some((id) => listPageIds.includes(id))) {
+        const matchNoPage =
+          listPageIds.includes(NO_PAGE_FILTER_VALUE) &&
+          (segPageIds.length === 0 || segPageIds.includes(NO_PAGE_FILTER_VALUE));
+        const matchSomePage = segPageIds.some((id) => listPageIds.includes(id));
+        if (!matchNoPage && !matchSomePage) {
           return false;
         }
       }
@@ -345,19 +341,17 @@ export function AudienceBuilderPanel({
   const scopedPages = React.useMemo(
     () =>
       selectedProjectIds.length > 0
-        ? allPages.filter((p) => {
-            if (selectedProjectIds.includes(NO_PROJECT_FILTER_VALUE) && !p.projectId) {
-              return true;
-            }
-            return Boolean(p.projectId && selectedProjectIds.includes(p.projectId));
-          })
+        ? allPages.filter((p) =>
+            Boolean(p.projectId && selectedProjectIds.includes(p.projectId)),
+          )
         : allPages,
     [allPages, selectedProjectIds],
   );
 
   const pageSelectOptions = React.useMemo(
-    () =>
-      scopedPages.map((p) => {
+    () => [
+      { value: NO_PAGE_FILTER_VALUE, label: "Không có Fanpage (Nhập tay / Khác)" },
+      ...scopedPages.map((p) => {
         const pageLabel = p.name?.trim() || `Fanpage ${p.id}`;
         const projLabel =
           selectedProjectIds.length !== 1 && p.projectId
@@ -368,12 +362,16 @@ export function AudienceBuilderPanel({
           label: projLabel ? `${pageLabel} (${projLabel})` : pageLabel,
         };
       }),
+    ],
     [scopedPages, selectedProjectIds.length, projectNameById],
   );
 
   const scopedCampaignOptions = React.useMemo(() => {
-    if (selectedPageIds.length > 0) {
-      const selectedPageSet = new Set(selectedPageIds);
+    const realSelectedPageIds = selectedPageIds.filter(
+      (id) => id !== NO_PAGE_FILTER_VALUE,
+    );
+    if (realSelectedPageIds.length > 0) {
+      const selectedPageSet = new Set(realSelectedPageIds);
       return campaignOptions.filter((c) =>
         (c.pageIds ?? []).some((id) => selectedPageSet.has(id)),
       );
@@ -393,9 +391,12 @@ export function AudienceBuilderPanel({
   const campaignSelectOptions = React.useMemo(
     () =>
       scopedCampaignOptions.map((c) => {
+        const realSelectedPageIds = selectedPageIds.filter(
+          (id) => id !== NO_PAGE_FILTER_VALUE,
+        );
         const scopedCount =
-          selectedPageIds.length > 0 && c.countsByPage
-            ? selectedPageIds.reduce(
+          realSelectedPageIds.length > 0 && c.countsByPage
+            ? realSelectedPageIds.reduce(
                 (sum, pageId) => sum + (c.countsByPage?.[pageId] ?? 0),
                 0,
               )
@@ -497,16 +498,17 @@ export function AudienceBuilderPanel({
       nextPageIds = selectedPageIds,
       nextCampaigns = selectedCampaigns,
       nextCategories = categories,
+      nextProjIds = selectedProjectIds,
     ) => {
       const parts: string[] = [];
       if (nextPageIds.length === 1) {
         parts.push(pageNameById.get(nextPageIds[0]!) ?? "1 Fanpage");
       } else if (nextPageIds.length > 1) {
         parts.push(`${nextPageIds.length} Fanpage`);
-      } else if (selectedProjectIds.length === 1) {
-        parts.push(projectNameById.get(selectedProjectIds[0]!) ?? "Dự án");
-      } else if (selectedProjectIds.length > 1) {
-        parts.push(`${selectedProjectIds.length} Dự án`);
+      } else if (nextProjIds.length === 1) {
+        parts.push(projectNameById.get(nextProjIds[0]!) ?? "Dự án");
+      } else if (nextProjIds.length > 1) {
+        parts.push(`${nextProjIds.length} Dự án`);
       }
 
       if (nextCampaigns.length === 1) {
@@ -536,7 +538,11 @@ export function AudienceBuilderPanel({
   );
 
   const resetBuilderFilters = React.useCallback(() => {
-    const defaultProjIds = activeProjectId ? [activeProjectId] : [];
+    const defaultProjIds = activeProjectId
+      ? [activeProjectId]
+      : projects[0]?.id
+        ? [projects[0].id]
+        : [];
     setSelectedProjectIds(defaultProjIds);
     setSelectedPageIds([]);
     setSelectedCampaigns([]);
@@ -559,7 +565,7 @@ export function AudienceBuilderPanel({
       ),
     );
     setSegmentDesc("");
-  }, [activeProjectId, projectNameById]);
+  }, [activeProjectId, projects, projectNameById]);
 
   const handleOpenCreateModal = () => {
     resetBuilderFilters();
@@ -595,6 +601,11 @@ export function AudienceBuilderPanel({
   };
 
   const handleCreateAndSync = async () => {
+    if (selectedProjectIds.length === 0) {
+      toast.error("Vui lòng chọn dự án cho tệp KH.");
+      return;
+    }
+
     const cleanCore = stripCrmPrefix(segmentName);
     if (!cleanCore) {
       toast.error("Vui lòng nhập tên tệp KH.");
@@ -771,16 +782,14 @@ export function AudienceBuilderPanel({
               setListProjectIds(nextProjIds);
               setListPage(1);
               if (nextProjIds.length > 0) {
-                const allowed = new Set(
-                  allPages
-                    .filter((p) => {
-                      if (nextProjIds.includes(NO_PROJECT_FILTER_VALUE) && !p.projectId) {
-                        return true;
-                      }
-                      return Boolean(p.projectId && nextProjIds.includes(p.projectId));
-                    })
+                const allowed = new Set([
+                  NO_PAGE_FILTER_VALUE,
+                  ...allPages
+                    .filter((p) =>
+                      Boolean(p.projectId && nextProjIds.includes(p.projectId)),
+                    )
                     .map((p) => p.id),
-                );
+                ]);
                 setListPageIds((prev) => prev.filter((id) => allowed.has(id)));
               }
             }}
@@ -1314,7 +1323,7 @@ export function AudienceBuilderPanel({
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs font-medium">
-                        Dự án <span className="font-normal text-muted-foreground">(Không bắt buộc)</span>
+                        Dự án <span className="text-rose-500">*</span>
                       </Label>
                       {selectedProjectIds.length > 0 && (
                         <button
@@ -1325,7 +1334,7 @@ export function AudienceBuilderPanel({
                           }}
                           className="text-[11px] font-medium text-primary hover:underline"
                         >
-                          Tất cả dự án
+                          Bỏ chọn ({selectedProjectIds.length})
                         </button>
                       )}
                     </div>
@@ -1335,28 +1344,30 @@ export function AudienceBuilderPanel({
                       onChange={(nextProjIds) => {
                         setSelectedProjectIds(nextProjIds);
                         let nextPages = selectedPageIds;
+                        let nextCampaigns = selectedCampaigns;
                         if (nextProjIds.length > 0) {
-                          const allowedPageIds = new Set(
-                            allPages
-                              .filter((p) => {
-                                if (nextProjIds.includes(NO_PROJECT_FILTER_VALUE) && !p.projectId) {
-                                  return true;
-                                }
-                                return Boolean(p.projectId && nextProjIds.includes(p.projectId));
-                              })
+                          const allowedPageIds = new Set([
+                            NO_PAGE_FILTER_VALUE,
+                            ...allPages
+                              .filter((p) =>
+                                Boolean(p.projectId && nextProjIds.includes(p.projectId)),
+                              )
                               .map((p) => p.id),
-                          );
+                          ]);
                           nextPages = selectedPageIds.filter((id) =>
                             allowedPageIds.has(id),
                           );
                           setSelectedPageIds(nextPages);
 
+                          const realNextPages = nextPages.filter(
+                            (id) => id !== NO_PAGE_FILTER_VALUE,
+                          );
                           const allowedCampaigns = new Set(
                             campaignOptions
                               .filter((c) =>
-                                nextPages.length > 0
+                                realNextPages.length > 0
                                   ? (c.pageIds ?? []).some((id) =>
-                                      nextPages.includes(id),
+                                      realNextPages.includes(id),
                                     )
                                   : (c.projectIds ?? []).some((id) =>
                                       nextProjIds.includes(id),
@@ -1367,12 +1378,21 @@ export function AudienceBuilderPanel({
                               )
                               .map((c) => c.name),
                           );
-                          setSelectedCampaigns((prev) =>
-                            prev.filter((name) => allowedCampaigns.has(name)),
+                          nextCampaigns = selectedCampaigns.filter((name) =>
+                            allowedCampaigns.has(name),
                           );
+                          setSelectedCampaigns(nextCampaigns);
                         }
+                        setSegmentName(
+                          generateSuggestedName(
+                            nextPages,
+                            nextCampaigns,
+                            categories,
+                            nextProjIds,
+                          ),
+                        );
                       }}
-                      placeholder="Tất cả dự án (Toàn hệ thống)"
+                      placeholder="Chọn dự án..."
                       className="w-full bg-white"
                       contentClassName="w-[320px]"
                     />
@@ -1381,7 +1401,10 @@ export function AudienceBuilderPanel({
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs font-medium">
-                        Fanpage ({scopedPages.length})
+                        Fanpage ({scopedPages.length}){" "}
+                        <span className="font-normal text-muted-foreground">
+                          (Không bắt buộc)
+                        </span>
                       </Label>
                       {selectedPageIds.length > 0 && (
                         <button
@@ -1408,8 +1431,11 @@ export function AudienceBuilderPanel({
                       onChange={(nextIds) => {
                         setSelectedPageIds(nextIds);
                         let nextCampaigns = selectedCampaigns;
-                        if (nextIds.length > 0) {
-                          const nextIdSet = new Set(nextIds);
+                        const realNextIds = nextIds.filter(
+                          (id) => id !== NO_PAGE_FILTER_VALUE,
+                        );
+                        if (realNextIds.length > 0) {
+                          const nextIdSet = new Set(realNextIds);
                           const allowedCampaignNames = new Set(
                             campaignOptions
                               .filter((c) =>
@@ -1432,7 +1458,7 @@ export function AudienceBuilderPanel({
                           ),
                         );
                       }}
-                      placeholder="Tất cả Fanpage"
+                      placeholder="Tất cả Fanpage (Hoặc không có Fanpage)"
                       className="w-full bg-white"
                       contentClassName="w-[320px]"
                     />

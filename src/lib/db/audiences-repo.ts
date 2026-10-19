@@ -9,7 +9,7 @@ import {
   type AudienceFanpageBreakdown,
   type RawAudienceLead,
 } from "@/lib/audiences/customer-audience";
-import { NO_PROJECT_FILTER_VALUE } from "@/lib/constants";
+import { NO_PAGE_FILTER_VALUE } from "@/lib/constants";
 import { getDb } from "@/lib/db/client";
 import {
   audienceSegments,
@@ -94,22 +94,22 @@ function buildAudienceWhereConditions(
 
   const filterProjectIds = (filters.projectIds ?? []).map((id) => id.trim()).filter(Boolean);
   if (filterProjectIds.length > 0) {
-    const hasNoProject = filterProjectIds.includes(NO_PROJECT_FILTER_VALUE);
-    const uuidProjectIds = filterProjectIds.filter((id) => id !== NO_PROJECT_FILTER_VALUE);
-    if (hasNoProject && uuidProjectIds.length > 0) {
-      conds.push(or(isNull(leads.projectId), inArray(leads.projectId, uuidProjectIds))!);
-    } else if (hasNoProject) {
-      conds.push(isNull(leads.projectId));
-    } else if (uuidProjectIds.length > 0) {
-      conds.push(inArray(leads.projectId, uuidProjectIds));
-    }
-  } else if (projectId && projectId !== NO_PROJECT_FILTER_VALUE) {
+    conds.push(inArray(leads.projectId, filterProjectIds));
+  } else if (projectId) {
     conds.push(eq(leads.projectId, projectId));
   }
 
   const pageIds = (filters.facebookPageIds ?? []).map((id) => id.trim()).filter(Boolean);
   if (pageIds.length > 0) {
-    conds.push(inArray(leads.facebookPageId, pageIds));
+    const hasNoPage = pageIds.includes(NO_PAGE_FILTER_VALUE);
+    const realPageIds = pageIds.filter((id) => id !== NO_PAGE_FILTER_VALUE);
+    if (hasNoPage && realPageIds.length > 0) {
+      conds.push(or(isNull(leads.facebookPageId), inArray(leads.facebookPageId, realPageIds))!);
+    } else if (hasNoPage) {
+      conds.push(isNull(leads.facebookPageId));
+    } else if (realPageIds.length > 0) {
+      conds.push(inArray(leads.facebookPageId, realPageIds));
+    }
   }
 
   const campaigns = (filters.campaigns ?? []).map((c) => c.trim()).filter(Boolean);
@@ -238,19 +238,19 @@ function matchesAudienceFiltersInMemory(
 ): boolean {
   const filterProjectIds = (filters.projectIds ?? []).map((id) => id.trim()).filter(Boolean);
   if (filterProjectIds.length > 0) {
-    const hasNoProject = filterProjectIds.includes(NO_PROJECT_FILTER_VALUE);
-    const uuidProjectIds = filterProjectIds.filter((id) => id !== NO_PROJECT_FILTER_VALUE);
-    const matched =
-      (hasNoProject && !lead.projectId) ||
-      (lead.projectId !== null && uuidProjectIds.includes(lead.projectId));
-    if (!matched) return false;
-  } else if (projectId && projectId !== NO_PROJECT_FILTER_VALUE) {
+    if (!lead.projectId || !filterProjectIds.includes(lead.projectId)) return false;
+  } else if (projectId) {
     if (lead.projectId !== projectId) return false;
   }
 
   const pageIds = (filters.facebookPageIds ?? []).map((id) => id.trim()).filter(Boolean);
   if (pageIds.length > 0) {
-    if (!lead.facebookPageId || !pageIds.includes(lead.facebookPageId)) return false;
+    const hasNoPage = pageIds.includes(NO_PAGE_FILTER_VALUE);
+    const realPageIds = pageIds.filter((id) => id !== NO_PAGE_FILTER_VALUE);
+    const matched =
+      (hasNoPage && !lead.facebookPageId) ||
+      Boolean(lead.facebookPageId && realPageIds.includes(lead.facebookPageId));
+    if (!matched) return false;
   }
 
   const campaigns = (filters.campaigns ?? []).map((c) => c.trim()).filter(Boolean);
@@ -426,9 +426,7 @@ export async function createAudienceSegments(input: {
 
   if (mode === "split_by_page") {
     let targetPageIds = (input.filters.facebookPageIds ?? []).map((id) => id.trim()).filter(Boolean);
-    const filterProjectIds = (input.filters.projectIds ?? [])
-      .map((id) => id.trim())
-      .filter((id) => id && id !== NO_PROJECT_FILTER_VALUE);
+    const filterProjectIds = (input.filters.projectIds ?? []).map((id) => id.trim()).filter(Boolean);
 
     // Nếu chưa chọn fanpage cụ thể nhưng chọn "Tách theo từng Fanpage", lấy toàn bộ fanpage đang bật của các dự án đã chọn
     if (targetPageIds.length === 0) {
@@ -438,7 +436,7 @@ export async function createAudienceSegments(input: {
         .where(
           filterProjectIds.length > 0
             ? and(inArray(facebookPages.projectId, filterProjectIds), eq(facebookPages.active, true))
-            : input.projectId && input.projectId !== NO_PROJECT_FILTER_VALUE
+            : input.projectId
               ? and(eq(facebookPages.projectId, input.projectId), eq(facebookPages.active, true))
               : eq(facebookPages.active, true),
         );
@@ -446,16 +444,23 @@ export async function createAudienceSegments(input: {
     }
 
     if (targetPageIds.length > 0) {
-      const pageRows = await db
-        .select({
-          facebookPageId: facebookPages.facebookPageId,
-          name: facebookPages.name,
-        })
-        .from(facebookPages)
-        .where(inArray(facebookPages.facebookPageId, targetPageIds));
-      const nameByPageId = new Map(
-        pageRows.map((p) => [p.facebookPageId, p.name?.trim() || p.facebookPageId]),
-      );
+      const realPageIds = targetPageIds.filter((id) => id !== NO_PAGE_FILTER_VALUE);
+      const pageRows =
+        realPageIds.length > 0
+          ? await db
+              .select({
+                facebookPageId: facebookPages.facebookPageId,
+                name: facebookPages.name,
+              })
+              .from(facebookPages)
+              .where(inArray(facebookPages.facebookPageId, realPageIds))
+          : [];
+      const nameByPageId = new Map<string, string>([
+        [NO_PAGE_FILTER_VALUE, "Không có Fanpage"],
+        ...pageRows.map(
+          (p) => [p.facebookPageId, p.name?.trim() || p.facebookPageId] as [string, string],
+        ),
+      ]);
 
       const createdIds: string[] = [];
       for (const pageId of targetPageIds) {
@@ -562,10 +567,12 @@ export async function syncAudienceSegmentToMeta(input: {
       filters: segment.filters ?? {},
     });
 
-    let targetPageIds = (segment.filters?.facebookPageIds ?? []).map((id) => id.trim()).filter(Boolean);
+    let targetPageIds = (segment.filters?.facebookPageIds ?? [])
+      .map((id) => id.trim())
+      .filter((id) => id && id !== NO_PAGE_FILTER_VALUE);
     const filterProjectIds = (segment.filters?.projectIds ?? [])
       .map((id) => id.trim())
-      .filter((id) => id && id !== NO_PROJECT_FILTER_VALUE);
+      .filter(Boolean);
     if (targetPageIds.length === 0) {
       if (filterProjectIds.length > 0) {
         const projPages = await db
@@ -573,7 +580,7 @@ export async function syncAudienceSegmentToMeta(input: {
           .from(facebookPages)
           .where(and(inArray(facebookPages.projectId, filterProjectIds), eq(facebookPages.active, true)));
         targetPageIds = projPages.map((p) => p.facebookPageId);
-      } else if (segment.projectId && segment.projectId !== NO_PROJECT_FILTER_VALUE) {
+      } else if (segment.projectId) {
         const projPages = await db
           .select({ facebookPageId: facebookPages.facebookPageId })
           .from(facebookPages)
