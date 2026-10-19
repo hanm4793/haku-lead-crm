@@ -167,6 +167,9 @@ export const UNASSIGNED_ASSIGNMENT_LABEL = "Chưa phân bổ";
 /** Giá trị sentinel để lọc các lead chưa giao nhân viên phụ trách. */
 export const UNASSIGNED_FILTER_VALUE = "__UNASSIGNED__";
 
+/** Giá trị sentinel để lọc các lead hoặc tệp KH không gắn dự án cụ thể. */
+export const NO_PROJECT_FILTER_VALUE = "__NO_PROJECT__";
+
 export const SOURCE_LABEL: Record<LeadSource, string> = Object.fromEntries(
   SOURCE_OPTIONS.map((o) => [o.value, o.label]),
 ) as Record<LeadSource, string>;

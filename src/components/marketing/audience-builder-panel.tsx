@@ -72,6 +72,7 @@ import {
   CONTACT_STATUS_LABEL,
   CONTACT_STATUS_OPTIONS,
   FAIL_REASON_OPTIONS,
+  NO_PROJECT_FILTER_VALUE,
 } from "@/lib/constants";
 import type {
   AudienceCampaignOption,
@@ -227,10 +228,16 @@ export function AudienceBuilderPanel({
   }
 
   const effectiveProjectId =
-    selectedProjectIds.length === 1 ? selectedProjectIds[0]! : null;
+    selectedProjectIds.length === 1 && selectedProjectIds[0] !== NO_PROJECT_FILTER_VALUE
+      ? selectedProjectIds[0]!
+      : null;
 
   const projectNameById = React.useMemo(
-    () => new Map(projects.map((p) => [p.id, p.name])),
+    () =>
+      new Map([
+        [NO_PROJECT_FILTER_VALUE, "Chưa gắn dự án"],
+        ...projects.map((p) => [p.id, p.name] as [string, string]),
+      ]),
     [projects],
   );
 
@@ -243,16 +250,22 @@ export function AudienceBuilderPanel({
   );
 
   const projectSelectOptions = React.useMemo(
-    () => projects.map((p) => ({ value: p.id, label: p.name })),
+    () => [
+      { value: NO_PROJECT_FILTER_VALUE, label: "Chưa gắn dự án (Không thuộc dự án)" },
+      ...projects.map((p) => ({ value: p.id, label: p.name })),
+    ],
     [projects],
   );
 
   const listPageSelectOptions = React.useMemo(() => {
     const pages =
       listProjectIds.length > 0
-        ? allPages.filter(
-            (p) => p.projectId && listProjectIds.includes(p.projectId),
-          )
+        ? allPages.filter((p) => {
+            if (listProjectIds.includes(NO_PROJECT_FILTER_VALUE) && !p.projectId) {
+              return true;
+            }
+            return Boolean(p.projectId && listProjectIds.includes(p.projectId));
+          })
         : allPages;
     return pages.map((p) => ({
       value: p.id,
@@ -278,7 +291,11 @@ export function AudienceBuilderPanel({
             : seg.projectId
               ? [seg.projectId]
               : [];
-        if (!segProjIds.some((id) => listProjectIds.includes(id))) {
+        const matchNoProj =
+          listProjectIds.includes(NO_PROJECT_FILTER_VALUE) &&
+          (segProjIds.length === 0 || segProjIds.includes(NO_PROJECT_FILTER_VALUE));
+        const matchSomeProj = segProjIds.some((id) => listProjectIds.includes(id));
+        if (!matchNoProj && !matchSomeProj) {
           return false;
         }
       }
@@ -328,9 +345,12 @@ export function AudienceBuilderPanel({
   const scopedPages = React.useMemo(
     () =>
       selectedProjectIds.length > 0
-        ? allPages.filter(
-            (p) => p.projectId && selectedProjectIds.includes(p.projectId),
-          )
+        ? allPages.filter((p) => {
+            if (selectedProjectIds.includes(NO_PROJECT_FILTER_VALUE) && !p.projectId) {
+              return true;
+            }
+            return Boolean(p.projectId && selectedProjectIds.includes(p.projectId));
+          })
         : allPages,
     [allPages, selectedProjectIds],
   );
@@ -744,29 +764,30 @@ export function AudienceBuilderPanel({
             />
           </div>
 
-          {projects.length > 0 && (
-            <MultiSelect
-              options={projectSelectOptions}
-              selected={listProjectIds}
-              onChange={(nextProjIds) => {
-                setListProjectIds(nextProjIds);
-                setListPage(1);
-                if (nextProjIds.length > 0) {
-                  const allowed = new Set(
-                    allPages
-                      .filter(
-                        (p) => p.projectId && nextProjIds.includes(p.projectId),
-                      )
-                      .map((p) => p.id),
-                  );
-                  setListPageIds((prev) => prev.filter((id) => allowed.has(id)));
-                }
-              }}
-              placeholder="Tất cả dự án"
-              className="h-8 w-[170px] text-[13px]"
-              contentClassName="w-[240px]"
-            />
-          )}
+          <MultiSelect
+            options={projectSelectOptions}
+            selected={listProjectIds}
+            onChange={(nextProjIds) => {
+              setListProjectIds(nextProjIds);
+              setListPage(1);
+              if (nextProjIds.length > 0) {
+                const allowed = new Set(
+                  allPages
+                    .filter((p) => {
+                      if (nextProjIds.includes(NO_PROJECT_FILTER_VALUE) && !p.projectId) {
+                        return true;
+                      }
+                      return Boolean(p.projectId && nextProjIds.includes(p.projectId));
+                    })
+                    .map((p) => p.id),
+                );
+                setListPageIds((prev) => prev.filter((id) => allowed.has(id)));
+              }
+            }}
+            placeholder="Tất cả dự án"
+            className="h-8 w-[180px] text-[13px]"
+            contentClassName="w-[260px]"
+          />
 
           <MultiSelect
             options={listPageSelectOptions}
@@ -1292,7 +1313,9 @@ export function AudienceBuilderPanel({
                 <div className="grid gap-3.5 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium">Dự án</Label>
+                      <Label className="text-xs font-medium">
+                        Dự án <span className="font-normal text-muted-foreground">(Không bắt buộc)</span>
+                      </Label>
                       {selectedProjectIds.length > 0 && (
                         <button
                           type="button"
@@ -1302,7 +1325,7 @@ export function AudienceBuilderPanel({
                           }}
                           className="text-[11px] font-medium text-primary hover:underline"
                         >
-                          Tất cả
+                          Tất cả dự án
                         </button>
                       )}
                     </div>
@@ -1315,11 +1338,12 @@ export function AudienceBuilderPanel({
                         if (nextProjIds.length > 0) {
                           const allowedPageIds = new Set(
                             allPages
-                              .filter(
-                                (p) =>
-                                  p.projectId &&
-                                  nextProjIds.includes(p.projectId),
-                              )
+                              .filter((p) => {
+                                if (nextProjIds.includes(NO_PROJECT_FILTER_VALUE) && !p.projectId) {
+                                  return true;
+                                }
+                                return Boolean(p.projectId && nextProjIds.includes(p.projectId));
+                              })
                               .map((p) => p.id),
                           );
                           nextPages = selectedPageIds.filter((id) =>
@@ -1348,7 +1372,7 @@ export function AudienceBuilderPanel({
                           );
                         }
                       }}
-                      placeholder="Tất cả dự án"
+                      placeholder="Tất cả dự án (Toàn hệ thống)"
                       className="w-full bg-white"
                       contentClassName="w-[320px]"
                     />

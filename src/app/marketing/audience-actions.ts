@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { canManageAudiences } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
+import { NO_PROJECT_FILTER_VALUE } from "@/lib/constants";
 import {
   analyzeFanpagePersona,
   createAudienceSegments,
@@ -94,7 +95,10 @@ const personaConfigSchema = z.object({
 });
 
 const audienceFilterSchema = z.object({
-  projectIds: z.array(z.string().uuid()).max(100).optional(),
+  projectIds: z
+    .array(z.union([z.string().uuid(), z.literal(NO_PROJECT_FILTER_VALUE)]))
+    .max(100)
+    .optional(),
   facebookPageIds: z.array(z.string().trim().min(1)).max(200).optional(),
   campaigns: z.array(z.string().trim().min(1).max(300)).max(200).optional(),
   channelDetails: z.array(z.enum(CHANNEL_DETAILS)).optional(),

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 
 import {
   deduplicateAudienceContacts,
@@ -9,6 +9,7 @@ import {
   type AudienceFanpageBreakdown,
   type RawAudienceLead,
 } from "@/lib/audiences/customer-audience";
+import { NO_PROJECT_FILTER_VALUE } from "@/lib/constants";
 import { getDb } from "@/lib/db/client";
 import {
   audienceSegments,
@@ -93,8 +94,16 @@ function buildAudienceWhereConditions(
 
   const filterProjectIds = (filters.projectIds ?? []).map((id) => id.trim()).filter(Boolean);
   if (filterProjectIds.length > 0) {
-    conds.push(inArray(leads.projectId, filterProjectIds));
-  } else if (projectId) {
+    const hasNoProject = filterProjectIds.includes(NO_PROJECT_FILTER_VALUE);
+    const uuidProjectIds = filterProjectIds.filter((id) => id !== NO_PROJECT_FILTER_VALUE);
+    if (hasNoProject && uuidProjectIds.length > 0) {
+      conds.push(or(isNull(leads.projectId), inArray(leads.projectId, uuidProjectIds))!);
+    } else if (hasNoProject) {
+      conds.push(isNull(leads.projectId));
+    } else if (uuidProjectIds.length > 0) {
+      conds.push(inArray(leads.projectId, uuidProjectIds));
+    }
+  } else if (projectId && projectId !== NO_PROJECT_FILTER_VALUE) {
     conds.push(eq(leads.projectId, projectId));
   }
 
@@ -229,8 +238,13 @@ function matchesAudienceFiltersInMemory(
 ): boolean {
   const filterProjectIds = (filters.projectIds ?? []).map((id) => id.trim()).filter(Boolean);
   if (filterProjectIds.length > 0) {
-    if (!lead.projectId || !filterProjectIds.includes(lead.projectId)) return false;
-  } else if (projectId) {
+    const hasNoProject = filterProjectIds.includes(NO_PROJECT_FILTER_VALUE);
+    const uuidProjectIds = filterProjectIds.filter((id) => id !== NO_PROJECT_FILTER_VALUE);
+    const matched =
+      (hasNoProject && !lead.projectId) ||
+      (lead.projectId !== null && uuidProjectIds.includes(lead.projectId));
+    if (!matched) return false;
+  } else if (projectId && projectId !== NO_PROJECT_FILTER_VALUE) {
     if (lead.projectId !== projectId) return false;
   }
 
@@ -412,7 +426,9 @@ export async function createAudienceSegments(input: {
 
   if (mode === "split_by_page") {
     let targetPageIds = (input.filters.facebookPageIds ?? []).map((id) => id.trim()).filter(Boolean);
-    const filterProjectIds = (input.filters.projectIds ?? []).map((id) => id.trim()).filter(Boolean);
+    const filterProjectIds = (input.filters.projectIds ?? [])
+      .map((id) => id.trim())
+      .filter((id) => id && id !== NO_PROJECT_FILTER_VALUE);
 
     // Nếu chưa chọn fanpage cụ thể nhưng chọn "Tách theo từng Fanpage", lấy toàn bộ fanpage đang bật của các dự án đã chọn
     if (targetPageIds.length === 0) {
@@ -422,7 +438,7 @@ export async function createAudienceSegments(input: {
         .where(
           filterProjectIds.length > 0
             ? and(inArray(facebookPages.projectId, filterProjectIds), eq(facebookPages.active, true))
-            : input.projectId
+            : input.projectId && input.projectId !== NO_PROJECT_FILTER_VALUE
               ? and(eq(facebookPages.projectId, input.projectId), eq(facebookPages.active, true))
               : eq(facebookPages.active, true),
         );
@@ -547,7 +563,9 @@ export async function syncAudienceSegmentToMeta(input: {
     });
 
     let targetPageIds = (segment.filters?.facebookPageIds ?? []).map((id) => id.trim()).filter(Boolean);
-    const filterProjectIds = (segment.filters?.projectIds ?? []).map((id) => id.trim()).filter(Boolean);
+    const filterProjectIds = (segment.filters?.projectIds ?? [])
+      .map((id) => id.trim())
+      .filter((id) => id && id !== NO_PROJECT_FILTER_VALUE);
     if (targetPageIds.length === 0) {
       if (filterProjectIds.length > 0) {
         const projPages = await db
@@ -555,7 +573,7 @@ export async function syncAudienceSegmentToMeta(input: {
           .from(facebookPages)
           .where(and(inArray(facebookPages.projectId, filterProjectIds), eq(facebookPages.active, true)));
         targetPageIds = projPages.map((p) => p.facebookPageId);
-      } else if (segment.projectId) {
+      } else if (segment.projectId && segment.projectId !== NO_PROJECT_FILTER_VALUE) {
         const projPages = await db
           .select({ facebookPageId: facebookPages.facebookPageId })
           .from(facebookPages)
