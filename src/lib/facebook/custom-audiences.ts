@@ -153,7 +153,7 @@ export async function createMetaCustomAudience(input: {
         subtype: "CUSTOM",
         description:
           input.description?.trim() ||
-          "Tệp khách hàng gốc (Seed) tạo mới từ Haku Lead CRM — Không ghi đè tệp cũ",
+          "Tệp khách hàng gốc (Seed) tạo mới từ Semtop CRM — Không ghi đè tệp cũ",
         customer_file_source: "USER_PROVIDED_ONLY",
       },
     );
@@ -220,7 +220,7 @@ export async function createMetaPageEngagementAudience(input: {
       {
         name: finalName,
         prefill: true,
-        description: `Tệp khách hàng tạo mới từ Haku Lead CRM`,
+        description: `Tệp khách hàng tạo mới từ Semtop CRM`,
         rule,
       },
     );
