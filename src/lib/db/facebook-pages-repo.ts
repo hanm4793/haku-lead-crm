@@ -5,6 +5,7 @@ import { ensureDefaultProject } from "@/lib/db/project-repo";
 import { facebookPages, leads } from "@/lib/db/schema";
 import { parseFacebookPageIds } from "@/lib/facebook/env";
 import { graphGet } from "@/lib/facebook/graph-client";
+import { isPersonalFacebookPage } from "@/lib/facebook/page-tokens";
 
 export type FacebookPageRow = {
   id: string;
@@ -36,7 +37,8 @@ export async function listFacebookPages(options?: { projectId?: string }): Promi
     })
     .from(facebookPages)
     .where(where)
-    .orderBy(sql`${facebookPages.name} IS NULL ASC`, asc(facebookPages.name), asc(facebookPages.facebookPageId));
+    .orderBy(sql`${facebookPages.name} IS NULL ASC`, asc(facebookPages.name), asc(facebookPages.facebookPageId))
+    .then((rows) => rows.filter((r) => Boolean(r.name?.trim()) && !isPersonalFacebookPage(r.facebookPageId, r.name)));
 }
 
 /** Page đang bật để sync lead. Nếu bảng trống → bootstrap từ env rồi trả về. */
@@ -91,6 +93,7 @@ export async function ensureFacebookPagesFromEnv(
       .where(eq(facebookPages.facebookPageId, facebookPageId))
       .limit(1);
     if (existing) continue;
+    if (isPersonalFacebookPage(facebookPageId)) continue;
     await db.insert(facebookPages).values({
       facebookPageId,
       name: null,
@@ -113,6 +116,7 @@ export async function ensureDiscoveredFacebookPages(
   const resolvedProjectId = projectId ?? (await defaultProjectId());
   const db = getDb();
   for (const facebookPageId of unique) {
+    if (isPersonalFacebookPage(facebookPageId)) continue;
     const [existing] = await db
       .select({ id: facebookPages.id, name: facebookPages.name })
       .from(facebookPages)
@@ -128,8 +132,9 @@ export async function ensureDiscoveredFacebookPages(
       name = null;
     }
 
+    if (!name || isPersonalFacebookPage(facebookPageId, name)) continue;
     if (existing) {
-      if (name) {
+      if (name && !isPersonalFacebookPage(facebookPageId, name)) {
         await db
           .update(facebookPages)
           .set({ name, updatedAt: new Date() })
@@ -138,6 +143,7 @@ export async function ensureDiscoveredFacebookPages(
       continue;
     }
 
+    if (isPersonalFacebookPage(facebookPageId)) continue;
     await db.insert(facebookPages).values({
       facebookPageId,
       name,

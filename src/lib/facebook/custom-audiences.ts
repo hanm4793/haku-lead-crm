@@ -35,6 +35,7 @@ type MeAdAccount = {
   name?: string;
   account_status?: number;
   currency?: string;
+  business?: { id?: string; name?: string } | null;
 };
 
 type CreateCustomAudienceResponse = {
@@ -63,13 +64,14 @@ export async function listAccessibleAdAccounts(): Promise<AccessibleAdAccount[]>
 
   try {
     const rawAccounts = await graphGetAllData<MeAdAccount>("/me/adaccounts", {
-      fields: "id,account_id,name,account_status,currency",
+      fields: "id,account_id,name,account_status,currency,business{id,name}",
       limit: "100",
     });
 
     for (const item of rawAccounts) {
       const id = normalizeAdAccountId(item.id || item.account_id);
       if (!id) continue;
+      if (id === "act_340430489385127" || /mạnh\s*hà|manh\s*ha/i.test(item.name ?? "")) continue;
       const accountId = item.account_id?.trim() || id.replace(/^act_/, "");
       byId.set(id, {
         id,
