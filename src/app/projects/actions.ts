@@ -207,6 +207,7 @@ export type AccessiblePageOption = {
   /** available: chọn được · in_project: đã có ở dự án này · other_project: đang thuộc dự án khác. */
   state: "available" | "in_project" | "other_project";
   otherProjectName?: string;
+  tokenAssigned?: boolean;
 };
 
 /**
@@ -227,6 +228,7 @@ export async function listAccessiblePagesAction(
     ]);
     const byPageId = new Map(known.map((p) => [p.facebookPageId, p]));
     const projectName = new Map(allProjects.map((p) => [p.id, p.name]));
+    const accessibleIds = new Set(accessible.map((p) => p.id));
     const mergedPages = new Map<string, { id: string; name: string | null }>();
     for (const p of accessible) mergedPages.set(p.id, { id: p.id, name: p.name });
     for (const p of known) { if (!mergedPages.has(p.facebookPageId)) mergedPages.set(p.facebookPageId, { id: p.facebookPageId, name: p.name }); }
@@ -238,6 +240,7 @@ export async function listAccessiblePagesAction(
         name: page.name,
         state,
         otherProjectName: state === "other_project" && owner ? projectName.get(owner) : undefined,
+        tokenAssigned: accessibleIds.has(page.id),
       };
     });
     return { ok: true, pages };

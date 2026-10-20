@@ -92,9 +92,22 @@ export function ProjectPagesTable({
   const [loadingList, setLoadingList] = React.useState(false);
   const [listFailed, setListFailed] = React.useState(false);
   const [accessible, setAccessible] = React.useState<AccessiblePageOption[]>([]);
+  const [unassignedPageIds, setUnassignedPageIds] = React.useState<Set<string>>(new Set());
   const [selected, setSelected] = React.useState<string[]>([]);
   const [listQuery, setListQuery] = React.useState("");
   const { pending, run, toast } = useRunner();
+
+  React.useEffect(() => {
+    if (!canManage) return;
+    let cancelled = false;
+    void listAccessiblePagesAction(projectId).then((res) => {
+      if (!cancelled && res.ok) {
+        setAccessible(res.pages);
+        setUnassignedPageIds(new Set(res.pages.filter((p) => p.tokenAssigned === false).map((p) => p.facebookPageId)));
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [canManage, projectId]);
 
   const mine = React.useMemo(() => pages.filter((p) => p.projectId === projectId), [pages, projectId]);
 
@@ -120,7 +133,16 @@ export function ProjectPagesTable({
           title="Mở trang Facebook"
           className="font-semibold text-slate-800 hover:text-primary hover:underline"
         >
-          {p.name?.trim() || "Chưa có tên"}
+          <span>{p.name?.trim() || "Chưa có tên"}</span>
+          {unassignedPageIds.has(p.facebookPageId) ? (
+            <Badge
+              variant="warning"
+              className="ml-2"
+              title="Fanpage này nằm trong BM nhưng chưa được assign quyền cho tài khoản Facebook kết nối Token. Chỉ đọc được số liệu Ads, chưa kéo được Lead trực tiếp từ Page."
+            >
+              Chưa assign quyền Page cho Token
+            </Badge>
+          ) : null}
         </a>
       ),
     },
@@ -190,6 +212,9 @@ export function ProjectPagesTable({
       return;
     }
     setAccessible(result.pages);
+    setUnassignedPageIds(
+      new Set(result.pages.filter((p) => p.tokenAssigned === false).map((p) => p.facebookPageId)),
+    );
   };
 
   const check = async () => {
@@ -314,6 +339,11 @@ export function ProjectPagesTable({
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium text-slate-800">{page.name ?? "Chưa có tên"}</span>
                         <span className="block font-mono text-[11px] text-muted-foreground">{page.facebookPageId}</span>
+                        {page.tokenAssigned === false && (
+                          <span className="mt-0.5 block text-[11px] font-medium text-amber-700">
+                            ⚠ Chưa assign quyền Page cho tài khoản Token trên BM (chỉ có dữ liệu Ads, chưa kéo được Lead)
+                          </span>
+                        )}
                       </span>
                       {page.state === "in_project" && <Badge variant="success">Đã trong dự án</Badge>}
                       {page.state === "other_project" && (
