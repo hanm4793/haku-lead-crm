@@ -227,7 +227,10 @@ export async function listAccessiblePagesAction(
     ]);
     const byPageId = new Map(known.map((p) => [p.facebookPageId, p]));
     const projectName = new Map(allProjects.map((p) => [p.id, p.name]));
-    const pages = accessible.map<AccessiblePageOption>((page) => {
+    const mergedPages = new Map<string, { id: string; name: string | null }>();
+    for (const p of accessible) mergedPages.set(p.id, { id: p.id, name: p.name });
+    for (const p of known) { if (!mergedPages.has(p.facebookPageId)) mergedPages.set(p.facebookPageId, { id: p.facebookPageId, name: p.name }); }
+    const pages = [...mergedPages.values()].map<AccessiblePageOption>((page) => {
       const owner = byPageId.get(page.id)?.projectId ?? null;
       const state = !owner ? "available" : owner === projectId ? "in_project" : "other_project";
       return {
@@ -261,7 +264,7 @@ export async function addPagesToProjectAction(input: {
     const accessible = new Map((await listAccessiblePages()).map((p) => [p.id, p]));
     const known = new Map((await listFacebookPages()).map((p) => [p.facebookPageId, p]));
     for (const id of wanted) {
-      if (!accessible.has(id)) {
+      if (!accessible.has(id) && !known.has(id)) {
         return { ok: false, error: `Tài khoản Facebook chưa có quyền với fanpage ${id}.` };
       }
       const owner = known.get(id)?.projectId;
@@ -270,7 +273,7 @@ export async function addPagesToProjectAction(input: {
       }
     }
     for (const id of wanted) {
-      await addFacebookPage(id, accessible.get(id)?.name ?? null, projectId.data);
+      await addFacebookPage(id, accessible.get(id)?.name ?? known.get(id)?.name ?? null, projectId.data);
     }
     revalidateAll();
     revalidatePath(`/projects/${projectId.data}`);

@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db/client";
 import { ensureDiscoveredFacebookPages } from "@/lib/db/facebook-pages-repo";
 import { metaAdInsights, metaSyncRuns } from "@/lib/db/schema";
 
+import { pageLabelFromCampaigns } from "@/lib/marketing/insights-view";
 import { pageIdFromCreative, type AdCreative } from "./ad-page";
 import { listAccessibleAdAccounts } from "./custom-audiences";
 import { getFacebookConfig, normalizeAdAccountId } from "./env";
@@ -253,7 +254,20 @@ async function syncInsightsForAccount(
     errorMessages.push(errorMessage(error));
   }
   try {
-    await ensureDiscoveredFacebookPages([...pageByAd.values()]);
+    const campsByPage = new Map<string, Array<string | null>>();
+    for (const r of adRows) {
+      const pid = r.ad_id ? pageByAd.get(r.ad_id) : undefined;
+      if (!pid || !r.campaign_name) continue;
+      const list = campsByPage.get(pid) ?? [];
+      list.push(r.campaign_name);
+      campsByPage.set(pid, list);
+    }
+    const fallbackNames = new Map<string, string>();
+    for (const [pid, names] of campsByPage.entries()) {
+      const label = pageLabelFromCampaigns(names);
+      if (label) fallbackNames.set(pid, label);
+    }
+    await ensureDiscoveredFacebookPages([...pageByAd.values()], undefined, fallbackNames);
   } catch {
     // Tên fanpage chỉ để hiển thị. Thiếu tên không làm hỏng số liệu ads.
   }

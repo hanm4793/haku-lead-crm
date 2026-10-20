@@ -81,6 +81,7 @@ export async function getFacebookPageProjectId(facebookPageId: string): Promise<
 export async function ensureFacebookPagesFromEnv(
   pageIds = parseFacebookPageIds(),
   projectId?: string,
+  fallbackNames?: ReadonlyMap<string, string>,
 ): Promise<number> {
   if (!isDatabaseConfigured() || pageIds.length === 0) return 0;
   const resolvedProjectId = projectId ?? (await defaultProjectId());
@@ -109,6 +110,7 @@ export async function ensureFacebookPagesFromEnv(
 export async function ensureDiscoveredFacebookPages(
   pageIds: string[],
   projectId?: string,
+  fallbackNames?: ReadonlyMap<string, string>,
 ): Promise<void> {
   const unique = [...new Set(pageIds.map((id) => id.trim()).filter((id) => /^\d{5,}$/.test(id)))];
   if (!isDatabaseConfigured() || unique.length === 0) return;
@@ -132,6 +134,7 @@ export async function ensureDiscoveredFacebookPages(
       name = null;
     }
 
+    if (!name) name = fallbackNames?.get(facebookPageId)?.trim() || null;
     if (!name || isPersonalFacebookPage(facebookPageId, name)) continue;
     if (existing) {
       if (name && !isPersonalFacebookPage(facebookPageId, name)) {
@@ -157,6 +160,7 @@ export async function addFacebookPage(
   facebookPageIdRaw: string,
   nameHint?: string | null,
   projectId?: string,
+  fallbackNames?: ReadonlyMap<string, string>,
 ) {
   const facebookPageId = facebookPageIdRaw.trim();
   if (!/^\d{5,}$/.test(facebookPageId)) {
