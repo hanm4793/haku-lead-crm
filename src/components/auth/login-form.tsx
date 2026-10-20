@@ -42,7 +42,8 @@ export function LoginForm({ configured }: { configured: boolean }) {
       const supabase = createSupabaseBrowserClient();
 
       if (mode === "forgot") {
-        const redirectTo = `${window.location.origin}/login/reset`;
+        const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || window.location.origin;
+        const redirectTo = `${siteOrigin}/login/reset`;
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
         if (resetError) {
           toast.error(resetError.message);

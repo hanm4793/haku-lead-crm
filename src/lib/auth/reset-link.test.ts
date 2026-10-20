@@ -11,6 +11,14 @@ describe("readResetLink", () => {
     ).toEqual({ kind: "tokens", accessToken: "aaa", refreshToken: "bbb" });
   });
 
+  it("reads direct token_hash links from custom email templates", () => {
+    expect(
+      readResetLink(
+        "https://crm.semtop.vn/login/reset?token_hash=th_123&type=invite",
+      ),
+    ).toEqual({ kind: "token_hash", tokenHash: "th_123", otpType: "invite" });
+  });
+
   it("reads the same-browser recovery code", () => {
     expect(readResetLink("http://localhost:3000/login/reset?code=pkce-code")).toEqual({
       kind: "code",

@@ -9,8 +9,28 @@ export type MappedFacebookLead = {
   attrs: Record<string, string>;
 };
 
-const PHONE_KEYS = new Set(["phone_number", "phone", "mobile_phone"]);
-const NAME_KEYS = new Set(["full_name", "first_name", "last_name"]);
+const PHONE_KEYS = new Set([
+  "phone_number",
+  "phone",
+  "mobile_phone",
+  "số_điện_thoại",
+  "so_dien_thoai",
+  "sđt",
+  "sdt",
+  "điện_thoại",
+  "dien_thoai",
+]);
+const FULL_NAME_KEYS = new Set([
+  "full_name",
+  "tên_đầy_đủ",
+  "ten_day_du",
+  "họ_và_tên",
+  "ho_va_ten",
+  "họ_tên",
+  "ho_ten",
+]);
+const FIRST_NAME_KEYS = new Set(["first_name", "tên", "ten"]);
+const LAST_NAME_KEYS = new Set(["last_name", "họ", "ho"]);
 
 /** Field Meta tự sinh, không có giá trị nghiệp vụ. */
 const IGNORED_KEYS = new Set(["lead_id", "created_time", "platform", "is_organic"]);
@@ -22,9 +42,57 @@ function fieldKey(name: string): string {
   return name.trim().toLowerCase();
 }
 
-function firstValue(fieldData: FacebookFieldDatum[], keys: Set<string>): string | null {
+/** Chuyển nhãn câu hỏi tiếng Việt / có dấu câu về snake_case không dấu để khớp ngữ nghĩa. */
+export function toAsciiFieldKey(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, "d")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+export function isPhoneFieldKey(name: string): boolean {
+  const k = fieldKey(name);
+  if (PHONE_KEYS.has(k)) return true;
+  const ascii = toAsciiFieldKey(name);
+  if (PHONE_KEYS.has(ascii)) return true;
+  return /(?:^|_)(?:phone_number|mobile_phone|so_dien_thoai|dien_thoai|sdt|zalo)(?:_|$)/.test(
+    ascii,
+  );
+}
+
+export function isFullNameFieldKey(name: string): boolean {
+  const k = fieldKey(name);
+  if (FULL_NAME_KEYS.has(k)) return true;
+  const ascii = toAsciiFieldKey(name);
+  if (FULL_NAME_KEYS.has(ascii)) return true;
+  return /(?:^|_)(?:full_name|ten_day_du|ho_va_ten|ho_ten|ten_khach_hang|ten_quy_khach|ten_cua_ban)(?:_|$)/.test(
+    ascii,
+  );
+}
+
+function isFirstNameFieldKey(name: string): boolean {
+  const k = fieldKey(name);
+  return FIRST_NAME_KEYS.has(k) || FIRST_NAME_KEYS.has(toAsciiFieldKey(name));
+}
+
+function isLastNameFieldKey(name: string): boolean {
+  const k = fieldKey(name);
+  return LAST_NAME_KEYS.has(k) || LAST_NAME_KEYS.has(toAsciiFieldKey(name));
+}
+
+function isNameFieldKey(name: string): boolean {
+  return isFullNameFieldKey(name) || isFirstNameFieldKey(name) || isLastNameFieldKey(name);
+}
+
+function firstMatchingValue(
+  fieldData: FacebookFieldDatum[],
+  predicate: (name: string) => boolean,
+): string | null {
   for (const field of fieldData) {
-    if (!keys.has(fieldKey(field.name))) continue;
+    if (!predicate(field.name)) continue;
     const raw = field.values?.[0];
     if (raw == null) continue;
     const trimmed = raw.trim();
@@ -45,11 +113,11 @@ function normalizePhone(raw: string): string | null {
 }
 
 function resolveName(fieldData: FacebookFieldDatum[]): string | null {
-  const full = firstValue(fieldData, new Set(["full_name"]));
+  const full = firstMatchingValue(fieldData, isFullNameFieldKey);
   if (full) return full;
 
-  const first = firstValue(fieldData, new Set(["first_name"]));
-  const last = firstValue(fieldData, new Set(["last_name"]));
+  const first = firstMatchingValue(fieldData, isFirstNameFieldKey);
+  const last = firstMatchingValue(fieldData, isLastNameFieldKey);
   if (first && last) return `${first} ${last}`.trim();
   if (first) return first;
   if (last) return last;
@@ -70,7 +138,9 @@ function collectAttrs(fieldData: FacebookFieldDatum[]): Record<string, string> {
   const attrs: Record<string, string> = {};
   for (const field of fieldData) {
     const key = fieldKey(field.name);
-    if (!key || PHONE_KEYS.has(key) || NAME_KEYS.has(key) || IGNORED_KEYS.has(key)) continue;
+    if (!key || isPhoneFieldKey(field.name) || isNameFieldKey(field.name) || IGNORED_KEYS.has(key)) {
+      continue;
+    }
     if (key in attrs) continue;
     const value = (field.values ?? [])
       .map((v) => (v ?? "").trim())
@@ -88,7 +158,7 @@ export function mapFacebookLeadFields(
   fieldData: FacebookFieldDatum[],
   meta?: { campaignName?: string | null; adName?: string | null },
 ): MappedFacebookLead {
-  const rawPhone = firstValue(fieldData, PHONE_KEYS);
+  const rawPhone = firstMatchingValue(fieldData, isPhoneFieldKey);
   const phone = rawPhone ? normalizePhone(rawPhone) ?? "" : "";
 
   return {
@@ -336,4 +406,3 @@ export function mapFacebookCommentLead(
     attrs,
   };
 }
-

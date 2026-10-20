@@ -1,5 +1,8 @@
+export type ResetOtpType = "invite" | "recovery" | "email";
+
 export type ResetLink =
   | { kind: "code"; code: string }
+  | { kind: "token_hash"; tokenHash: string; otpType: ResetOtpType }
   | { kind: "tokens"; accessToken: string; refreshToken: string }
   | { kind: "error"; message: string }
   | { kind: "missing" };
@@ -18,7 +21,12 @@ export function resetLinkMessage(errorCode: string | null, description: string |
   return RESET_LINK_EXPIRED;
 }
 
-/** Đọc callback Supabase trên /login/reset. Mail mời gắn token ở hash, quên mật khẩu cùng trình duyệt gắn ?code=. */
+function normalizeOtpType(raw: string | null): ResetOtpType {
+  if (raw === "invite" || raw === "recovery" || raw === "email") return raw;
+  return "recovery";
+}
+
+/** Đọc callback Supabase trên /login/reset. Hỗ trợ ?token_hash=, ?code=, và #access_token=. */
 export function readResetLink(href: string): ResetLink {
   const url = new URL(href, "http://localhost");
   const query = url.searchParams;
@@ -29,6 +37,12 @@ export function readResetLink(href: string): ResetLink {
   const description = query.get("error_description") ?? hash.get("error_description");
   if (error || errorCode || description) {
     return { kind: "error", message: resetLinkMessage(errorCode, description) };
+  }
+
+  const tokenHash = query.get("token_hash") ?? hash.get("token_hash");
+  if (tokenHash) {
+    const rawType = query.get("type") ?? hash.get("type");
+    return { kind: "token_hash", tokenHash, otpType: normalizeOtpType(rawType) };
   }
 
   const code = query.get("code");

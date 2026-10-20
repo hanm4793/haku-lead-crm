@@ -317,42 +317,53 @@ async function syncInsightsForAccount(
     });
   }
 
-  for (const values of writes) {
-    try {
-      const [upserted] = await db
-        .insert(metaAdInsights)
-        .values(values)
-        .onConflictDoUpdate({
-          target: [metaAdInsights.adAccountId, metaAdInsights.level, metaAdInsights.objectId, metaAdInsights.dateStart],
-          set: {
-            objectName: values.objectName,
-            campaignId: values.campaignId,
-            campaignName: values.campaignName,
-            adsetId: values.adsetId,
-            adsetName: values.adsetName,
-            pageId: values.pageId,
-            dateStop: values.dateStop,
-            spend: values.spend,
-            impressions: values.impressions,
-            clicks: values.clicks,
-            reach: values.reach,
-            leads: values.leads,
-            cpc: values.cpc,
-            cpm: values.cpm,
-            ctr: values.ctr,
-            costPerLead: values.costPerLead,
-            syncedAt: values.syncedAt,
-          },
-        })
-        .returning({ inserted: sql<boolean>`(xmax = 0)` });
+  const BATCH_SIZE = 25;
+  for (let i = 0; i < writes.length; i += BATCH_SIZE) {
+    const batch = writes.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (values) => {
+        try {
+          const [upserted] = await db
+            .insert(metaAdInsights)
+            .values(values)
+            .onConflictDoUpdate({
+              target: [
+                metaAdInsights.adAccountId,
+                metaAdInsights.level,
+                metaAdInsights.objectId,
+                metaAdInsights.dateStart,
+              ],
+              set: {
+                objectName: values.objectName,
+                campaignId: values.campaignId,
+                campaignName: values.campaignName,
+                adsetId: values.adsetId,
+                adsetName: values.adsetName,
+                pageId: values.pageId,
+                dateStop: values.dateStop,
+                spend: values.spend,
+                impressions: values.impressions,
+                clicks: values.clicks,
+                reach: values.reach,
+                leads: values.leads,
+                cpc: values.cpc,
+                cpm: values.cpm,
+                ctr: values.ctr,
+                costPerLead: values.costPerLead,
+                syncedAt: values.syncedAt,
+              },
+            })
+            .returning({ inserted: sql<boolean>`(xmax = 0)` });
 
-      if (!upserted) throw new Error(`Could not upsert Insight for ${values.objectId}`);
-      if (upserted.inserted) counts.imported += 1;
-      else counts.updated += 1;
-    } catch (error) {
-      counts.errors += 1;
-      if (errorMessages.length < 5) errorMessages.push(errorMessage(error));
-    }
+          if (!upserted) throw new Error(`Could not upsert Insight for ${values.objectId}`);
+          if (upserted.inserted) counts.imported += 1;
+          else counts.updated += 1;
+        } catch (error) {
+          counts.errors += 1;
+          if (errorMessages.length < 5) errorMessages.push(errorMessage(error));
+        }
+      }),
+    );
   }
 
   return { ...counts, errorMessages };

@@ -2,17 +2,23 @@ import { createClient } from "@supabase/supabase-js";
 import { headers } from "next/headers";
 import { supabaseServiceRoleKey, supabaseUrl } from "@/lib/supabase/env";
 
+const PRODUCTION_SITE_URL = "https://crm.semtop.vn";
+
 export async function authRedirectOrigin() {
-  if (process.env.NEXT_PUBLIC_SITE_URL) {
-    return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
+  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+  if (process.env.NODE_ENV === "production") {
+    return PRODUCTION_SITE_URL;
   }
   const headerList = await headers();
   const origin = headerList.get("origin");
-  if (origin) return origin.replace(/\/$/, "");
+  if (origin && !origin.includes(".vercel.app")) return origin.replace(/\/$/, "");
   const host = headerList.get("x-forwarded-host") ?? headerList.get("host");
   const proto = headerList.get("x-forwarded-proto") ?? "http";
-  if (host) return `${proto}://${host}`;
-  return "http://localhost:3000";
+  if (host && !host.includes(".vercel.app")) return `${proto}://${host}`;
+  return PRODUCTION_SITE_URL;
 }
 
 function adminAuthClient() {

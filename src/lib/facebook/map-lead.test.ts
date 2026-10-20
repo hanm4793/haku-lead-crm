@@ -48,6 +48,24 @@ describe("mapFacebookLeadFields", () => {
     const r = mapFacebookLeadFields([{ name: "phone", values: ["+84901234567"] }]);
     expect(r.phone).toContain("84901234567");
   });
+
+  it("normalizes Vietnamese and custom Lead Form question keys for name and phone", () => {
+    const r1 = mapFacebookLeadFields([
+      { name: "tên_đầy_đủ", values: ["Ngoc Quynh Le"] },
+      { name: "số_điện_thoại", values: ["+84981876469"] },
+      { name: "tỉnh/thành_phố", values: ["Yên Kiên (2)"] },
+    ]);
+    expect(r1.name).toBe("Ngoc Quynh Le");
+    expect(r1.phone).toBe("+84981876469");
+    expect(r1.attrs).toEqual({ "tỉnh/thành_phố": "Yên Kiên (2)" });
+
+    const r2 = mapFacebookLeadFields([
+      { name: "họ_tên_của_quý_khách_hàng", values: ["Trần Văn An"] },
+      { name: "số_điện_thoại_(quý_khách_vui_lòng_nhập_chính_xác)", values: ["0912345678"] },
+    ]);
+    expect(r2.name).toBe("Trần Văn An");
+    expect(r2.phone).toBe("0912345678");
+  });
 });
 
 import {

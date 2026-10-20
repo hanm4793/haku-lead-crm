@@ -54,6 +54,14 @@ export function ResetPasswordForm() {
           finish(false, link.message);
           return;
         }
+        if (link.kind === "token_hash") {
+          const { error: otpError } = await supabase.auth.verifyOtp({
+            token_hash: link.tokenHash,
+            type: link.otpType,
+          });
+          finish(!otpError);
+          return;
+        }
         if (link.kind === "code") {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(link.code);
           finish(!exchangeError);
