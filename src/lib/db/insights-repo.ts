@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { getDb } from "./client";
 import { facebookPages, leads, metaAdInsights, metaSyncRuns } from "./schema";
 
-export type InsightRow = {
+export type InsightRow = { adAccountId?: string | null;
   objectId: string;
   objectName: string | null;
   date: string;
@@ -113,7 +113,7 @@ export async function listCampaignInsights(
   }
   const rows = await getDb()
     .select({
-      objectId: metaAdInsights.objectId,
+      adAccountId: metaAdInsights.adAccountId, objectId: metaAdInsights.objectId,
       objectName: metaAdInsights.objectName,
       dateStart: metaAdInsights.dateStart,
       spend: metaAdInsights.spend,
@@ -150,7 +150,7 @@ export async function listAdInsights(
   }
   const rows = await getDb()
     .select({
-      objectId: metaAdInsights.objectId,
+      adAccountId: metaAdInsights.adAccountId, objectId: metaAdInsights.objectId,
       objectName: metaAdInsights.objectName,
       campaignId: metaAdInsights.campaignId,
       campaignName: metaAdInsights.campaignName,

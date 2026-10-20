@@ -27,6 +27,7 @@ import {
 } from "recharts";
 
 import { syncFacebookInsightsAction } from "@/app/settings/facebook-actions";
+import { listAdAccountsForAudienceAction } from "@/app/marketing/audience-actions";
 import { DateRangePicker, type DateRange, type PresetId } from "@/components/common/date-range-picker";
 import { Pagination } from "@/components/common/pagination";
 import {
@@ -163,6 +164,8 @@ export function MarketingPage({
   const [preset, setPreset] = React.useState<PresetId>("ALL");
   const [range, setRange] = React.useState<DateRange>({ from: null, to: null });
   const [selectedProjectIds, setSelectedProjectIds] = React.useState<string[]>([]);
+  const [selectedAdAccountIds, setSelectedAdAccountIds] = React.useState<string[]>([]);
+  const [metaAdAccounts, setMetaAdAccounts] = React.useState<Array<{ id: string; name: string }>>([]);
   const [campaignIds, setCampaignIds] = React.useState<string[]>([]);
   const [pageIds, setPageIds] = React.useState<string[]>([]);
   const [brands, setBrands] = React.useState<CampaignBrandId[]>([]);
@@ -180,6 +183,30 @@ export function MarketingPage({
     key: "spend",
     direction: "desc",
   });
+
+  React.useEffect(() => {
+    if (!tokenConfigured) return;
+    let cancelled = false;
+    void listAdAccountsForAudienceAction().then((res) => {
+      if (!cancelled && res.ok && res.accounts.length > 0) {
+        setMetaAdAccounts(res.accounts.map((a) => ({ id: a.id, name: `${a.name} (${a.accountId})` })));
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [tokenConfigured]);
+
+  const adAccountOptions = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const acc of metaAdAccounts) map.set(acc.id, acc.name);
+    if (adAccountId && !map.has(adAccountId)) map.set(adAccountId, `TKQC (${adAccountId})`);
+    for (const row of rows) {
+      if (row.adAccountId && !map.has(row.adAccountId)) map.set(row.adAccountId, `TKQC (${row.adAccountId})`);
+    }
+    for (const row of adRows) {
+      if (row.adAccountId && !map.has(row.adAccountId)) map.set(row.adAccountId, `TKQC (${row.adAccountId})`);
+    }
+    return [...map.entries()].map(([value, label]) => ({ value, label }));
+  }, [metaAdAccounts, adAccountId, rows, adRows]);
 
   const projectOptions = React.useMemo(
     () => projects.map((p) => ({ value: p.id, label: p.name })),
@@ -218,6 +245,7 @@ export function MarketingPage({
   const campaignOptions = React.useMemo(() => {
     const entries = new Map<string, string>();
     for (const row of rows) {
+      if (selectedAdAccountIds.length > 0 && !selectedAdAccountIds.includes(row.adAccountId ?? "")) continue;
       if (pageCampaignIds && !pageCampaignIds.has(row.objectId)) continue;
       entries.set(row.objectId, row.objectName ?? row.objectId);
     }
@@ -230,11 +258,12 @@ export function MarketingPage({
     return [...entries.entries()]
       .map(([value, label]) => ({ value, label }))
       .sort((left, right) => left.label.localeCompare(right.label, "vi"));
-  }, [rows, adRows, pageCampaignIds]);
+  }, [rows, adRows, pageCampaignIds, selectedAdAccountIds]);
   const pageOptions = React.useMemo(() => {
     const official = new Map(pages.map((page) => [page.id, page.name?.trim() || null]));
     const namesByPage = new Map<string, Array<string | null>>();
     for (const row of adRows) {
+      if (selectedAdAccountIds.length > 0 && !selectedAdAccountIds.includes(row.adAccountId ?? "")) continue;
       const pageId = row.pageId ?? "";
       if (projectAllowedPageIds && !projectAllowedPageIds.has(pageId)) continue;
       const names = namesByPage.get(pageId) ?? [];
@@ -251,7 +280,7 @@ export function MarketingPage({
         label: official.get(value) || pageLabelFromCampaigns(names) || (value ? value : "Chưa gắn fanpage"),
       }))
       .sort((left, right) => left.label.localeCompare(right.label, "vi"));
-  }, [pages, adRows, projectAllowedPageIds]);
+  }, [pages, adRows, projectAllowedPageIds, selectedAdAccountIds]);
 
   const adScope = React.useMemo(
     () =>
@@ -260,6 +289,7 @@ export function MarketingPage({
         {
           from: range.from,
           to: range.to,
+          adAccountIds: selectedAdAccountIds,
           campaignIds,
           brands,
           query,
@@ -267,7 +297,7 @@ export function MarketingPage({
         },
         campaignBrands,
       ),
-    [adRows, range.from, range.to, campaignIds, brands, query, campaignBrands],
+    [adRows, range.from, range.to, selectedAdAccountIds, campaignIds, brands, query, campaignBrands],
   );
   const projectScopedAdScope = React.useMemo(
     () =>
@@ -286,13 +316,14 @@ export function MarketingPage({
         {
           from: range.from,
           to: range.to,
+          adAccountIds: selectedAdAccountIds,
           campaignIds,
           brands,
           query,
         },
         campaignBrands,
       ),
-    [rows, range.from, range.to, campaignIds, brands, query, campaignBrands],
+    [rows, range.from, range.to, selectedAdAccountIds, campaignIds, brands, query, campaignBrands],
   );
   const campaignSummaries = (
     activePageIdSet
@@ -364,6 +395,7 @@ export function MarketingPage({
   const filtersActive =
     preset !== "ALL" ||
     selectedProjectIds.length > 0 ||
+    selectedAdAccountIds.length > 0 ||
     campaignIds.length > 0 ||
     pageIds.length > 0 ||
     brands.length > 0 ||
@@ -411,6 +443,7 @@ export function MarketingPage({
     setPreset("ALL");
     setRange({ from: null, to: null });
     setSelectedProjectIds([]);
+    setSelectedAdAccountIds([]);
     setCampaignIds([]);
     setPageIds([]);
     setBrands([]);
@@ -598,6 +631,18 @@ export function MarketingPage({
             contentClassName="w-[240px]"
           />
         )}
+        <MultiSelect
+          options={adAccountOptions}
+          selected={selectedAdAccountIds}
+          onChange={(next) => {
+            setSelectedAdAccountIds(next);
+            setFanpagePage(1);
+            setCampaignPage(1);
+          }}
+          placeholder="Tất cả TKQC"
+          className="h-8 w-[200px] text-[13px]"
+          contentClassName="w-[280px]"
+        />
         <MultiSelect
           options={pageOptions}
           selected={pageIds}
@@ -886,7 +931,7 @@ export function MarketingPage({
                             }}
                           >
                             <td className="px-3 py-2.5">
-                              <AdsManagerTitle level="campaign" objectId={campaign.objectId} adAccountId={adAccountId}>
+                              <AdsManagerTitle level="campaign" objectId={campaign.objectId} adAccountId={campaign.adAccountId ?? adAccountId}>
                                 {campaign.objectName ?? campaign.objectId}
                               </AdsManagerTitle>
                               <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
@@ -948,7 +993,7 @@ export function MarketingPage({
                                           .map((ad) => (
                                             <tr key={ad.objectId} className="border-t border-border/70">
                                               <td className="px-2 py-2">
-                                                <AdsManagerTitle level="ad" objectId={ad.objectId} adAccountId={adAccountId}>
+                                                <AdsManagerTitle level="ad" objectId={ad.objectId} adAccountId={ad.adAccountId ?? adAccountId}>
                                                   {ad.objectName ?? ad.objectId}
                                                 </AdsManagerTitle>
                                               </td>

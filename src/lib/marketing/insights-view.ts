@@ -16,7 +16,7 @@ export const CAMPAIGN_BRANDS = [
 
 export type CampaignBrandId = (typeof CAMPAIGN_BRANDS)[number]["id"] | (string & {});
 
-export type InsightFilter = {
+export type InsightFilter = { adAccountIds?: string[];
   from: string | null;
   to: string | null;
   campaignIds: string[];
@@ -24,7 +24,7 @@ export type InsightFilter = {
   query: string;
 };
 
-export type CampaignSummary = {
+export type CampaignSummary = { adAccountId?: string | null;
   objectId: string;
   objectName: string | null;
   brand: CampaignBrandId;
@@ -140,6 +140,7 @@ export function filterInsightRows(
   return rows.filter((row) => {
     if (filter.from && row.date < filter.from) return false;
     if (filter.to && row.date > filter.to) return false;
+    if (filter.adAccountIds && filter.adAccountIds.length > 0 && !filter.adAccountIds.includes(row.adAccountId ?? "")) return false;
     if (filter.campaignIds.length > 0 && !filter.campaignIds.includes(row.objectId)) return false;
     if (filter.brands.length > 0 && !filter.brands.includes(campaignBrand(row.objectName, brandOptions))) return false;
     if (!query) return true;
@@ -161,7 +162,7 @@ export function summarizeCampaigns(
     const current = grouped.get(row.objectId);
     if (!current) {
       grouped.set(row.objectId, {
-        objectId: row.objectId,
+        adAccountId: row.adAccountId ?? null, objectId: row.objectId,
         objectName: row.objectName,
         brand: campaignBrand(row.objectName, brandOptions),
         days: 1,
@@ -315,6 +316,7 @@ export function filterAdRows(
   return rows.filter((row) => {
     if (filter.from && row.date < filter.from) return false;
     if (filter.to && row.date > filter.to) return false;
+    if (filter.adAccountIds && filter.adAccountIds.length > 0 && !filter.adAccountIds.includes(row.adAccountId ?? "")) return false;
     if (filter.pageIds.length > 0 && !filter.pageIds.includes(row.pageId ?? "")) return false;
     if (filter.campaignIds.length > 0 && !filter.campaignIds.includes(row.campaignId ?? "")) return false;
     if (filter.brands.length > 0 && !filter.brands.includes(campaignBrand(row.campaignName, brandOptions))) return false;
@@ -390,7 +392,7 @@ export function summarizeCampaignsFromAds(
     const current = grouped.get(objectId);
     if (!current) {
       grouped.set(objectId, {
-        objectId,
+        adAccountId: row.adAccountId ?? null, objectId,
         objectName: row.campaignName,
         brand: campaignBrand(row.campaignName, brandOptions),
         days: 1,
@@ -429,7 +431,7 @@ export function summarizeAds(
     const current = grouped.get(row.objectId);
     if (!current) {
       grouped.set(row.objectId, {
-        objectId: row.objectId,
+        adAccountId: row.adAccountId ?? null, objectId: row.objectId,
         objectName: row.objectName,
         brand: campaignBrand(row.campaignName, brandOptions),
         days: 1,
