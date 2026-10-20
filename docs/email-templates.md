@@ -12,7 +12,7 @@ Hệ thống sử dụng **Supabase Auth (`nvopyhmwdlzgbadcjjid.supabase.co`)** 
 - **Địa chỉ**: Tầng 14 - Intracom 2, 33 Cầu Diễn - Bắc Từ Liêm, Hà Nội
 - **Hotline**: `0938 859 555`
 - **Email liên hệ**: `hoitv@semtop.vn`
-- **Website**: `https://semtop.vn/` (`Giới thiệu`, `Dịch vụ`, `Tin tức`, `Facebook`, `Zalo`, `TikTok`)
+- **Website**: `https://semtop.vn/` (`Facebook`, `Zalo`, `TikTok`)
 
 ---
 
@@ -39,7 +39,7 @@ Hệ thống sử dụng **Supabase Auth (`nvopyhmwdlzgbadcjjid.supabase.co`)** 
           <tr>
             <td align="left" valign="middle">
               <a href="https://crm.semtop.vn" target="_blank" style="text-decoration: none; display: inline-block;">
-                <img src="https://crm.semtop.vn/brand/logo-white.png" alt="SEMTOP - Cầu nối cho sự phát triển" width="165" style="display: block; height: auto; max-height: 44px; width: auto; border: 0;" />
+                <img src="https://crm.semtop.vn/brand/logo-white.png" alt="SEMTOP" width="165" style="display: block; height: auto; max-height: 44px; width: auto; border: 0;" />
               </a>
             </td>
             <td align="right" valign="middle">
@@ -124,21 +124,14 @@ Hệ thống sử dụng **Supabase Auth (`nvopyhmwdlzgbadcjjid.supabase.co`)** 
 
     <!-- Website-style SEMTOP Footer (Red top border + Full Company Contact Info) -->
     <tr>
-      <td style="padding: 28px 32px 22px; background-color: #ffffff; border-top: 2px solid #e11d2e;">
+      <td style="padding: 26px 32px; background-color: #ffffff; border-top: 2px solid #e11d2e;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
           <tr>
-            <!-- Left Column: Logo + Web Menu + Social Links -->
+            <!-- Left Column: Logo + Social Links -->
             <td valign="top" width="44%" style="padding-right: 16px;">
-              <a href="https://semtop.vn/" target="_blank" style="text-decoration: none; display: inline-block; margin-bottom: 12px;">
-                <img src="https://crm.semtop.vn/brand/logo-white.png" alt="SEMTOP - Cầu nối cho sự phát triển" width="135" style="display: block; height: auto; width: 135px; border: 0;" />
+              <a href="https://semtop.vn/" target="_blank" style="text-decoration: none; display: inline-block; margin-bottom: 14px;">
+                <img src="https://crm.semtop.vn/brand/logo-white.png" alt="SEMTOP" width="140" style="display: block; height: auto; width: 140px; border: 0;" />
               </a>
-              <div style="font-size: 12px; font-weight: 700; color: #0c1222; margin-bottom: 12px; line-height: 1.8;">
-                <a href="https://semtop.vn/gioi-thieu" target="_blank" style="color: #0c1222; text-decoration: underline;">Giới thiệu<sup>&reg;</sup></a>
-                &nbsp;&bull;&nbsp;
-                <a href="https://semtop.vn/dich-vu" target="_blank" style="color: #0c1222; text-decoration: underline;">Dịch vụ</a>
-                &nbsp;&bull;&nbsp;
-                <a href="https://semtop.vn/tin-tuc" target="_blank" style="color: #0c1222; text-decoration: underline;">Tin tức</a>
-              </div>
               <div>
                 <a href="https://www.facebook.com/profile.php?id=61574693681120" target="_blank" style="display: inline-block; background-color: #0c1222; color: #ffffff; font-size: 11px; font-weight: 700; text-decoration: none; padding: 4px 9px; border-radius: 4px; margin-right: 4px;">Facebook</a>
                 <a href="https://zalo.me/0938859555" target="_blank" style="display: inline-block; background-color: #0c1222; color: #ffffff; font-size: 11px; font-weight: 700; text-decoration: none; padding: 4px 9px; border-radius: 4px; margin-right: 4px;">Zalo</a>
@@ -167,18 +160,6 @@ Hệ thống sử dụng **Supabase Auth (`nvopyhmwdlzgbadcjjid.supabase.co`)** 
                 CRM: <a href="https://crm.semtop.vn" target="_blank" style="color: #1a4db8; font-weight: 600; text-decoration: none;">crm.semtop.vn</a>
               </div>
             </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-
-    <!-- Copyright Sub-footer -->
-    <tr>
-      <td style="padding: 12px 32px; background-color: #f8fafc; border-top: 1px solid #eef1f6; font-size: 11px; color: #64748b;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr>
-            <td align="left">&copy; SEMTOP 2025 all rights reserved</td>
-            <td align="right" style="color: #e11d2e; font-weight: 600;">Cầu nối cho sự phát triển</td>
           </tr>
         </table>
       </td>
@@ -212,7 +193,7 @@ Hệ thống sử dụng **Supabase Auth (`nvopyhmwdlzgbadcjjid.supabase.co`)** 
           <tr>
             <td align="left" valign="middle">
               <a href="https://crm.semtop.vn" target="_blank" style="text-decoration: none; display: inline-block;">
-                <img src="https://crm.semtop.vn/brand/logo-white.png" alt="SEMTOP - Cầu nối cho sự phát triển" width="165" style="display: block; height: auto; max-height: 44px; width: auto; border: 0;" />
+                <img src="https://crm.semtop.vn/brand/logo-white.png" alt="SEMTOP" width="165" style="display: block; height: auto; max-height: 44px; width: auto; border: 0;" />
               </a>
             </td>
             <td align="right" valign="middle">
@@ -301,21 +282,14 @@ Hệ thống sử dụng **Supabase Auth (`nvopyhmwdlzgbadcjjid.supabase.co`)** 
 
     <!-- Website-style SEMTOP Footer (Red top border + Full Company Contact Info) -->
     <tr>
-      <td style="padding: 28px 32px 22px; background-color: #ffffff; border-top: 2px solid #e11d2e;">
+      <td style="padding: 26px 32px; background-color: #ffffff; border-top: 2px solid #e11d2e;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
           <tr>
-            <!-- Left Column: Logo + Web Menu + Social Links -->
+            <!-- Left Column: Logo + Social Links -->
             <td valign="top" width="44%" style="padding-right: 16px;">
-              <a href="https://semtop.vn/" target="_blank" style="text-decoration: none; display: inline-block; margin-bottom: 12px;">
-                <img src="https://crm.semtop.vn/brand/logo-white.png" alt="SEMTOP - Cầu nối cho sự phát triển" width="135" style="display: block; height: auto; width: 135px; border: 0;" />
+              <a href="https://semtop.vn/" target="_blank" style="text-decoration: none; display: inline-block; margin-bottom: 14px;">
+                <img src="https://crm.semtop.vn/brand/logo-white.png" alt="SEMTOP" width="140" style="display: block; height: auto; width: 140px; border: 0;" />
               </a>
-              <div style="font-size: 12px; font-weight: 700; color: #0c1222; margin-bottom: 12px; line-height: 1.8;">
-                <a href="https://semtop.vn/gioi-thieu" target="_blank" style="color: #0c1222; text-decoration: underline;">Giới thiệu<sup>&reg;</sup></a>
-                &nbsp;&bull;&nbsp;
-                <a href="https://semtop.vn/dich-vu" target="_blank" style="color: #0c1222; text-decoration: underline;">Dịch vụ</a>
-                &nbsp;&bull;&nbsp;
-                <a href="https://semtop.vn/tin-tuc" target="_blank" style="color: #0c1222; text-decoration: underline;">Tin tức</a>
-              </div>
               <div>
                 <a href="https://www.facebook.com/profile.php?id=61574693681120" target="_blank" style="display: inline-block; background-color: #0c1222; color: #ffffff; font-size: 11px; font-weight: 700; text-decoration: none; padding: 4px 9px; border-radius: 4px; margin-right: 4px;">Facebook</a>
                 <a href="https://zalo.me/0938859555" target="_blank" style="display: inline-block; background-color: #0c1222; color: #ffffff; font-size: 11px; font-weight: 700; text-decoration: none; padding: 4px 9px; border-radius: 4px; margin-right: 4px;">Zalo</a>
@@ -344,18 +318,6 @@ Hệ thống sử dụng **Supabase Auth (`nvopyhmwdlzgbadcjjid.supabase.co`)** 
                 CRM: <a href="https://crm.semtop.vn" target="_blank" style="color: #1a4db8; font-weight: 600; text-decoration: none;">crm.semtop.vn</a>
               </div>
             </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-
-    <!-- Copyright Sub-footer -->
-    <tr>
-      <td style="padding: 12px 32px; background-color: #f8fafc; border-top: 1px solid #eef1f6; font-size: 11px; color: #64748b;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr>
-            <td align="left">&copy; SEMTOP 2025 all rights reserved</td>
-            <td align="right" style="color: #e11d2e; font-weight: 600;">Cầu nối cho sự phát triển</td>
           </tr>
         </table>
       </td>
