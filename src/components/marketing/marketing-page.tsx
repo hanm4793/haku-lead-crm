@@ -475,7 +475,16 @@ export function MarketingPage({
     async (intervalMinutes: number) => {
       if (!canSync || !configured || pending) return;
       try {
-        const res = await fetch(`/api/cron/facebook-sync?kind=all&minInterval=${intervalMinutes}`, {
+        const insightsRes = await fetch(`/api/cron/facebook-sync?kind=insights&minInterval=${intervalMinutes}`, {
+          method: "POST",
+        });
+        if (insightsRes.ok) {
+          const insightsPayload = (await insightsRes.json()) as { ok?: boolean; didSyncAny?: boolean };
+          if (insightsPayload.ok && insightsPayload.didSyncAny) {
+            router.refresh();
+          }
+        }
+        const res = await fetch(`/api/cron/facebook-sync?kind=leads&minInterval=${intervalMinutes}`, {
           method: "POST",
         });
         if (!res.ok) return;

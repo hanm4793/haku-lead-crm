@@ -140,7 +140,8 @@ async function refreshFacebookPageName(pageId: string, name: string | null) {
     .where(eq(facebookPages.facebookPageId, pageId));
 }
 
-export async function syncFacebookLeads(options?: { projectId?: string }): Promise<SyncLeadsResult> {
+export async function syncFacebookLeads(options?: { projectId?: string; recentDays?: number }): Promise<SyncLeadsResult> {
+  const cutoffMs = options?.recentDays ? Date.now() - options.recentDays * 86_400_000 : null;
   const tag = syncScopeTag(options?.projectId);
   const config = getFacebookConfig();
   if (!config) {
@@ -202,6 +203,8 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
       return row ?? null;
     }
 
+    let canSyncMessaging = true;
+    let canSyncComments = true;
     for (const pageId of pageIds) {
       const projectId = (await getFacebookPageProjectId(pageId)) ?? fallbackProjectId;
       const pageAuth = pageTokens.get(pageId);
@@ -240,6 +243,10 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
         }
 
         for (const facebookLead of formLeads) {
+          const leadCreatedAt = parseCreatedAt(facebookLead.created_time);
+          if (cutoffMs !== null && leadCreatedAt && leadCreatedAt.getTime() < cutoffMs) {
+            continue;
+          }
           const mapped = mapFacebookLeadFields(facebookLead.field_data ?? [], {
             campaignName: facebookLead.campaign_name,
             adName: facebookLead.ad_name,
@@ -311,10 +318,7 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
         }
       }
 
-      // =======================================================================
-      // KÊNH 2: LEAD TIN NHẮN (`/{pageId}/conversations` -> `channelDetail: "TIN_NHAN"`)
-      // =======================================================================
-      try {
+      if (canSyncMessaging) try {
         const convRes = await graphGet<{ data?: FacebookConversationNode[] }>(
           `/${pageId}/conversations`,
           {
@@ -394,6 +398,7 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
           recordWarning(
             `Thiếu quyền "pages_messaging" trên FACEBOOK_ACCESS_TOKEN để đồng bộ Lead Tin nhắn (Messenger)`,
           );
+          canSyncMessaging = false;
         } else {
           recordError(new Error(`Page ${pageId} (Messenger): ${errorMessage(error)}`));
         }
@@ -402,7 +407,7 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
       // =======================================================================
       // KÊNH 3: LEAD BÌNH LUẬN (`/{pageId}/published_posts` -> `/{postId}/comments` -> `channelDetail: "COMMENT"`)
       // =======================================================================
-      try {
+      if (canSyncComments) try {
         const postsRes = await graphGet<{ data?: FacebookPostNode[] }>(
           `/${pageId}/published_posts`,
           { fields: "id,message,created_time", limit: "15" },
@@ -428,6 +433,7 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
               recordWarning(
                 `Thiếu quyền "pages_read_user_content" trên FACEBOOK_ACCESS_TOKEN để đồng bộ Lead Bình luận (Comment)`,
               );
+              canSyncComments = false;
               break;
             }
             continue;
@@ -502,6 +508,7 @@ export async function syncFacebookLeads(options?: { projectId?: string }): Promi
           recordWarning(
             `Thiếu quyền "pages_read_user_content" trên FACEBOOK_ACCESS_TOKEN để đồng bộ Lead Bình luận (Comment)`,
           );
+          canSyncComments = false;
         } else {
           recordError(new Error(`Page ${pageId} (Comments): ${errorMessage(error)}`));
         }

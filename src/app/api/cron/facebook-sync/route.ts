@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -13,6 +13,7 @@ import { syncFacebookLeads, type SyncLeadsResult } from "@/lib/facebook/sync-lea
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 function isValidCronSecret(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET?.trim();
@@ -30,15 +31,19 @@ async function getLastSuccessAt(kind: "leads" | "insights"): Promise<Date | null
   if (!isDatabaseConfigured()) return null;
   const db = getDb();
   const rows = await db
-    .select({ finishedAt: metaSyncRuns.finishedAt, startedAt: metaSyncRuns.startedAt })
+    .select({ finishedAt: metaSyncRuns.finishedAt })
     .from(metaSyncRuns)
-    .where(eq(metaSyncRuns.kind, kind))
-    .orderBy(desc(metaSyncRuns.startedAt))
-    .limit(5);
+    .where(
+      and(
+        eq(metaSyncRuns.kind, kind),
+        eq(metaSyncRuns.status, "ok"),
+        isNotNull(metaSyncRuns.finishedAt),
+      ),
+    )
+    .orderBy(desc(metaSyncRuns.finishedAt))
+    .limit(1);
 
-  const latest = rows[0];
-  if (!latest) return null;
-  return latest.finishedAt ?? latest.startedAt ?? null;
+  return rows[0]?.finishedAt ?? null;
 }
 
 function recentEnough(lastAt: Date | null, minIntervalMinutes: number): boolean {
@@ -76,6 +81,7 @@ async function handleSync(request: NextRequest) {
 
   const tokenOk = isFacebookTokenConfigured();
   const fbConfig = getFacebookConfig();
+  void fbConfig;
   // Auto-discovery: chỉ cần token là đủ, không cần adAccountId env var nữa
   const insightsOk = tokenOk;
 
@@ -90,28 +96,6 @@ async function handleSync(request: NextRequest) {
     | { status: "error"; error: string } = { status: "skipped", reason: "not_requested" };
 
   let didSyncAny = false;
-
-  if (shouldRunLeads) {
-    if (!tokenOk) {
-      leadsOutcome = { status: "skipped", reason: "missing_token" };
-    } else {
-      const lastLeadAt = await getLastSuccessAt("leads").catch(() => null);
-      if (!force && recentEnough(lastLeadAt, minInterval)) {
-        leadsOutcome = { status: "skipped", reason: "recently_synced" };
-      } else {
-        try {
-          const result = await syncFacebookLeads();
-          leadsOutcome = { status: "synced", result };
-          didSyncAny = true;
-        } catch (err) {
-          leadsOutcome = {
-            status: "error",
-            error: err instanceof Error ? err.message : "Lỗi đồng bộ Lead Facebook.",
-          };
-        }
-      }
-    }
-  }
 
   if (shouldRunInsights) {
     if (!tokenOk || !insightsOk) {
@@ -131,6 +115,28 @@ async function handleSync(request: NextRequest) {
           insightsOutcome = {
             status: "error",
             error: err instanceof Error ? err.message : "Lỗi đồng bộ Insights.",
+          };
+        }
+      }
+    }
+  }
+
+  if (shouldRunLeads) {
+    if (!tokenOk) {
+      leadsOutcome = { status: "skipped", reason: "missing_token" };
+    } else {
+      const lastLeadAt = await getLastSuccessAt("leads").catch(() => null);
+      if (!force && recentEnough(lastLeadAt, minInterval)) {
+        leadsOutcome = { status: "skipped", reason: "recently_synced" };
+      } else {
+        try {
+          const result = await syncFacebookLeads(force ? undefined : { recentDays: 7 });
+          leadsOutcome = { status: "synced", result };
+          didSyncAny = true;
+        } catch (err) {
+          leadsOutcome = {
+            status: "error",
+            error: err instanceof Error ? err.message : "Lỗi đồng bộ Lead Facebook.",
           };
         }
       }

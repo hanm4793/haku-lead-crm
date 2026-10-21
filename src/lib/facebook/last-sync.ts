@@ -1,4 +1,4 @@
-import { and, desc, eq, like, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, like, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { leads, metaSyncRuns } from "@/lib/db/schema";
@@ -13,16 +13,23 @@ export async function loadLastProjectSync(kind: "leads", projectId: string): Pro
   const [row] = await getDb()
     .select({
       startedAt: metaSyncRuns.startedAt,
+      finishedAt: metaSyncRuns.finishedAt,
       status: metaSyncRuns.status,
       message: metaSyncRuns.message,
     })
     .from(metaSyncRuns)
-    .where(and(eq(metaSyncRuns.kind, kind), like(metaSyncRuns.message, `${tag}%`)))
+    .where(
+      and(
+        eq(metaSyncRuns.kind, kind),
+        isNotNull(metaSyncRuns.finishedAt),
+        like(metaSyncRuns.message, `${tag}%`),
+      ),
+    )
     .orderBy(desc(metaSyncRuns.startedAt))
     .limit(1);
   if (!row) return null;
   return {
-    at: row.startedAt.toISOString(),
+    at: (row.finishedAt ?? row.startedAt).toISOString(),
     status: row.status,
     message: row.message?.startsWith(tag) ? row.message.slice(tag.length) : row.message,
   };
@@ -30,7 +37,7 @@ export async function loadLastProjectSync(kind: "leads", projectId: string): Pro
 
 /**
  * Thời điểm dữ liệu CRM được cập nhật mới nhất (lấy mốc mới nhất giữa lần đồng bộ
- * Facebook gần nhất và lần tạo/cập nhật lead gần nhất).
+ * Facebook hoàn tất thành công gần nhất và lần tạo/cập nhật lead gần nhất).
  */
 export async function getLatestDataTimestamp(projectId?: string | null): Promise<string | null> {
   try {
@@ -38,9 +45,10 @@ export async function getLatestDataTimestamp(projectId?: string | null): Promise
     const [[syncRow], [leadRow]] = await Promise.all([
       db
         .select({
-          at: sql<Date | null>`max(coalesce(${metaSyncRuns.finishedAt}, ${metaSyncRuns.startedAt}))`,
+          at: sql<Date | null>`max(${metaSyncRuns.finishedAt})`,
         })
-        .from(metaSyncRuns),
+        .from(metaSyncRuns)
+        .where(and(eq(metaSyncRuns.status, "ok"), isNotNull(metaSyncRuns.finishedAt))),
       projectId
         ? db
             .select({

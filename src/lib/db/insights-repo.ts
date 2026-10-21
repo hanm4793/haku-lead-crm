@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 
 import { getDb } from "./client";
 import { facebookPages, leads, metaAdInsights, metaSyncRuns } from "./schema";
@@ -59,7 +59,7 @@ export async function latestInsightSync(): Promise<InsightSyncSnapshot | null> {
       message: metaSyncRuns.message,
     })
     .from(metaSyncRuns)
-    .where(eq(metaSyncRuns.kind, "insights"))
+    .where(and(eq(metaSyncRuns.kind, "insights"), isNotNull(metaSyncRuns.finishedAt)))
     .orderBy(desc(metaSyncRuns.startedAt))
     .limit(1);
 
@@ -465,7 +465,7 @@ export async function hasSyncedInsights(): Promise<boolean> {
         updated: metaSyncRuns.updated,
       })
       .from(metaSyncRuns)
-      .where(eq(metaSyncRuns.kind, "insights"))
+      .where(and(eq(metaSyncRuns.kind, "insights"), isNotNull(metaSyncRuns.finishedAt)))
       .orderBy(desc(metaSyncRuns.startedAt))
       .limit(1),
   ]);
