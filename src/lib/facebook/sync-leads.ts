@@ -39,6 +39,8 @@ export interface SyncLeadsResult {
 type FacebookForm = {
   id: string;
   name?: string;
+  status?: string;
+  leads_count?: number;
 };
 
 type FacebookLead = {
@@ -57,6 +59,7 @@ type FacebookPostNode = {
   id: string;
   message?: string;
   created_time?: string;
+  comments?: { data?: FacebookCommentNode[] };
 };
 
 const DETAILED_LEAD_FIELDS =
@@ -218,7 +221,6 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
     let canSyncMessaging = true;
     let canSyncComments = true;
     async function syncSinglePage(pageId: string) {
-      const projectId = (await getFacebookPageProjectId(pageId)) ?? fallbackProjectId;
       const pageAuth = pageTokens.get(pageId);
       if (!pageAuth) {
         recordError(
@@ -228,6 +230,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
         );
         return;
       }
+      const projectId = (await getFacebookPageProjectId(pageId)) ?? fallbackProjectId;
 
       await refreshFacebookPageName(pageId, pageAuth.name).catch(() => undefined);
 
@@ -238,96 +241,108 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
       try {
         forms = await graphGetAllData<FacebookForm>(
           `/${pageId}/leadgen_forms`,
-          { fields: "id,name" },
+          { fields: "id,name,status,leads_count", limit: "100" },
           { accessToken: pageAuth.token },
         );
       } catch (error) {
         recordError(new Error(`Page ${pageId} (Lead Form): ${errorMessage(error)}`));
       }
 
-      for (const form of forms) {
-        let formLeads: FacebookLead[];
-        try {
-          formLeads = await fetchFormLeads(form.id, pageAuth.token, cutoffMs);
-        } catch (error) {
-          recordError(error);
-          continue;
-        }
+      const candidateForms = forms.filter(
+        (f) =>
+          (f.status === undefined || f.status === "ACTIVE" || cutoffMs === null) &&
+          (f.leads_count === undefined || f.leads_count > 0),
+      );
 
-        for (const facebookLead of formLeads) {
-          const leadCreatedAt = parseCreatedAt(facebookLead.created_time);
-          if (cutoffMs !== null && leadCreatedAt && leadCreatedAt.getTime() < cutoffMs) {
-            continue;
-          }
-          const mapped = mapFacebookLeadFields(facebookLead.field_data ?? [], {
-            campaignName: facebookLead.campaign_name,
-            adName: facebookLead.ad_name,
-          });
-
-          try {
-            const existing = await findExistingLead(facebookLead.id);
-            const hasAttrs = Object.keys(mapped.attrs).length > 0;
-            const facebookMetadata = {
-              ...(mapped.name !== null ? { name: mapped.name } : {}),
-              ...(mapped.campaign !== null ? { campaign: mapped.campaign } : {}),
-              ...(mapped.adContent !== null ? { adContent: mapped.adContent } : {}),
-              ...(projectId ? { projectId } : {}),
-              ...(hasAttrs ? { attrs: { ...(existing?.attrs ?? {}), ...mapped.attrs } } : {}),
-              facebookFormId: form.id,
-              facebookPageId: pageId,
-              facebookAdId: optionalText(facebookLead.ad_id),
-              facebookAdsetId: optionalText(facebookLead.adset_id),
-              facebookCampaignId: optionalText(facebookLead.campaign_id),
-            };
-
-            if (existing) {
-              await db
-                .update(leads)
-                .set({ ...facebookMetadata, updatedAt: new Date() })
-                .where(eq(leads.id, existing.id));
-              counts.updated += 1;
-              byChannel.form += 1;
-              continue;
+      const FORM_CONCURRENCY = 8;
+      for (let fi = 0; fi < candidateForms.length; fi += FORM_CONCURRENCY) {
+        const formBatch = candidateForms.slice(fi, fi + FORM_CONCURRENCY);
+        await Promise.all(
+          formBatch.map(async (form) => {
+            let formLeads: FacebookLead[];
+            try {
+              formLeads = await fetchFormLeads(form.id, pageAuth.token, cutoffMs);
+            } catch (error) {
+              recordError(error);
+              return;
             }
 
-            const createdAt = parseCreatedAt(facebookLead.created_time);
-            await db.transaction(async (tx) => {
-              const [inserted] = await tx
-                .insert(leads)
-                .values({
-                  ...facebookMetadata,
-                  ...(createdAt ? { createdAt } : {}),
-                  phone: mapped.phone,
-                  source: "FACEBOOK",
-                  channelDetail: "FORM",
-                  facebookLeadId: facebookLead.id,
-                  projectId,
-                  brandId: null,
-                  productId: null,
-                  locationId: null,
-                  assigneeId: null,
-                  attrs: mapped.attrs,
-                  costPerLead: null,
-                })
-                .returning({ id: leads.id });
-
-              if (!inserted) {
-                throw new Error(`Could not insert Facebook lead ${facebookLead.id}`);
+            for (const facebookLead of formLeads) {
+              const leadCreatedAt = parseCreatedAt(facebookLead.created_time);
+              if (cutoffMs !== null && leadCreatedAt && leadCreatedAt.getTime() < cutoffMs) {
+                continue;
               }
-
-              await tx.insert(activityLogs).values({
-                leadId: inserted.id,
-                kind: "CREATE",
-                message: "Lead created from Facebook Lead Ads (Form).",
-                actorName: "Facebook sync",
+              const mapped = mapFacebookLeadFields(facebookLead.field_data ?? [], {
+                campaignName: facebookLead.campaign_name,
+                adName: facebookLead.ad_name,
               });
-            });
-            counts.imported += 1;
-            byChannel.form += 1;
-          } catch (error) {
-            recordError(error);
-          }
-        }
+
+              try {
+                const existing = await findExistingLead(facebookLead.id);
+                const hasAttrs = Object.keys(mapped.attrs).length > 0;
+                const facebookMetadata = {
+                  ...(mapped.name !== null ? { name: mapped.name } : {}),
+                  ...(mapped.campaign !== null ? { campaign: mapped.campaign } : {}),
+                  ...(mapped.adContent !== null ? { adContent: mapped.adContent } : {}),
+                  ...(projectId ? { projectId } : {}),
+                  ...(hasAttrs ? { attrs: { ...(existing?.attrs ?? {}), ...mapped.attrs } } : {}),
+                  facebookFormId: form.id,
+                  facebookPageId: pageId,
+                  facebookAdId: optionalText(facebookLead.ad_id),
+                  facebookAdsetId: optionalText(facebookLead.adset_id),
+                  facebookCampaignId: optionalText(facebookLead.campaign_id),
+                };
+
+                if (existing) {
+                  await db
+                    .update(leads)
+                    .set({ ...facebookMetadata, updatedAt: new Date() })
+                    .where(eq(leads.id, existing.id));
+                  counts.updated += 1;
+                  byChannel.form += 1;
+                  continue;
+                }
+
+                const createdAt = parseCreatedAt(facebookLead.created_time);
+                await db.transaction(async (tx) => {
+                  const [inserted] = await tx
+                    .insert(leads)
+                    .values({
+                      ...facebookMetadata,
+                      ...(createdAt ? { createdAt } : {}),
+                      phone: mapped.phone,
+                      source: "FACEBOOK",
+                      channelDetail: "FORM",
+                      facebookLeadId: facebookLead.id,
+                      projectId,
+                      brandId: null,
+                      productId: null,
+                      locationId: null,
+                      assigneeId: null,
+                      attrs: mapped.attrs,
+                      costPerLead: null,
+                    })
+                    .returning({ id: leads.id });
+
+                  if (!inserted) {
+                    throw new Error(`Could not insert Facebook lead ${facebookLead.id}`);
+                  }
+
+                  await tx.insert(activityLogs).values({
+                    leadId: inserted.id,
+                    kind: "CREATE",
+                    message: "Lead created from Facebook Lead Ads (Form).",
+                    actorName: "Facebook sync",
+                  });
+                });
+                counts.imported += 1;
+                byChannel.form += 1;
+              } catch (error) {
+                recordError(error);
+              }
+            }
+          }),
+        );
       }
 
       if (canSyncMessaging) try {
@@ -343,6 +358,10 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
         const conversations = convRes?.data ?? [];
 
         for (const conv of conversations) {
+          const convUpdated = parseCreatedAt(conv.updated_time);
+          if (cutoffMs !== null && convUpdated && convUpdated.getTime() < cutoffMs) {
+            continue;
+          }
           const mapped = mapFacebookConversationLead(conv, pageId);
           if (!mapped) continue;
 
@@ -422,36 +441,48 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
       if (canSyncComments) try {
         const postsRes = await graphGet<{ data?: FacebookPostNode[] }>(
           `/${pageId}/published_posts`,
-          { fields: "id,message,created_time", limit: "15" },
+          {
+            fields:
+              "id,message,created_time,comments.filter(stream).limit(50){id,message,from,created_time,permalink_url}",
+            limit: "15",
+          },
           { accessToken: pageAuth.token },
         );
         const posts = postsRes?.data ?? [];
 
         for (const post of posts) {
           let comments: FacebookCommentNode[] = [];
-          try {
-            const commentsRes = await graphGet<{ data?: FacebookCommentNode[] }>(
-              `/${post.id}/comments`,
-              {
-                fields: "id,message,from,created_time,permalink_url",
-                filter: "stream",
-                limit: "50",
-              },
-              { accessToken: pageAuth.token },
-            );
-            comments = commentsRes?.data ?? [];
-          } catch (commentErr) {
-            if (isPermissionError(commentErr)) {
-              recordWarning(
-                `Thiếu quyền "pages_read_user_content" trên FACEBOOK_ACCESS_TOKEN để đồng bộ Lead Bình luận (Comment)`,
+          if (post.comments !== undefined) {
+            comments = post.comments.data ?? [];
+          } else {
+            try {
+              const commentsRes = await graphGet<{ data?: FacebookCommentNode[] }>(
+                `/${post.id}/comments`,
+                {
+                  fields: "id,message,from,created_time,permalink_url",
+                  filter: "stream",
+                  limit: "50",
+                },
+                { accessToken: pageAuth.token },
               );
-              canSyncComments = false;
-              break;
+              comments = commentsRes?.data ?? [];
+            } catch (commentErr) {
+              if (isPermissionError(commentErr)) {
+                recordWarning(
+                  `Thiếu quyền "pages_read_user_content" trên FACEBOOK_ACCESS_TOKEN để đồng bộ Lead Bình luận (Comment)`,
+                );
+                canSyncComments = false;
+                break;
+              }
+              continue;
             }
-            continue;
           }
 
           for (const comment of comments) {
+            const cmtCreated = parseCreatedAt(comment.created_time);
+            if (cutoffMs !== null && cmtCreated && cmtCreated.getTime() < cutoffMs) {
+              continue;
+            }
             const mapped = mapFacebookCommentLead(comment, pageId, {
               postId: post.id,
               postMessage: post.message,
