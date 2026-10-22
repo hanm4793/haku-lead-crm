@@ -163,18 +163,33 @@ function metricValues(row: FacebookInsight) {
   };
 }
 
-async function loadPageByAdId(adAccountId: string): Promise<Map<string, string>> {
-  const ads = await withGraphRetry(() =>
-    graphGetAllData<FacebookAdCatalogItem>(`/${adAccountId}/ads`, {
-      fields: "id,creative{actor_id,effective_object_story_id,object_story_spec}",
-      limit: "200",
-    }),
-  );
+async function loadPageByAdId(adAccountId: string, adIds?: string[]): Promise<Map<string, string>> {
+  const uniqueIds = adIds ? [...new Set(adIds.filter(Boolean))] : [];
+  if (adIds && uniqueIds.length === 0) return new Map();
+
   const pages = new Map<string, string>();
-  for (const ad of ads) {
-    const adId = optionalText(ad.id);
-    const pageId = pageIdFromCreative(ad.creative);
-    if (adId && pageId) pages.set(adId, pageId);
+  const chunks: Array<string[] | null> =
+    uniqueIds.length > 0
+      ? Array.from({ length: Math.ceil(uniqueIds.length / 100) }, (_, i) =>
+          uniqueIds.slice(i * 100, (i + 1) * 100),
+        )
+      : [null];
+
+  for (const chunk of chunks) {
+    const ads = await withGraphRetry(() =>
+      graphGetAllData<FacebookAdCatalogItem>(`/${adAccountId}/ads`, {
+        fields: "id,creative{actor_id,effective_object_story_id,object_story_spec}",
+        limit: "200",
+        ...(chunk
+          ? { filtering: JSON.stringify([{ field: "id", operator: "IN", value: chunk }]) }
+          : {}),
+      }),
+    );
+    for (const ad of ads) {
+      const adId = optionalText(ad.id);
+      const pageId = pageIdFromCreative(ad.creative);
+      if (adId && pageId) pages.set(adId, pageId);
+    }
   }
   return pages;
 }
@@ -219,36 +234,44 @@ async function syncInsightsForAccount(
   const counts = { imported: 0, updated: 0, skipped: 0, errors: 0 };
   const errorMessages: string[] = [];
 
+  const windows = dateWindows(since, until, 7);
   const campaignRows: FacebookInsight[] = [];
-  for (const window of dateWindows(since, until, 7)) {
-    const chunk = await withGraphRetry(() =>
-      graphGetAllData<FacebookInsight>(`/${adAccountId}/insights`, {
-        level: "campaign",
-        time_increment: "1",
-        time_range: JSON.stringify(window),
-        limit: INSIGHT_LIMIT,
-        fields: CAMPAIGN_FIELDS,
-      }),
-    );
-    campaignRows.push(...chunk);
-  }
   const adRows: FacebookInsight[] = [];
-  for (const window of dateWindows(since, until, 7)) {
-    const chunk = await withGraphRetry(() =>
-      graphGetAllData<FacebookInsight>(`/${adAccountId}/insights`, {
-        level: "ad",
-        time_increment: "1",
-        time_range: JSON.stringify(window),
-        limit: INSIGHT_LIMIT,
-        fields: AD_FIELDS,
-      }),
-    );
-    adRows.push(...chunk);
-  }
+  await Promise.all([
+    (async () => {
+      for (const window of windows) {
+        const chunk = await withGraphRetry(() =>
+          graphGetAllData<FacebookInsight>(`/${adAccountId}/insights`, {
+            level: "campaign",
+            time_increment: "1",
+            time_range: JSON.stringify(window),
+            limit: INSIGHT_LIMIT,
+            fields: CAMPAIGN_FIELDS,
+          }),
+        );
+        campaignRows.push(...chunk);
+      }
+    })(),
+    (async () => {
+      for (const window of windows) {
+        const chunk = await withGraphRetry(() =>
+          graphGetAllData<FacebookInsight>(`/${adAccountId}/insights`, {
+            level: "ad",
+            time_increment: "1",
+            time_range: JSON.stringify(window),
+            limit: INSIGHT_LIMIT,
+            fields: AD_FIELDS,
+          }),
+        );
+        adRows.push(...chunk);
+      }
+    })(),
+  ]);
 
   let pageByAd = new Map<string, string>();
   try {
-    pageByAd = await loadPageByAdId(adAccountId);
+    const activeAdIds = adRows.map((r) => optionalText(r.ad_id)).filter((id): id is string => id !== null);
+    pageByAd = await loadPageByAdId(adAccountId, activeAdIds);
   } catch (error) {
     counts.errors += 1;
     errorMessages.push(errorMessage(error));
@@ -317,53 +340,58 @@ async function syncInsightsForAccount(
     });
   }
 
-  const BATCH_SIZE = 25;
-  for (let i = 0; i < writes.length; i += BATCH_SIZE) {
-    const batch = writes.slice(i, i + BATCH_SIZE);
-    await Promise.all(
-      batch.map(async (values) => {
-        try {
-          const [upserted] = await db
-            .insert(metaAdInsights)
-            .values(values)
-            .onConflictDoUpdate({
-              target: [
-                metaAdInsights.adAccountId,
-                metaAdInsights.level,
-                metaAdInsights.objectId,
-                metaAdInsights.dateStart,
-              ],
-              set: {
-                objectName: values.objectName,
-                campaignId: values.campaignId,
-                campaignName: values.campaignName,
-                adsetId: values.adsetId,
-                adsetName: values.adsetName,
-                pageId: values.pageId,
-                dateStop: values.dateStop,
-                spend: values.spend,
-                impressions: values.impressions,
-                clicks: values.clicks,
-                reach: values.reach,
-                leads: values.leads,
-                cpc: values.cpc,
-                cpm: values.cpm,
-                ctr: values.ctr,
-                costPerLead: values.costPerLead,
-                syncedAt: values.syncedAt,
-              },
-            })
-            .returning({ inserted: sql<boolean>`(xmax = 0)` });
+  // Khử trùng lặp theo khóa chính (adAccountId, level, objectId, dateStart) trước khi bulk upsert
+  const uniqueWritesMap = new Map<string, typeof metaAdInsights.$inferInsert>();
+  for (const w of writes) {
+    const key = `${w.adAccountId}:${w.level}:${w.objectId}:${w.dateStart.toISOString()}`;
+    uniqueWritesMap.set(key, w);
+  }
+  const uniqueWrites = [...uniqueWritesMap.values()];
 
-          if (!upserted) throw new Error(`Could not upsert Insight for ${values.objectId}`);
-          if (upserted.inserted) counts.imported += 1;
-          else counts.updated += 1;
-        } catch (error) {
-          counts.errors += 1;
-          if (errorMessages.length < 5) errorMessages.push(errorMessage(error));
-        }
-      }),
-    );
+  const BATCH_SIZE = 200;
+  for (let i = 0; i < uniqueWrites.length; i += BATCH_SIZE) {
+    const batch = uniqueWrites.slice(i, i + BATCH_SIZE);
+    try {
+      const upsertedRows = await db
+        .insert(metaAdInsights)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [
+            metaAdInsights.adAccountId,
+            metaAdInsights.level,
+            metaAdInsights.objectId,
+            metaAdInsights.dateStart,
+          ],
+          set: {
+            objectName: sql`excluded.object_name`,
+            campaignId: sql`excluded.campaign_id`,
+            campaignName: sql`excluded.campaign_name`,
+            adsetId: sql`excluded.adset_id`,
+            adsetName: sql`excluded.adset_name`,
+            pageId: sql`excluded.page_id`,
+            dateStop: sql`excluded.date_stop`,
+            spend: sql`excluded.spend`,
+            impressions: sql`excluded.impressions`,
+            clicks: sql`excluded.clicks`,
+            reach: sql`excluded.reach`,
+            leads: sql`excluded.leads`,
+            cpc: sql`excluded.cpc`,
+            cpm: sql`excluded.cpm`,
+            ctr: sql`excluded.ctr`,
+            costPerLead: sql`excluded.cost_per_lead`,
+            syncedAt: sql`excluded.synced_at`,
+          },
+        })
+        .returning({ inserted: sql<boolean>`(xmax = 0)` });
+
+      for (const row of upsertedRows) {
+        if (row.inserted) counts.imported += 1;
+        else counts.updated += 1;
+      }
+    } catch (error) {
+      counts.errors += 1;
+      if (errorMessages.length < 5) errorMessages.push(errorMessage(error));
+    }
   }
 
   return { ...counts, errorMessages };
@@ -421,22 +449,28 @@ export async function syncFacebookInsights(options?: {
       throw new Error("Không tìm thấy Tài khoản Quảng cáo Meta nào để đồng bộ.");
     }
 
-    // Sync tuần tự từng TKQC (tránh rate limit)
-    for (const accountId of targetAccountIds) {
-      try {
-        const result = await syncInsightsForAccount(accountId, since, until);
-        totals.imported += result.imported;
-        totals.updated += result.updated;
-        totals.skipped += result.skipped;
-        totals.errors += result.errors;
-        allErrors.push(...result.errorMessages);
-        syncedAdAccounts.push(accountId);
-      } catch (error) {
-        totals.errors += 1;
-        if (allErrors.length < 10) {
-          allErrors.push(`[${accountId}] ${errorMessage(error)}`);
-        }
-      }
+    // Sync song song theo cụm 4 TKQC cùng lúc để tối ưu thời gian (< 10s cho 8 TKQC)
+    const ACCOUNT_CONCURRENCY = 4;
+    for (let i = 0; i < targetAccountIds.length; i += ACCOUNT_CONCURRENCY) {
+      const accountBatch = targetAccountIds.slice(i, i + ACCOUNT_CONCURRENCY);
+      await Promise.all(
+        accountBatch.map(async (accountId) => {
+          try {
+            const result = await syncInsightsForAccount(accountId, since, until);
+            totals.imported += result.imported;
+            totals.updated += result.updated;
+            totals.skipped += result.skipped;
+            totals.errors += result.errors;
+            allErrors.push(...result.errorMessages);
+            syncedAdAccounts.push(accountId);
+          } catch (error) {
+            totals.errors += 1;
+            if (allErrors.length < 10) {
+              allErrors.push(`[${accountId}] ${errorMessage(error)}`);
+            }
+          }
+        }),
+      );
     }
 
     const summary = `Synced ${syncedAdAccounts.length}/${targetAccountIds.length} TKQC. Imported ${totals.imported}, updated ${totals.updated}, skipped ${totals.skipped}, errors ${totals.errors}.`;

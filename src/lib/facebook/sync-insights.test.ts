@@ -26,15 +26,22 @@ function createDb(existingObjectIds: string[] = []) {
 
   const db = {
     insert: vi.fn((table: unknown) => ({
-      values: vi.fn((values: Record<string, unknown>) => {
-        inserted.push({ table, values });
+      values: vi.fn((values: Record<string, unknown> | Array<Record<string, unknown>>) => {
+        const rows = Array.isArray(values) ? values : [values];
+        for (const row of rows) {
+          inserted.push({ table, values: row });
+        }
         if (table === metaSyncRuns) {
           return { returning: vi.fn(async () => [{ id: "run-1" }]) };
         }
-        const existingObjectId = existing.shift();
         return {
           onConflictDoUpdate: vi.fn(() => ({
-            returning: vi.fn(async () => [{ inserted: !existingObjectId }]),
+            returning: vi.fn(async () =>
+              rows.map(() => {
+                const existingObjectId = existing.shift();
+                return { inserted: !existingObjectId };
+              }),
+            ),
           })),
         };
       }),

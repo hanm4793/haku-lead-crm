@@ -106,8 +106,8 @@ async function handleSync(request: NextRequest) {
         insightsOutcome = { status: "skipped", reason: "recently_synced" };
       } else {
         try {
-          // Tự động đồng bộ dùng cửa sổ 7 ngày gần nhất để chạy nhanh; bấm thủ công (force=1) quét đủ 30 ngày
-          const since = force ? undefined : rollingSinceDate(7);
+          // Tự động đồng bộ dùng cửa sổ 3 ngày gần nhất (hôm nay + 2 ngày trước) để chạy nhanh (<8s); bấm thủ công (force=1) quét đủ 30 ngày
+          const since = force ? undefined : rollingSinceDate(2);
           const result = await syncFacebookInsights(since ? { since } : undefined);
           insightsOutcome = { status: "synced", result };
           didSyncAny = true;
@@ -130,7 +130,7 @@ async function handleSync(request: NextRequest) {
         leadsOutcome = { status: "skipped", reason: "recently_synced" };
       } else {
         try {
-          const result = await syncFacebookLeads(force ? undefined : { recentDays: 7 });
+          const result = await syncFacebookLeads(force ? undefined : { recentDays: 3 });
           leadsOutcome = { status: "synced", result };
           didSyncAny = true;
         } catch (err) {

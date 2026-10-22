@@ -114,18 +114,30 @@ function isInvalidFieldError(error: unknown): error is FacebookGraphError {
   );
 }
 
-async function fetchFormLeads(formId: string, pageAccessToken: string): Promise<FacebookLead[]> {
+async function fetchFormLeads(
+  formId: string,
+  pageAccessToken: string,
+  cutoffMs: number | null = null,
+): Promise<FacebookLead[]> {
+  const filterParam: Record<string, string> =
+    cutoffMs !== null
+      ? {
+          filtering: JSON.stringify([
+            { field: "time_created", operator: "GREATER_THAN", value: Math.floor(cutoffMs / 1000) },
+          ]),
+        }
+      : {};
   try {
     return await graphGetAllData<FacebookLead>(
       `/${formId}/leads`,
-      { fields: DETAILED_LEAD_FIELDS },
+      { fields: DETAILED_LEAD_FIELDS, ...filterParam },
       { accessToken: pageAccessToken },
     );
   } catch (error) {
     if (!isInvalidFieldError(error)) throw error;
     return graphGetAllData<FacebookLead>(
       `/${formId}/leads`,
-      { fields: BASIC_LEAD_FIELDS },
+      { fields: BASIC_LEAD_FIELDS, ...filterParam },
       { accessToken: pageAccessToken },
     );
   }
@@ -205,7 +217,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
 
     let canSyncMessaging = true;
     let canSyncComments = true;
-    for (const pageId of pageIds) {
+    async function syncSinglePage(pageId: string) {
       const projectId = (await getFacebookPageProjectId(pageId)) ?? fallbackProjectId;
       const pageAuth = pageTokens.get(pageId);
       if (!pageAuth) {
@@ -214,7 +226,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
             `Page ${pageId}: thiếu Page Access Token (user token chưa có quyền Page này).`,
           ),
         );
-        continue;
+        return;
       }
 
       await refreshFacebookPageName(pageId, pageAuth.name).catch(() => undefined);
@@ -236,7 +248,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
       for (const form of forms) {
         let formLeads: FacebookLead[];
         try {
-          formLeads = await fetchFormLeads(form.id, pageAuth.token);
+          formLeads = await fetchFormLeads(form.id, pageAuth.token, cutoffMs);
         } catch (error) {
           recordError(error);
           continue;
@@ -513,6 +525,12 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
           recordError(new Error(`Page ${pageId} (Comments): ${errorMessage(error)}`));
         }
       }
+    }
+
+    const PAGE_CONCURRENCY = 6;
+    for (let i = 0; i < pageIds.length; i += PAGE_CONCURRENCY) {
+      const pageBatch = pageIds.slice(i, i + PAGE_CONCURRENCY);
+      await Promise.all(pageBatch.map((pageId) => syncSinglePage(pageId)));
     }
 
     const warnings = [...warningSet];
