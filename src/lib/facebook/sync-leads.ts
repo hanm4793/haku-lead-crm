@@ -294,10 +294,12 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
                 };
 
                 if (existing) {
-                  await db
-                    .update(leads)
-                    .set({ ...facebookMetadata, updatedAt: new Date() })
-                    .where(eq(leads.id, existing.id));
+                  if (cutoffMs === null || (!existing.phone && mapped.phone)) {
+                    await db
+                      .update(leads)
+                      .set({ ...facebookMetadata, updatedAt: new Date() })
+                      .where(eq(leads.id, existing.id));
+                  }
                   counts.updated += 1;
                   byChannel.form += 1;
                   continue;
