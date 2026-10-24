@@ -161,6 +161,7 @@ export function MarketingPage({
     urlTab === "audiences" ? "audiences" : "campaigns",
   );
   const [pending, setPending] = React.useState(false);
+  const [isRefreshing, startRefreshTransition] = React.useTransition();
   const [preset, setPreset] = React.useState<PresetId>("ALL");
   const [range, setRange] = React.useState<DateRange>({ from: null, to: null });
   const [selectedProjectIds, setSelectedProjectIds] = React.useState<string[]>([]);
@@ -533,7 +534,24 @@ export function MarketingPage({
   }
 
   return (
-    <div className="space-y-4 p-4">
+    <div className={cn("relative space-y-4 p-4", (pending || isRefreshing) && "pointer-events-none select-none")}>
+      {(pending || isRefreshing) && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed inset-0 z-40 flex cursor-wait items-center justify-center bg-slate-900/15 backdrop-blur-[1.5px]"
+        >
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-5 py-3.5 shadow-lg ring-1 ring-black/5">
+            <RefreshCw className="size-5 shrink-0 animate-spin text-primary" />
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold text-foreground">
+                {pending ? "Đang đồng bộ dữ liệu Marketing từ Meta..." : "Đang làm mới dữ liệu Marketing..."}
+              </span>
+              <span className="text-[11px] text-muted-foreground">Vui lòng đợi trong giây lát</span>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">Marketing & Tệp KH</h1>
@@ -546,13 +564,13 @@ export function MarketingPage({
           {syncedAt && (
             <button
               type="button"
-              onClick={() => router.refresh()}
+              onClick={() => startRefreshTransition(() => router.refresh())}
               title="Nhấn để làm mới dữ liệu trang Marketing"
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15"
             >
               <span className="size-1.5 rounded-full bg-emerald-500" />
               <span>Cập nhật mới nhất: {formatDateTime(syncedAt)}</span>
-              <RefreshCw className={cn("size-3 opacity-70", pending && "animate-spin")} />
+              <RefreshCw className={cn("size-3 opacity-70", (pending || isRefreshing) && "animate-spin")} />
             </button>
           )}
           {canSync && activeTab === "campaigns" ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, ArrowUp, ChevronsUpDown, Copy, MessageSquare, Phone, RotateCcw } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Copy, Loader2, MessageSquare, Phone, RotateCcw } from "lucide-react";
 
 import { AssigneeCell, CategoryCell, ContactStatusCell } from "@/components/leads/inline-cells";
 import {
@@ -129,7 +129,26 @@ export function LeadTable({
   const rowIndexOffset = Math.max(0, (page - 1) * pageSize);
 
   return (
-    <div ref={scrollRef} className="thin-scrollbar relative min-h-0 flex-1 overflow-auto">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      {loading && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute inset-0 z-30 flex cursor-wait items-center justify-center bg-white/55 backdrop-blur-[1px]"
+        >
+          <div className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-4 py-2.5 text-xs font-medium text-foreground shadow-md">
+            <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+            <span>Đang tải danh sách lead...</span>
+          </div>
+        </div>
+      )}
+      <div
+        ref={scrollRef}
+        className={cn(
+          "thin-scrollbar relative min-h-0 flex-1 overflow-auto",
+          loading && "pointer-events-none select-none",
+        )}
+      >
       <table className="w-max min-w-full border-collapse text-[13px]">
         <thead className="sticky top-0 z-20">
           <tr>
@@ -265,6 +284,7 @@ export function LeadTable({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

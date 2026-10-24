@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { useProjectContext } from "@/components/layout/project-switcher";
 import type { LeadPage } from "@/lib/db/leads-repo";
 import type { LeadSearchInput } from "@/lib/leads/query";
 import type { Lead } from "@/lib/types";
@@ -27,6 +28,7 @@ export function useLeadPage(
   initialRequest: LeadSearchInput,
   request: LeadSearchInput,
 ): UseLeadPageResult {
+  const { isSwitchingProject } = useProjectContext();
   const [data, setData] = React.useState(initialData);
   const [prevInitialData, setPrevInitialData] = React.useState(initialData);
   const [hydratedVersion, setHydratedVersion] = React.useState(0);
@@ -47,6 +49,9 @@ export function useLeadPage(
   }
 
   React.useEffect(() => {
+    // Khi đang chuyển dự án, router.refresh() của server đang kéo lại initialData mới — không gọi trùng /api/leads/search
+    if (isSwitchingProject) return;
+
     if (lastHydratedVersion.current !== hydratedVersion) {
       lastHydratedVersion.current = hydratedVersion;
       lastFetchedSignature.current = `${initialKey}|${reloadToken}`;
@@ -86,7 +91,7 @@ export function useLeadPage(
       });
 
     return () => controller.abort();
-  }, [key, initialKey, reloadToken, fetchSignature, hydratedVersion]);
+  }, [key, initialKey, reloadToken, fetchSignature, hydratedVersion, isSwitchingProject]);
 
   // Ảnh chụp dữ liệu hiện tại để hoàn tác được khi server từ chối thay đổi.
   const snapshot = React.useRef(data);
@@ -122,5 +127,5 @@ export function useLeadPage(
 
   const refetch = React.useCallback(() => setReloadToken((n) => n + 1), []);
 
-  return { data, loading, error, patchRows, refetch };
+  return { data, loading: loading || isSwitchingProject, error, patchRows, refetch };
 }

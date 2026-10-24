@@ -42,30 +42,14 @@ export async function loadLastProjectSync(kind: "leads", projectId: string): Pro
 export async function getLatestDataTimestamp(projectId?: string | null): Promise<string | null> {
   try {
     const db = getDb();
-    const [[syncRow], [leadRow]] = await Promise.all([
-      db
-        .select({
-          at: sql<Date | null>`max(${metaSyncRuns.finishedAt})`,
-        })
-        .from(metaSyncRuns)
-        .where(and(eq(metaSyncRuns.status, "ok"), isNotNull(metaSyncRuns.finishedAt))),
-      projectId
-        ? db
-            .select({
-              at: sql<Date | null>`max(greatest(${leads.updatedAt}, ${leads.createdAt}))`,
-            })
-            .from(leads)
-            .where(eq(leads.projectId, projectId))
-        : db
-            .select({
-              at: sql<Date | null>`max(greatest(${leads.updatedAt}, ${leads.createdAt}))`,
-            })
-            .from(leads),
-    ]);
-
-    const t1 = syncRow?.at ? new Date(syncRow.at).getTime() : 0;
-    const t2 = leadRow?.at ? new Date(leadRow.at).getTime() : 0;
-    const maxMs = Math.max(t1, t2);
+    const leadMaxExpr = projectId
+      ? sql`(select max(greatest(${leads.updatedAt}, ${leads.createdAt})) from ${leads} where ${leads.projectId} = ${projectId})`
+      : sql`(select max(greatest(${leads.updatedAt}, ${leads.createdAt})) from ${leads})`;
+    const syncMaxExpr = sql`(select max(${metaSyncRuns.finishedAt}) from ${metaSyncRuns} where ${metaSyncRuns.status} = 'ok' and ${metaSyncRuns.finishedAt} is not null)`;
+    const [row] = await db.execute<{ at: Date | string | null }>(
+      sql`select greatest(${syncMaxExpr}, ${leadMaxExpr}) as at`,
+    );
+    const maxMs = row?.at ? new Date(row.at).getTime() : 0;
     return maxMs > 0 ? new Date(maxMs).toISOString() : null;
   } catch {
     return null;

@@ -4,10 +4,20 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Briefcase, ChevronLeft, Megaphone, Settings, Shield, Sparkles, Users } from "lucide-react";
+import {
+  BarChart3,
+  Briefcase,
+  ChevronLeft,
+  Loader2,
+  Megaphone,
+  Settings,
+  Shield,
+  Sparkles,
+  Users,
+} from "lucide-react";
 
 import { AiChatPanel } from "@/components/ai/ai-chat-panel";
-import { ProjectProvider } from "@/components/layout/project-switcher";
+import { ProjectProvider, useProjectContext } from "@/components/layout/project-switcher";
 import { UserMenu } from "@/components/layout/user-menu";
 import { Button } from "@/components/ui/button";
 import { canSeeNav, canUseAi, canViewMarketing, ROLE_LABELS, type NavGate, type UserRole } from "@/lib/auth/roles";
@@ -22,6 +32,53 @@ const NAV_ITEMS: { href: string; label: string; icon: typeof Users; access: NavG
   { href: "/users", label: "Người dùng", icon: Shield, access: "users" },
   { href: "/settings", label: "Cài đặt App", icon: Settings, access: "settings" },
 ];
+
+function MainContentArea({
+  children,
+  pendingHref,
+}: {
+  children: React.ReactNode;
+  pendingHref: string | null;
+}) {
+  const { isSwitchingProject, switchingToProject } = useProjectContext();
+  const isBlocking = isSwitchingProject || Boolean(pendingHref);
+
+  const pendingNavLabel = React.useMemo(() => {
+    if (!pendingHref) return null;
+    return NAV_ITEMS.find((item) => pendingHref.startsWith(item.href))?.label ?? null;
+  }, [pendingHref]);
+
+  const loadingMessage = isSwitchingProject
+    ? switchingToProject
+      ? `Đang chuyển sang dự án «${switchingToProject.name}»...`
+      : "Đang chuyển dự án..."
+    : pendingNavLabel
+      ? `Đang tải trang ${pendingNavLabel}...`
+      : "Đang tải dữ liệu...";
+
+  return (
+    <main className="relative min-w-0 flex-1" aria-busy={isBlocking}>
+      <div className={cn("min-h-full", isBlocking && "pointer-events-none select-none opacity-60 transition-opacity")}>
+        {children}
+      </div>
+      {isBlocking && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed inset-0 z-50 flex cursor-wait items-center justify-center bg-slate-900/15 backdrop-blur-[1.5px]"
+        >
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-5 py-3.5 shadow-lg ring-1 ring-black/5">
+            <Loader2 className="size-5 shrink-0 animate-spin text-primary" />
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold text-foreground">{loadingMessage}</span>
+              <span className="text-[11px] text-muted-foreground">Vui lòng đợi trong giây lát</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
 
 export function AppShell({
   children,
@@ -206,7 +263,7 @@ export function AppShell({
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <main className="min-w-0 flex-1">{children}</main>
+          <MainContentArea pendingHref={pendingHref}>{children}</MainContentArea>
 
           <footer className="flex items-center justify-between border-t border-border bg-card px-5 py-2.5 text-[11px] text-muted-foreground">
             <span>SEMTOP Marketing CRM</span>

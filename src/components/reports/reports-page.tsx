@@ -214,7 +214,20 @@ export function ReportsPage({
         </div>
       </div>
 
-      <div className={cn("space-y-4 transition-opacity", loading && "opacity-60")}>
+      <div className="relative">
+        {loading && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="absolute inset-0 z-30 flex cursor-wait items-start justify-center rounded-xl bg-white/55 pt-28 backdrop-blur-[1px]"
+          >
+            <div className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-4 py-2.5 text-xs font-medium text-foreground shadow-md">
+              <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+              <span>Đang tải dữ liệu báo cáo...</span>
+            </div>
+          </div>
+        )}
+        <div className={cn("space-y-4 transition-opacity", loading && "pointer-events-none select-none opacity-60")}>
         <ReportKpiCards current={summary.kpis} previous={summary.previousKpis} />
 
         <Tabs defaultValue="overview">
@@ -249,6 +262,7 @@ export function ReportsPage({
             />
           </TabsContent>
         </Tabs>
+        </div>
       </div>
 
       <LeadDetailDialog

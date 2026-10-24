@@ -387,7 +387,39 @@ function selectLeadRows() {
  * kiện WHERE, còn cùng một lần quét bảng nên tính thừa vài aggregate không tốn
  * thêm gì đáng kể.
  */
-function selectLeadCounts(now: Date) {
+export function criteriaNeedsCatalogJoins(criteria: LeadCriteria): boolean {
+  const hasNamedAssignee = Boolean(
+    criteria.assignees?.some((a) => a !== UNASSIGNED_FILTER_VALUE) || criteria.assigneeContains?.trim(),
+  );
+  return Boolean(
+    criteria.brands?.length ||
+      criteria.locations?.length ||
+      hasNamedAssignee ||
+      criteria.products?.length,
+  );
+}
+
+function selectLeadCounts(now: Date, withCatalogJoins = true) {
+  const selection = {
+    total: sql<number>`count(*)::int`,
+    contacted: sql<number>`count(*) filter (where ${leads.contactStatus} = 'DA_LIEN_HE')::int`,
+    notContacted: sql<number>`count(*) filter (where ${leads.contactStatus} = 'CHUA_LIEN_HE')::int`,
+    khqt: sql<number>`count(*) filter (where ${leads.category} in ('KHQT', 'GDTD', 'KHD'))::int`,
+    gdtd: sql<number>`count(*) filter (where ${leads.category} in ('GDTD', 'KHD'))::int`,
+    khd: sql<number>`count(*) filter (where ${leads.category} = 'KHD')::int`,
+    failed: sql<number>`count(*) filter (where ${leads.category} = 'FAIL')::int`,
+    overdue: sql<number>`count(*) filter (where ${overdueSql(now)})::int`,
+  };
+  const base = getDb().select(selection).from(leads).$dynamic();
+  if (!withCatalogJoins) return base;
+  return base
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
+    .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
+    .leftJoin(products, eq(leads.productId, products.id));
+}
+
+function _legacySelectLeadCounts(now: Date) {
   return getDb()
     .select({
       total: sql<number>`count(*)::int`,
@@ -432,7 +464,9 @@ export async function queryLeadPage(options: LeadPageOptions, viewer: ViewerScop
   const page = Math.max(1, options.page ?? 1);
   const pageSize = Math.min(500, Math.max(1, options.pageSize ?? 50));
 
-  const scoped = criteriaConditions(criteriaFromLeadFilters(options.filters, true), viewer, now);
+  const scopedCriteria = criteriaFromLeadFilters(options.filters, true);
+  const needsJoins = criteriaNeedsCatalogJoins(scopedCriteria);
+  const scoped = criteriaConditions(scopedCriteria, viewer, now);
   const isAllTab = !options.filters.tab || options.filters.tab === "ALL";
   const withoutTab = isAllTab
     ? scoped
@@ -448,9 +482,9 @@ export async function queryLeadPage(options: LeadPageOptions, viewer: ViewerScop
       .orderBy(direction(sortColumn), desc(leads.id))
       .limit(pageSize)
       .offset((page - 1) * pageSize),
-    selectLeadCounts(now).where(and(...scoped)),
+    selectLeadCounts(now, needsJoins).where(and(...scoped)),
     // Số trên tab đếm theo bộ lọc nhưng bỏ qua chính tab đang chọn (nếu đang ở tab ALL thì dùng chung kpi).
-    isAllTab ? Promise.resolve(null) : selectLeadCounts(now).where(and(...withoutTab)),
+    isAllTab ? Promise.resolve(null) : selectLeadCounts(now, needsJoins).where(and(...withoutTab)),
     getLatestDataTimestamp(viewer.activeProjectId),
   ]);
   const tabs = maybeTabs ? maybeTabs[0] : kpi;
@@ -1503,11 +1537,12 @@ export async function getReferenceData(projectId?: string | null, viewer?: Viewe
   }
 
   const project = effectiveProjectId
-    ? await getProjectById(effectiveProjectId)
+    ? null
     : !viewer || viewer.role === "SUPER_ADMIN"
       ? await getDefaultProject()
       : null;
-  const resolvedProjectId = project?.id;
+  const resolvedProjectId = effectiveProjectId ?? project?.id;
+  const projectPromise = effectiveProjectId ? getProjectById(effectiveProjectId) : Promise.resolve(project);
 
   if (viewer && viewer.role !== "SUPER_ADMIN" && !resolvedProjectId) {
     return {
@@ -1536,7 +1571,8 @@ export async function getReferenceData(projectId?: string | null, viewer?: Viewe
         .orderBy(asc(appUsers.fullName))
         .then((rows) => rows.map((r) => r.name));
 
-  const [brandRows, locationRows, assignees, productRows, attrFields] = await Promise.all([
+  const [resolvedProject, brandRows, locationRows, assignees, productRows, attrFields] = await Promise.all([
+    projectPromise,
     db
       .select({ code: brands.code, name: brands.name })
       .from(brands)
@@ -1563,8 +1599,8 @@ export async function getReferenceData(projectId?: string | null, viewer?: Viewe
   }
 
   return {
-    project: project ? toProjectInfo(project) : null,
-    labels: getCatalogLabels(project),
+    project: resolvedProject ? toProjectInfo(resolvedProject) : null,
+    labels: getCatalogLabels(resolvedProject),
     brands: brandRows,
     locations: locationRows.map((r) => r.name),
     assignees,

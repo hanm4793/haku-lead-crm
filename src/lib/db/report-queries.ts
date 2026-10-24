@@ -11,6 +11,7 @@ import {
 import { getDb } from "@/lib/db/client";
 import {
   criteriaConditions,
+  criteriaNeedsCatalogJoins,
   criteriaFromLeadFilters,
   dueTodaySql,
   LEAD_SELECTION,
@@ -46,6 +47,31 @@ function whereClause(
   extra?: Partial<LeadCriteria>,
 ) {
   const parts = criteriaConditions({ ...criteriaFromLeadFilters(filters), ...extra }, viewer, now);
+  return parts.length ? and(...parts) : undefined;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyReportJoins<T extends { leftJoin: (...args: any[]) => any }>(
+  query: T,
+  filters: LeadFilters,
+  extra?: Partial<LeadCriteria>,
+  dims: Array<PivotDimension | null | undefined> = [],
+): T {
+  const criteria = { ...criteriaFromLeadFilters(filters), ...extra };
+  const needAll = criteriaNeedsCatalogJoins(criteria);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = query;
+  if (needAll || dims.includes("brand")) q = q.leftJoin(brands, eq(leads.brandId, brands.id));
+  if (needAll || dims.includes("location")) q = q.leftJoin(locations, eq(leads.locationId, locations.id));
+  if (needAll || dims.includes("assignee")) q = q.leftJoin(appUsers, eq(leads.assigneeId, appUsers.id));
+  if (needAll || dims.includes("product")) q = q.leftJoin(products, eq(leads.productId, products.id));
+  if (dims.includes("facebookPage")) {
+    q = q.leftJoin(facebookPages, eq(leads.facebookPageId, facebookPages.facebookPageId));
+  }
+  return q;
+}
+
+function _unusedWhereClause(parts: SQL[] = []) {
   return parts.length ? and(...parts) : undefined;
 }
 
@@ -145,6 +171,26 @@ async function selectKpiRow(
   now: Date,
   extra?: Partial<LeadCriteria>,
 ) {
+  const [row] = await applyReportJoins(
+    getDb()
+      .select({
+        total: sql<number>`count(*)::int`,
+        contacted: sql<number>`count(*) filter (where ${leads.contactStatus} = 'DA_LIEN_HE')::int`,
+        khqt: sql<number>`count(*) filter (where ${leads.category} in ('KHQT', 'GDTD', 'KHD'))::int`,
+        gdtd: sql<number>`count(*) filter (where ${leads.category} in ('GDTD', 'KHD'))::int`,
+        khd: sql<number>`count(*) filter (where ${leads.category} = 'KHD')::int`,
+        failed: sql<number>`count(*) filter (where ${leads.category} = 'FAIL')::int`,
+        overdue: sql<number>`count(*) filter (where ${overdueSql(now)})::int`,
+      })
+      .from(leads)
+      .$dynamic(),
+    filters,
+    extra,
+  ).where(whereClause(filters, viewer, now, extra));
+  return row;
+}
+
+async function _unusedSelectKpiRow(filters: LeadFilters, viewer: ViewerScope, now: Date, extra?: Partial<LeadCriteria>) {
   const [row] = await getDb()
     .select({
       total: sql<number>`count(*)::int`,
@@ -220,6 +266,74 @@ export async function queryFunnel(
 }
 
 export async function queryDailySeries(
+  filters: LeadFilters,
+  viewer: ViewerScope,
+  now: Date,
+): Promise<DailyPoint[]> {
+  const rows = await applyReportJoins(
+    getDb()
+      .select({
+        date: sql<string>`to_char(timezone('Asia/Ho_Chi_Minh', ${leads.createdAt}), 'YYYY-MM-DD')`,
+        leads: sql<number>`count(*)::int`,
+        khqt: sql<number>`count(*) filter (where ${leads.category} in ('KHQT', 'GDTD', 'KHD'))::int`,
+      })
+      .from(leads)
+      .$dynamic(),
+    filters,
+  )
+    .where(whereClause(filters, viewer, now))
+    .groupBy(sql`1`)
+    .orderBy(asc(sql`1`));
+  return buildDailyPoints(rows, filters);
+}
+
+function buildDailyPoints(
+  rows: Array<{ date: string; leads: number; khqt: number }>,
+  filters: LeadFilters,
+): DailyPoint[] {
+  const byDate = new Map<string, DailyPoint>();
+  for (const row of rows) {
+    const [, month, day] = row.date.split("-");
+    byDate.set(row.date, {
+      date: row.date,
+      label: `${day}.${month}`,
+      leads: row.leads,
+      khqt: row.khqt,
+    });
+  }
+  if (
+    filters.dateFrom &&
+    filters.dateTo &&
+    /^\d{4}-\d{2}-\d{2}$/.test(filters.dateFrom) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(filters.dateTo)
+  ) {
+    const startMs = Date.parse(`${filters.dateFrom}T00:00:00Z`);
+    const endMs = Date.parse(`${filters.dateTo}T00:00:00Z`);
+    const diffDays = Math.round((endMs - startMs) / 86_400_000);
+    if (diffDays >= 0 && diffDays <= 180) {
+      const filled: DailyPoint[] = [];
+      for (let i = 0; i <= diffDays; i++) {
+        const d = new Date(startMs + i * 86_400_000);
+        const yyyy = d.getUTCFullYear();
+        const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+        const dd = String(d.getUTCDate()).padStart(2, "0");
+        const key = `${yyyy}-${mm}-${dd}`;
+        filled.push(
+          byDate.get(key) ?? {
+            date: key,
+            label: `${dd}.${mm}`,
+            leads: 0,
+            khqt: 0,
+          },
+        );
+      }
+      return filled;
+    }
+  }
+  return [...byDate.values()];
+}
+
+async function _unusedQueryDailySeries(
   filters: LeadFilters,
   viewer: ViewerScope,
   now: Date,
@@ -320,6 +434,30 @@ export async function queryFailReasons(
   now: Date,
 ): Promise<FailReasonBar[]> {
   const baseWhere = whereClause(filters, viewer, now);
+  const failWhere = baseWhere ? and(baseWhere, eq(leads.category, "FAIL")) : eq(leads.category, "FAIL");
+  const rows = await applyReportJoins(
+    getDb()
+      .select({
+        reason: leads.failReason,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(leads)
+      .$dynamic(),
+    filters,
+  )
+    .where(failWhere)
+    .groupBy(leads.failReason)
+    .orderBy(desc(sql`count(*)`));
+  const totalFailed = rows.reduce((sum, r) => sum + r.count, 0);
+  return rows.map((row) => {
+    const key = row.reason ?? "CHUA_RO";
+    const label = row.reason ? (FAIL_REASON_LABEL[row.reason as FailReason] ?? row.reason) : "Chưa ghi lý do";
+    return { reason: key, label, count: row.count, share: ratio(row.count, totalFailed) };
+  });
+}
+
+async function _unusedFailReasons(filters: LeadFilters, viewer: ViewerScope, now: Date) {
+  const baseWhere = whereClause(filters, viewer, now);
   const failWhere = baseWhere
     ? and(baseWhere, eq(leads.category, "FAIL"))
     : eq(leads.category, "FAIL");
@@ -413,6 +551,114 @@ async function queryPivotGrouped(
   splitBy: PivotDimension | null,
   extra?: Partial<LeadCriteria>,
 ): Promise<PivotResult> {
+  const groupExpr = dimensionExpr(groupBy);
+  if (!splitBy) {
+    const rows = await applyReportJoins(
+      getDb()
+        .select({
+          key: sql<string>`${groupExpr}`,
+          leads: PIVOT_METRICS.leads,
+          contacted: PIVOT_METRICS.contacted,
+          unreachable: PIVOT_METRICS.unreachable,
+          khqt: PIVOT_METRICS.khqt,
+          gdtd: PIVOT_METRICS.gdtd,
+          khd: PIVOT_METRICS.khd,
+          failed: PIVOT_METRICS.failed,
+          overdue: PIVOT_METRICS.overdue(now),
+        })
+        .from(leads)
+        .$dynamic(),
+      filters,
+      extra,
+      [groupBy],
+    )
+      .where(whereClause(filters, viewer, now, extra))
+      .groupBy(sql`1`)
+      .orderBy(desc(sql`count(*)`));
+
+    const grandTotal = rows.reduce((sum, row) => sum + row.leads, 0);
+    const list = rows.map((row) => finalizePivotRow(row.key, row, grandTotal));
+    const total = finalizePivotRow(
+      "Tổng",
+      {
+        leads: grandTotal,
+        contacted: list.reduce((s, r) => s + r.contacted, 0),
+        unreachable: list.reduce((s, r) => s + r.unreachable, 0),
+        khqt: list.reduce((s, r) => s + r.khqt, 0),
+        gdtd: list.reduce((s, r) => s + r.gdtd, 0),
+        khd: list.reduce((s, r) => s + r.khd, 0),
+        failed: list.reduce((s, r) => s + r.failed, 0),
+        overdue: list.reduce((s, r) => s + r.overdue, 0),
+      },
+      grandTotal,
+    );
+    return { rows: list, total, splitKeys: [], split: {} };
+  }
+  const splitExprFast = dimensionExpr(splitBy);
+  const rowsFast = await applyReportJoins(
+    getDb()
+      .select({
+        key: sql<string>`${groupExpr}`,
+        splitKey: sql<string>`${splitExprFast}`,
+        leads: PIVOT_METRICS.leads,
+        contacted: PIVOT_METRICS.contacted,
+        unreachable: PIVOT_METRICS.unreachable,
+        khqt: PIVOT_METRICS.khqt,
+        gdtd: PIVOT_METRICS.gdtd,
+        khd: PIVOT_METRICS.khd,
+        failed: PIVOT_METRICS.failed,
+        overdue: PIVOT_METRICS.overdue(now),
+      })
+      .from(leads)
+      .$dynamic(),
+    filters,
+    extra,
+    [groupBy, splitBy],
+  )
+    .where(whereClause(filters, viewer, now, extra))
+    .groupBy(sql`1`, sql`2`);
+  const groupedFast = new Map<string, typeof rowsFast>();
+  const splitKeySetFast = new Set<string>();
+  for (const row of rowsFast) {
+    splitKeySetFast.add(row.splitKey);
+    const list = groupedFast.get(row.key) ?? [];
+    list.push(row);
+    groupedFast.set(row.key, list);
+  }
+  const aggregateKeyFast = (cells: typeof rowsFast) => ({
+    leads: cells.reduce((s, r) => s + r.leads, 0),
+    contacted: cells.reduce((s, r) => s + r.contacted, 0),
+    unreachable: cells.reduce((s, r) => s + r.unreachable, 0),
+    khqt: cells.reduce((s, r) => s + r.khqt, 0),
+    gdtd: cells.reduce((s, r) => s + r.gdtd, 0),
+    khd: cells.reduce((s, r) => s + r.khd, 0),
+    failed: cells.reduce((s, r) => s + r.failed, 0),
+    overdue: cells.reduce((s, r) => s + r.overdue, 0),
+  });
+  const grandTotalFast = rowsFast.reduce((sum, row) => sum + row.leads, 0);
+  const listFast = [...groupedFast.entries()]
+    .map(([key, cells]) => finalizePivotRow(key, aggregateKeyFast(cells), grandTotalFast))
+    .sort((a, b) => b.leads - a.leads);
+  const splitFast: Record<string, Record<string, PivotRow>> = {};
+  for (const [key, cells] of groupedFast) {
+    const parentLeads = aggregateKeyFast(cells).leads;
+    splitFast[key] = {};
+    for (const cell of cells) {
+      splitFast[key][cell.splitKey] = finalizePivotRow(cell.splitKey, cell, parentLeads);
+    }
+  }
+  const totalFast = finalizePivotRow("Tổng", aggregateKeyFast(rowsFast), grandTotalFast);
+  return { rows: listFast, total: totalFast, splitKeys: [...splitKeySetFast].sort(), split: splitFast };
+}
+
+async function _unusedQueryPivotGrouped(
+  filters: LeadFilters,
+  viewer: ViewerScope,
+  now: Date,
+  groupBy: PivotDimension,
+  splitBy: PivotDimension | null,
+  extra?: Partial<LeadCriteria>,
+) {
   const groupExpr = dimensionExpr(groupBy);
 
   if (!splitBy) {

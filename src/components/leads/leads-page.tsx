@@ -681,7 +681,7 @@ export function LeadsPage({
           leads={data.rows}
           page={page}
           pageSize={pageSize}
-          loading={loading}
+          loading={loading || bulkLoading}
           visibleColumns={visibleColumns}
           sort={sort}
           onSortChange={setSort}
@@ -700,6 +700,7 @@ export function LeadsPage({
           onResetFilters={handleResetAllFilters}
         />
 
+        <div className={cn((loading || bulkLoading) && "pointer-events-none select-none opacity-60")}>
         <Pagination
           page={page}
           pageSize={pageSize}
@@ -714,6 +715,8 @@ export function LeadsPage({
             setSelectedIds([]);
           }}
         />
+      </div>
+
       </div>
 
       <LeadDetailDialog
