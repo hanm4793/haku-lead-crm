@@ -223,11 +223,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
     async function syncSinglePage(pageId: string) {
       const pageAuth = pageTokens.get(pageId);
       if (!pageAuth) {
-        recordError(
-          new Error(
-            `Page ${pageId}: thiếu Page Access Token (user token chưa có quyền Page này).`,
-          ),
-        );
+        counts.skipped += 1;
         return;
       }
       const projectId = (await getFacebookPageProjectId(pageId)) ?? fallbackProjectId;
@@ -560,9 +556,18 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
       }
     }
 
+    const pagesWithTokens = pageIds.filter((id) => pageTokens.has(id));
+    if (pagesWithTokens.length === 0 && pageIds.length > 0) {
+      recordWarning("Không tìm thấy Page Access Token nào cho các Fanpage đang bật.");
+    }
+
+    // Chạy trang đầu tiên trước để kiểm tra nhanh quyền Messaging/Comments (tránh 6 trang cùng gọi lỗi song song)
+    if (pagesWithTokens.length > 0) {
+      await syncSinglePage(pagesWithTokens[0]!);
+    }
     const PAGE_CONCURRENCY = 6;
-    for (let i = 0; i < pageIds.length; i += PAGE_CONCURRENCY) {
-      const pageBatch = pageIds.slice(i, i + PAGE_CONCURRENCY);
+    for (let i = 1; i < pagesWithTokens.length; i += PAGE_CONCURRENCY) {
+      const pageBatch = pagesWithTokens.slice(i, i + PAGE_CONCURRENCY);
       await Promise.all(pageBatch.map((pageId) => syncSinglePage(pageId)));
     }
 

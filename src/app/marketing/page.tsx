@@ -68,8 +68,8 @@ export default async function Page() {
     crmRows,
     reference,
   ] = await Promise.all([
-    listCampaignInsights(undefined, viewerScopedPageIds),
-    listAdInsights(undefined, viewerScopedPageIds),
+    listCampaignInsights({ from: new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) }, viewerScopedPageIds),
+    listAdInsights({ from: new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) }, viewerScopedPageIds),
     listFacebookPages().catch(() => []),
     viewer.role === "SUPER_ADMIN"
       ? listProjects({ activeOnly: true }).catch(() => [])

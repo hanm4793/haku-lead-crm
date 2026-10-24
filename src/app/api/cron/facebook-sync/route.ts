@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -13,7 +13,7 @@ import { syncFacebookLeads, type SyncLeadsResult } from "@/lib/facebook/sync-lea
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function isValidCronSecret(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET?.trim();
@@ -46,6 +46,24 @@ async function getLastSuccessAt(kind: "leads" | "insights"): Promise<Date | null
   return rows[0]?.finishedAt ?? null;
 }
 
+async function isCurrentlyRunning(kind: "leads" | "insights"): Promise<boolean> {
+  if (!isDatabaseConfigured()) return false;
+  const db = getDb();
+  const threeMinutesAgo = new Date(Date.now() - 180_000);
+  const rows = await db
+    .select({ id: metaSyncRuns.id })
+    .from(metaSyncRuns)
+    .where(
+      and(
+        eq(metaSyncRuns.kind, kind),
+        isNull(metaSyncRuns.finishedAt),
+        gte(metaSyncRuns.startedAt, threeMinutesAgo),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
 function recentEnough(lastAt: Date | null, minIntervalMinutes: number): boolean {
   if (!lastAt || minIntervalMinutes <= 0) return false;
   const elapsedMs = Date.now() - lastAt.getTime();
@@ -74,7 +92,7 @@ async function handleSync(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const kindParam = (searchParams.get("kind") ?? "all").toLowerCase();
   const force = searchParams.get("force") === "1" || searchParams.get("force") === "true";
-  const minInterval = Math.max(0, Number(searchParams.get("minInterval") ?? (force ? 0 : 15)) || 0);
+  const minInterval = Math.max(0, Number(searchParams.get("minInterval") ?? (force ? 0 : 10)) || 0);
 
   const shouldRunLeads = kindParam === "all" || kindParam === "leads";
   const shouldRunInsights = kindParam === "all" || kindParam === "insights";
@@ -101,8 +119,13 @@ async function handleSync(request: NextRequest) {
     if (!tokenOk || !insightsOk) {
       insightsOutcome = { status: "skipped", reason: "missing_ad_account_or_token" };
     } else {
-      const lastInsightAt = await getLastSuccessAt("insights").catch(() => null);
-      if (!force && recentEnough(lastInsightAt, minInterval)) {
+      const [lastInsightAt, runningInsights] = await Promise.all([
+        getLastSuccessAt("insights").catch(() => null),
+        isCurrentlyRunning("insights").catch(() => false),
+      ]);
+      if (!force && runningInsights) {
+        insightsOutcome = { status: "skipped", reason: "already_running" };
+      } else if (!force && recentEnough(lastInsightAt, minInterval)) {
         insightsOutcome = { status: "skipped", reason: "recently_synced" };
       } else {
         try {
@@ -125,8 +148,13 @@ async function handleSync(request: NextRequest) {
     if (!tokenOk) {
       leadsOutcome = { status: "skipped", reason: "missing_token" };
     } else {
-      const lastLeadAt = await getLastSuccessAt("leads").catch(() => null);
-      if (!force && recentEnough(lastLeadAt, minInterval)) {
+      const [lastLeadAt, runningLeads] = await Promise.all([
+        getLastSuccessAt("leads").catch(() => null),
+        isCurrentlyRunning("leads").catch(() => false),
+      ]);
+      if (!force && runningLeads) {
+        leadsOutcome = { status: "skipped", reason: "already_running" };
+      } else if (!force && recentEnough(lastLeadAt, minInterval)) {
         leadsOutcome = { status: "skipped", reason: "recently_synced" };
       } else {
         try {

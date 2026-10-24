@@ -138,7 +138,7 @@ export function FacebookSyncPanel({
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Endpoint Cron tự động (Server)</span>
           <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-700">
-            /api/cron/facebook-sync?kind=all
+            Lead: 15 phút/lần · Insights: 30 phút/lần (24/7)
           </code>
         </div>
       </div>
