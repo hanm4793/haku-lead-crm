@@ -33,6 +33,10 @@ export const leadSearchSchema = z.object({
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
   page: z.number().int().min(1).max(10000).default(1),
   pageSize: z.number().int().min(1).max(500).default(50),
+  /** Bỏ qua đếm lại KPI & tabCounts khi chỉ chuyển trang hoặc đổi cột sắp xếp. */
+  includeCounts: z.boolean().optional(),
+  /** Có lấy kèm JSONB `attrs` trong danh sách hay không (mặc định tắt, chỉ lấy khi mở detail hoặc bật cột phụ). */
+  includeAttrs: z.boolean().optional(),
 });
 
 export type LeadSearchInput = z.infer<typeof leadSearchSchema>;

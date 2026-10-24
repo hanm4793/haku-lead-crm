@@ -19,9 +19,10 @@ export interface UseLeadPageResult {
 /**
  * Đồng bộ trang danh sách với server mỗi khi bộ lọc, sắp xếp hay phân trang đổi.
  *
- * Lần render đầu dùng luôn dữ liệu server component đã lấy sẵn, trừ khi bộ lọc
- * trong store khác với bộ lọc server đã dùng — trường hợp này xảy ra khi trợ lý
- * AI áp bộ lọc rồi điều hướng sang trang danh sách.
+ * Tối ưu:
+ * - Khi chỉ đổi `page`, `pageSize`, `sortBy`, `sortOrder` mà `filters` và `reloadToken`
+ *   không đổi → gửi `includeCounts: false` để server chỉ truy vấn 50 dòng của trang mới,
+ *   không tính lại KPI toàn bảng và tabCounts.
  */
 export function useLeadPage(
   initialData: LeadPage,
@@ -37,9 +38,12 @@ export function useLeadPage(
   const [reloadToken, setReloadToken] = React.useState(0);
 
   const key = JSON.stringify(request);
+  const filtersKey = JSON.stringify(request.filters);
   const initialKey = React.useMemo(() => JSON.stringify(initialRequest), [initialRequest]);
+  const initialFiltersKey = React.useMemo(() => JSON.stringify(initialRequest.filters), [initialRequest]);
   const fetchSignature = `${key}|${reloadToken}`;
   const lastFetchedSignature = React.useRef(`${initialKey}|0`);
+  const lastCountedSignature = React.useRef(`${initialFiltersKey}|0`);
   const lastHydratedVersion = React.useRef(0);
 
   if (prevInitialData !== initialData) {
@@ -55,11 +59,16 @@ export function useLeadPage(
     if (lastHydratedVersion.current !== hydratedVersion) {
       lastHydratedVersion.current = hydratedVersion;
       lastFetchedSignature.current = `${initialKey}|${reloadToken}`;
+      lastCountedSignature.current = `${initialFiltersKey}|${reloadToken}`;
       if (lastFetchedSignature.current === fetchSignature) {
         return;
       }
     }
     if (lastFetchedSignature.current === fetchSignature) return;
+
+    const currentCountSignature = `${filtersKey}|${reloadToken}`;
+    const needCounts = lastCountedSignature.current !== currentCountSignature;
+    const payload = needCounts ? request : { ...request, includeCounts: false };
 
     const controller = new AbortController();
     setLoading(true);
@@ -67,7 +76,7 @@ export function useLeadPage(
     fetch("/api/leads/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: key,
+      body: JSON.stringify(payload),
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -77,7 +86,17 @@ export function useLeadPage(
       .then((next) => {
         if (controller.signal.aborted) return;
         lastFetchedSignature.current = fetchSignature;
-        setData(next);
+        if (needCounts) {
+          lastCountedSignature.current = currentCountSignature;
+        }
+        setData((prev) =>
+          next.countsSkipped
+            ? {
+                ...prev,
+                rows: next.rows,
+              }
+            : next,
+        );
         setError(null);
       })
       .catch((e: unknown) => {
@@ -91,7 +110,7 @@ export function useLeadPage(
       });
 
     return () => controller.abort();
-  }, [key, initialKey, reloadToken, fetchSignature, hydratedVersion, isSwitchingProject]);
+  }, [key, filtersKey, initialKey, initialFiltersKey, reloadToken, fetchSignature, hydratedVersion, isSwitchingProject, request]);
 
   // Ảnh chụp dữ liệu hiện tại để hoàn tác được khi server từ chối thay đổi.
   const snapshot = React.useRef(data);

@@ -372,6 +372,25 @@ const SORTABLE: Record<string, SQLWrapper> = {
  * Kiểu builder của Drizzle không chịu được selection dạng generic, nên tách
  * thành hai helper với selection cố định thay vì một helper nhận tham số.
  */
+export const LEAD_LIST_SELECTION = {
+  ...LEAD_SELECTION,
+  attrs: sql<Record<string, string> | null>`null`,
+  campaign: sql<string | null>`null`,
+  adContent: sql<string | null>`null`,
+  costPerLead: sql<number | null>`null`,
+  facebookPageId: sql<string | null>`null`,
+};
+
+function selectLeadListRows(includeAttrs = false) {
+  return getDb()
+    .select(includeAttrs ? LEAD_SELECTION : LEAD_LIST_SELECTION)
+    .from(leads)
+    .leftJoin(brands, eq(leads.brandId, brands.id))
+    .leftJoin(locations, eq(leads.locationId, locations.id))
+    .leftJoin(appUsers, eq(leads.assigneeId, appUsers.id))
+    .leftJoin(products, eq(leads.productId, products.id));
+}
+
 function selectLeadRows() {
   return getDb()
     .select(LEAD_SELECTION)
@@ -444,6 +463,7 @@ export interface LeadPage {
   kpis: LeadKpis;
   tabCounts: Record<LeadFilters["tab"], number>;
   lastUpdatedAt?: string | null;
+  countsSkipped?: boolean;
 }
 
 export interface LeadPageOptions {
@@ -453,6 +473,8 @@ export interface LeadPageOptions {
   page?: number;
   pageSize?: number;
   now?: Date;
+  includeCounts?: boolean;
+  includeAttrs?: boolean;
 }
 
 /**
@@ -475,8 +497,37 @@ export async function queryLeadPage(options: LeadPageOptions, viewer: ViewerScop
   const sortColumn = SORTABLE[options.sortBy ?? "createdAt"] ?? leads.createdAt;
   const direction = options.sortOrder === "asc" ? asc : desc;
 
+  const includeAttrs = Boolean(options.includeAttrs);
+  if (options.includeCounts === false) {
+    const rows = await selectLeadListRows(includeAttrs)
+      .where(and(...scoped))
+      .orderBy(direction(sortColumn), desc(leads.id))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
+    return {
+      rows: rows.map(toLead),
+      countsSkipped: true,
+      total: 0,
+      kpis: {
+        total: 0,
+        contacted: 0,
+        uncontacted: 0,
+        contactRate: 0,
+        khqt: 0,
+        khqtRate: 0,
+        gdtd: 0,
+        khd: 0,
+        failed: 0,
+        failRate: 0,
+        overdue: 0,
+      },
+      tabCounts: { ALL: 0, CHUA_LIEN_HE: 0, DA_LIEN_HE: 0, QUA_HAN: 0 },
+      lastUpdatedAt: null,
+    };
+  }
+
   const [rows, [kpi], maybeTabs, lastUpdatedAt] = await Promise.all([
-    selectLeadRows()
+    selectLeadListRows(includeAttrs)
       .where(and(...scoped))
       // Thêm id vào khóa sắp xếp để phân trang không bị nhảy hàng khi trùng giá trị.
       .orderBy(direction(sortColumn), desc(leads.id))

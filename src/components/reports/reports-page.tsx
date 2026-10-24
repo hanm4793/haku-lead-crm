@@ -66,10 +66,15 @@ export function ReportsPage({
   const [refreshTick, setRefreshTick] = React.useState(0);
 
   const selectedId = selectedLead?.id ?? null;
-  const { logs: selectedLogs, loading: logsLoading, reload: reloadLogs } = useLeadLogs(selectedId);
+  const { detailLead, logs: selectedLogs, loading: logsLoading, reload: reloadLogs } = useLeadLogs(selectedId);
 
   const liveSelected = selectedLead
-    ? (callList.find((lead) => lead.id === selectedLead.id) ?? selectedLead)
+    ? (() => {
+        const base = callList.find((lead) => lead.id === selectedLead.id) ?? selectedLead;
+        return detailLead && detailLead.id === base.id
+          ? { ...detailLead, ...base, attrs: detailLead.attrs }
+          : base;
+      })()
     : null;
   const leadEditable = (lead: Lead) => (editor ? canEditLead(editor, { assigneeId: lead.assigneeId }) : true);
   const leadProfileEditable = (lead: Lead) =>

@@ -23,10 +23,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const { id } = await params;
 
-  const lead = await getLeadById(id, viewer);
+  const [lead, comments] = await Promise.all([getLeadById(id, viewer), getLeadComments(id)]);
   if (!lead) return NextResponse.json({ error: "Không tìm thấy lead hoặc không có quyền xem" }, { status: 404 });
 
-  const comments = await getLeadComments(id);
   const canComment = canCommentLead(viewer, { assigneeId: lead.assigneeId });
 
   return NextResponse.json({ comments, canComment });

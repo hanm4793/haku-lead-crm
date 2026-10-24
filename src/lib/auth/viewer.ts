@@ -1,16 +1,18 @@
 import { cache } from "react";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { cookies } from "next/headers";
+import { and, asc, count, eq, isNull } from "drizzle-orm";
 
 import { pageGrantUserId } from "@/lib/auth/roles";
-
+import { DEFAULT_PROJECT_SLUG } from "@/lib/constants";
 import { getDb, isDatabaseConfigured } from "@/lib/db/client";
 import type { ViewerScope } from "@/lib/db/leads-repo";
 import {
-  listProjectIdsForViewer,
+  ACTIVE_PROJECT_COOKIE,
+  listProjectIdsForUser,
   resolveActiveProject,
   toProjectViewer,
 } from "@/lib/db/project-repo";
-import { appUsers, facebookPages, userFacebookPages } from "@/lib/db/schema";
+import { appUsers, facebookPages, projects, userFacebookPages } from "@/lib/db/schema";
 import { createSupabaseServerClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export interface Viewer extends ViewerScope {
@@ -20,6 +22,8 @@ export interface Viewer extends ViewerScope {
   isDemo: boolean;
   /** Project được phép (membership). */
   projectIds: string[];
+  /** Project mặc định (ưu tiên slug mặc định) để chọn nhanh không cần query lại DB. */
+  defaultProjectId?: string | null;
   partnerId?: string | null;
 }
 
@@ -83,6 +87,17 @@ export const getScopedViewer = cache(async (): Promise<Viewer | null> => {
   if (!viewer) return null;
   if (!isDatabaseConfigured()) return viewer;
   try {
+    const jar = await cookies();
+    const cookieId = jar.get(ACTIVE_PROJECT_COOKIE)?.value ?? null;
+    if (cookieId && viewer.projectIds.includes(cookieId)) {
+      return { ...viewer, activeProjectId: cookieId };
+    }
+    if (viewer.role === "SUPER_ADMIN" && viewer.defaultProjectId) {
+      return { ...viewer, activeProjectId: viewer.defaultProjectId };
+    }
+    if (viewer.projectIds.length > 0) {
+      return { ...viewer, activeProjectId: viewer.projectIds[0] };
+    }
     const active = await resolveActiveProject(toProjectViewer(viewer));
     return { ...viewer, activeProjectId: active.id };
   } catch {
@@ -107,11 +122,19 @@ async function provisionViewer(
   const db = getDb();
   const normalizedEmail = email?.trim().toLowerCase() || null;
 
-  const byAuth = await db
-    .select()
-    .from(appUsers)
-    .where(eq(appUsers.authUserId, authUserId))
-    .limit(1);
+  // Chạy song song truy vấn app_users và danh sách projects active để tiết kiệm 1-2 round-trip DB
+  const [byAuth, activeProjects] = await Promise.all([
+    db
+      .select()
+      .from(appUsers)
+      .where(eq(appUsers.authUserId, authUserId))
+      .limit(1),
+    db
+      .select({ id: projects.id, slug: projects.slug })
+      .from(projects)
+      .where(eq(projects.active, true))
+      .orderBy(asc(projects.name)),
+  ]);
 
   let row = byAuth[0];
 
@@ -157,6 +180,28 @@ async function provisionViewer(
 
   if (!row || !row.active) return null;
 
+  const activeProjectIdSet = new Set(activeProjects.map((p) => p.id));
+  const defaultProject =
+    activeProjects.find((p) => p.slug === DEFAULT_PROJECT_SLUG) ?? activeProjects[0] ?? null;
+
+  // Nhánh nhanh cho SUPER_ADMIN: đã có sẵn toàn bộ projectIds từ bước Promise.all đầu tiên (0 query phát sinh)
+  if (row.role === "SUPER_ADMIN") {
+    return {
+      role: row.role,
+      locationId: row.locationId,
+      appUserId: row.id,
+      projectId: row.projectId,
+      projectIds: activeProjects.map((p) => p.id),
+      defaultProjectId: defaultProject?.id ?? null,
+      partnerId: row.partnerId,
+      pageIds: [],
+      aiEnabled: true,
+      fullName: row.fullName,
+      email: row.email,
+      isDemo: false,
+    };
+  }
+
   let projectId = row.projectId;
   if (row.role === "STAFF" && !projectId && row.partnerId) {
     const [partner] = await db
@@ -168,17 +213,18 @@ async function provisionViewer(
   }
 
   const pageOwnerId = pageGrantUserId({ role: row.role, id: row.id, partnerId: row.partnerId });
-  const projectViewer = toProjectViewer({
-    role: row.role,
-    appUserId: row.id,
-    projectId,
-    partnerId: row.partnerId,
-  });
 
-  const [pageIds, projectIds] = await Promise.all([
+  const [pageIds, userProjIds, partnerProjIds] = await Promise.all([
     pageOwnerId ? listGrantedPageIds(pageOwnerId) : Promise.resolve([]),
-    listProjectIdsForViewer(projectViewer),
+    listProjectIdsForUser(row.id),
+    row.role === "STAFF" && row.partnerId ? listProjectIdsForUser(row.partnerId) : Promise.resolve([]),
   ]);
+
+  let rawIds = [...new Set([...userProjIds, ...partnerProjIds])];
+  if (rawIds.length === 0 && projectId) {
+    rawIds = [projectId];
+  }
+  const projectIds = rawIds.filter((id) => activeProjectIdSet.has(id));
 
   return {
     role: row.role,
@@ -186,9 +232,10 @@ async function provisionViewer(
     appUserId: row.id,
     projectId,
     projectIds,
+    defaultProjectId: projectIds[0] ?? null,
     partnerId: row.partnerId,
     pageIds,
-    aiEnabled: row.role === "SUPER_ADMIN" || row.aiEnabled,
+    aiEnabled: row.aiEnabled,
     fullName: row.fullName,
     email: row.email,
     isDemo: false,

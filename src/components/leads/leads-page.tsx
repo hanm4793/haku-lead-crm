@@ -193,8 +193,19 @@ export function LeadsPage({
   }
 
   const request = React.useMemo<LeadSearchInput>(
-    () => ({ filters, sortBy: sort.columnId, sortOrder: sort.order, page, pageSize }),
-    [filters, sort, page, pageSize],
+    () => ({
+      filters,
+      sortBy: sort.columnId,
+      sortOrder: sort.order,
+      page,
+      pageSize,
+      ...(visibleColumns.some(
+        (c) => c.startsWith("attr:") || c === "campaign" || c === "adContent" || c === "costPerLead",
+      )
+        ? { includeAttrs: true }
+        : {}),
+    }),
+    [filters, sort, page, pageSize, visibleColumns],
   );
 
   const { data, loading, error, patchRows, refetch } = useLeadPage(initialData, initialRequest, request);
@@ -208,7 +219,7 @@ export function LeadsPage({
     if (error) toast.error("Không tải được danh sách lead", error);
   }, [error, toast]);
 
-  const selected = selectedId ? (data.rows.find((row) => row.id === selectedId) ?? null) : null;
+  const baseSelected = selectedId ? (data.rows.find((row) => row.id === selectedId) ?? null) : null;
   const selectedIndex = selectedId ? data.rows.findIndex((row) => row.id === selectedId) : -1;
   const prevLeadId = selectedIndex > 0 ? (data.rows[selectedIndex - 1]?.id ?? null) : null;
   const nextLeadId =
@@ -222,7 +233,13 @@ export function LeadsPage({
   const allowCreate = editor ? canCreateLead(editor.role) : true;
   const allowImport = editor ? canImportLeads(editor.role) : true;
   const allowAssign = editor ? editor.role === "SUPER_ADMIN" || editor.role === "PARTNER_ADMIN" : true;
-  const { logs: selectedLogs, loading: logsLoading, reload: reloadLogs } = useLeadLogs(selectedId);
+  const { detailLead, logs: selectedLogs, loading: logsLoading, reload: reloadLogs } = useLeadLogs(selectedId);
+  const selected = React.useMemo(() => {
+    if (!baseSelected) return null;
+    return detailLead && detailLead.id === baseSelected.id
+      ? { ...detailLead, ...baseSelected, attrs: detailLead.attrs }
+      : baseSelected;
+  }, [baseSelected, detailLead]);
 
   const hasActiveFilters =
     filters.tab !== "ALL" ||

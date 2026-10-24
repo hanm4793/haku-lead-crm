@@ -11,9 +11,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const { id } = await params;
 
-  // Kiểm tra quyền xem lead trước khi trả lịch sử của nó.
-  const lead = await getLeadById(id, viewer);
+  // Chạy song song lấy chi tiết đầy đủ của lead (gồm attrs JSONB) và lịch sử hoạt động trong 1 round-trip
+  const [lead, logs] = await Promise.all([getLeadById(id, viewer), getActivityLogs(id)]);
   if (!lead) return NextResponse.json({ error: "Không tìm thấy lead" }, { status: 404 });
 
-  return NextResponse.json({ logs: await getActivityLogs(id) });
+  return NextResponse.json({ lead, logs });
 }
