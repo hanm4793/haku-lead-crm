@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 
 import type { MentionType } from "@/lib/ai/stats-query";
 import { canViewMarketing } from "@/lib/auth/roles";
@@ -122,19 +122,27 @@ async function searchPages(viewer: ViewerScope, q: string): Promise<MentionHit[]
 
 async function searchCampaigns(pageIds: string[] | null, q: string): Promise<MentionHit[]> {
   if (pageIds && pageIds.length === 0) return [];
-  const parts = [eq(metaAdInsights.level, "ad"), sql`${metaAdInsights.campaignId} is not null`];
+  const parts = [
+    or(eq(metaAdInsights.level, "ad"), eq(metaAdInsights.level, "campaign"))!,
+    sql`coalesce(${metaAdInsights.campaignId}, case when ${metaAdInsights.level} = 'campaign' then ${metaAdInsights.objectId} else null end) is not null`,
+  ];
   if (pageIds) parts.push(inArray(metaAdInsights.pageId, pageIds));
-  if (q) parts.push(sql`lower(unaccent(coalesce(${metaAdInsights.campaignName}, ''))) like ${`%${q}%`}`);
+  if (q) {
+    parts.push(
+      sql`lower(unaccent(coalesce(${metaAdInsights.campaignName}, ${metaAdInsights.objectName}, ''))) like ${`%${q}%`}`,
+    );
+  }
+  const campIdExpr = sql<string>`coalesce(${metaAdInsights.campaignId}, ${metaAdInsights.objectId})`;
   const rows = await getDb()
     .select({
-      id: metaAdInsights.campaignId,
-      label: sql<string>`max(${metaAdInsights.campaignName})`,
-      leads: sql<number>`coalesce(sum(${metaAdInsights.leads}), 0)`,
+      id: campIdExpr,
+      label: sql<string>`max(coalesce(${metaAdInsights.campaignName}, ${metaAdInsights.objectName}))`,
+      leads: sql<number>`coalesce(sum(${metaAdInsights.leads}) filter (where ${metaAdInsights.level} = 'ad'), sum(${metaAdInsights.leads}), 0)`,
     })
     .from(metaAdInsights)
     .where(and(...parts))
-    .groupBy(metaAdInsights.campaignId)
-    .orderBy(desc(sql`coalesce(sum(${metaAdInsights.leads}), 0)`))
+    .groupBy(campIdExpr)
+    .orderBy(desc(sql`3`))
     .limit(20);
   return rows.flatMap((row) =>
     row.id && row.label

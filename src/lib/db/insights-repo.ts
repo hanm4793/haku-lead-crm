@@ -243,12 +243,12 @@ export async function queryMarketingSnapshot(input: {
     return { totals: { spend: 0, impressions: 0, clicks: 0, leads: 0 }, rows: [] };
   }
 
-  const parts = [eq(metaAdInsights.level, "ad")];
-  if (input.from) parts.push(gte(metaAdInsights.dateStart, insightDay(input.from)));
-  if (input.to) parts.push(lte(metaAdInsights.dateStart, insightDay(input.to)));
-  if (input.pageIds) parts.push(inArray(metaAdInsights.pageId, input.pageIds));
-  if (input.campaignIds?.length) parts.push(inArray(metaAdInsights.campaignId, input.campaignIds));
-  if (input.adIds?.length) parts.push(inArray(metaAdInsights.objectId, input.adIds));
+  const baseAdParts = [eq(metaAdInsights.level, "ad")];
+  if (input.from) baseAdParts.push(gte(metaAdInsights.dateStart, insightDay(input.from)));
+  if (input.to) baseAdParts.push(lte(metaAdInsights.dateStart, insightDay(input.to)));
+  if (input.pageIds) baseAdParts.push(inArray(metaAdInsights.pageId, input.pageIds));
+  if (input.campaignIds?.length) baseAdParts.push(inArray(metaAdInsights.campaignId, input.campaignIds));
+  if (input.adIds?.length) baseAdParts.push(inArray(metaAdInsights.objectId, input.adIds));
   const campaign = input.campaignIds?.length ? "" : input.campaignContains?.trim();
   if (campaign) {
     const needle = campaign
@@ -257,17 +257,17 @@ export async function queryMarketingSnapshot(input: {
       .replace(/đ/g, "d")
       .replace(/Đ/g, "D")
       .toLowerCase();
-    parts.push(sql`lower(unaccent(coalesce(${metaAdInsights.campaignName}, ''))) like ${`%${needle}%`}`);
+    baseAdParts.push(sql`lower(unaccent(coalesce(${metaAdInsights.campaignName}, ''))) like ${`%${needle}%`}`);
   }
   if (input.brands?.length) {
     const brandSql = input.brands.map((brand) => {
       const escaped = brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       return sql`${metaAdInsights.campaignName} ~* ${`\\m${escaped}\\M`}`;
     });
-    parts.push(sql`(${sql.join(brandSql, sql` or `)})`);
+    baseAdParts.push(sql`(${sql.join(brandSql, sql` or `)})`);
   }
 
-  const where = and(...parts);
+  const where = and(...baseAdParts);
   const metrics = {
     spend: sql<number>`coalesce(sum(${metaAdInsights.spend}), 0)`,
     impressions: sql<number>`coalesce(sum(${metaAdInsights.impressions}), 0)`,
@@ -275,7 +275,61 @@ export async function queryMarketingSnapshot(input: {
     leads: sql<number>`coalesce(sum(${metaAdInsights.leads}), 0)`,
   };
 
-  const [totals] = await getDb().select(metrics).from(metaAdInsights).where(where);
+  let [totals] = await getDb().select(metrics).from(metaAdInsights).where(where);
+
+  // Fallback sang dữ liệu cấp campaign nếu truy vấn không lọc theo ad/fanpage hoặc dòng ad chưa có dữ liệu
+  const canUseCampaignLevel = !input.adIds?.length && input.groupBy !== "ad" && input.groupBy !== "fanpage";
+  const adTotalSpend = asNumber(totals?.spend);
+  const adTotalLeads = asNumber(totals?.leads);
+  const adTotalImpressions = asNumber(totals?.impressions);
+
+  const campaignParts = [eq(metaAdInsights.level, "campaign")];
+  if (input.from) campaignParts.push(gte(metaAdInsights.dateStart, insightDay(input.from)));
+  if (input.to) campaignParts.push(lte(metaAdInsights.dateStart, insightDay(input.to)));
+  if (input.campaignIds?.length) campaignParts.push(inArray(metaAdInsights.objectId, input.campaignIds));
+  if (input.pageIds) {
+    const pageCampSubquery = getDb()
+      .selectDistinct({ campaignId: metaAdInsights.campaignId })
+      .from(metaAdInsights)
+      .where(
+        and(
+          eq(metaAdInsights.level, "ad"),
+          inArray(metaAdInsights.pageId, input.pageIds),
+          sql`${metaAdInsights.campaignId} is not null`,
+        ),
+      );
+    campaignParts.push(inArray(metaAdInsights.objectId, pageCampSubquery));
+  }
+  if (campaign) {
+    const needle = campaign
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/đ/g, "d")
+      .replace(/Đ/g, "D")
+      .toLowerCase();
+    campaignParts.push(sql`lower(unaccent(coalesce(${metaAdInsights.objectName}, ''))) like ${`%${needle}%`}`);
+  }
+  if (input.brands?.length) {
+    const brandSql = input.brands.map((brand) => {
+      const escaped = brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return sql`${metaAdInsights.objectName} ~* ${`\\m${escaped}\\M`}`;
+    });
+    campaignParts.push(sql`(${sql.join(brandSql, sql` or `)})`);
+  }
+  const campaignWhere = and(...campaignParts);
+
+  let useCampaignLevelForBreakdown = false;
+  if (canUseCampaignLevel && adTotalSpend === 0 && adTotalLeads === 0 && adTotalImpressions === 0) {
+    const [campTotals] = await getDb().select(metrics).from(metaAdInsights).where(campaignWhere);
+    if (
+      asNumber(campTotals?.spend) > 0 ||
+      asNumber(campTotals?.leads) > 0 ||
+      asNumber(campTotals?.impressions) > 0
+    ) {
+      totals = campTotals;
+      useCampaignLevelForBreakdown = true;
+    }
+  }
 
   const brandGroupExpr = input.brandOptions?.length
     ? sql<string>`case ${sql.join(
@@ -345,30 +399,56 @@ export async function queryMarketingSnapshot(input: {
       leads: asNumber(row.leads),
     }));
   } else if (input.groupBy === "campaign") {
-    const grouped = await getDb()
-      .select({
-        campaignId: sql<string>`coalesce(${metaAdInsights.campaignId}, '')`,
-        campaignName: sql<string>`coalesce(${metaAdInsights.campaignName}, ${metaAdInsights.campaignId}, 'Không gắn chiến dịch')`,
-        pageId: sql<string | null>`max(${metaAdInsights.pageId})`,
-        ...metrics,
-      })
-      .from(metaAdInsights)
-      .where(where)
-      .groupBy(metaAdInsights.campaignId, metaAdInsights.campaignName)
-      .orderBy(rankOrder)
-      .limit(limit);
-    rows = grouped.map((row) => ({
-      id: row.campaignId,
-      key: row.campaignName,
-      campaignId: row.campaignId,
-      campaignName: row.campaignName,
-      pageId: row.pageId,
-      crmUrl: `/marketing?search=${encodeURIComponent(row.campaignName)}`,
-      spend: asNumber(row.spend),
-      impressions: asNumber(row.impressions),
-      clicks: asNumber(row.clicks),
-      leads: asNumber(row.leads),
-    }));
+    if (useCampaignLevelForBreakdown) {
+      const grouped = await getDb()
+        .select({
+          campaignId: sql<string>`coalesce(${metaAdInsights.objectId}, '')`,
+          campaignName: sql<string>`coalesce(${metaAdInsights.objectName}, ${metaAdInsights.objectId}, 'Không gắn chiến dịch')`,
+          ...metrics,
+        })
+        .from(metaAdInsights)
+        .where(campaignWhere)
+        .groupBy(metaAdInsights.objectId, metaAdInsights.objectName)
+        .orderBy(rankOrder)
+        .limit(limit);
+      rows = grouped.map((row) => ({
+        id: row.campaignId,
+        key: row.campaignName,
+        campaignId: row.campaignId,
+        campaignName: row.campaignName,
+        pageId: null,
+        crmUrl: `/marketing?search=${encodeURIComponent(row.campaignName)}`,
+        spend: asNumber(row.spend),
+        impressions: asNumber(row.impressions),
+        clicks: asNumber(row.clicks),
+        leads: asNumber(row.leads),
+      }));
+    } else {
+      const grouped = await getDb()
+        .select({
+          campaignId: sql<string>`coalesce(${metaAdInsights.campaignId}, '')`,
+          campaignName: sql<string>`coalesce(${metaAdInsights.campaignName}, ${metaAdInsights.campaignId}, 'Không gắn chiến dịch')`,
+          pageId: sql<string | null>`max(${metaAdInsights.pageId})`,
+          ...metrics,
+        })
+        .from(metaAdInsights)
+        .where(where)
+        .groupBy(metaAdInsights.campaignId, metaAdInsights.campaignName)
+        .orderBy(rankOrder)
+        .limit(limit);
+      rows = grouped.map((row) => ({
+        id: row.campaignId,
+        key: row.campaignName,
+        campaignId: row.campaignId,
+        campaignName: row.campaignName,
+        pageId: row.pageId,
+        crmUrl: `/marketing?search=${encodeURIComponent(row.campaignName)}`,
+        spend: asNumber(row.spend),
+        impressions: asNumber(row.impressions),
+        clicks: asNumber(row.clicks),
+        leads: asNumber(row.leads),
+      }));
+    }
   } else if (input.groupBy === "fanpage") {
     const grouped = await getDb()
       .select({
@@ -433,19 +513,25 @@ export async function listCampaignNames(
     .replace(/Đ/g, "D")
     .toLowerCase()
     .trim();
-  const parts = [eq(metaAdInsights.level, "ad"), sql`${metaAdInsights.campaignId} is not null`];
+  const parts = [
+    or(eq(metaAdInsights.level, "ad"), eq(metaAdInsights.level, "campaign"))!,
+    sql`coalesce(${metaAdInsights.campaignId}, case when ${metaAdInsights.level} = 'campaign' then ${metaAdInsights.objectId} else null end) is not null`,
+  ];
   if (pageIds) parts.push(inArray(metaAdInsights.pageId, pageIds));
   if (needle) {
-    parts.push(sql`lower(unaccent(coalesce(${metaAdInsights.campaignName}, ''))) like ${`%${needle}%`}`);
+    parts.push(
+      sql`lower(unaccent(coalesce(${metaAdInsights.campaignName}, ${metaAdInsights.objectName}, ''))) like ${`%${needle}%`}`,
+    );
   }
+  const campIdExpr = sql<string>`coalesce(${metaAdInsights.campaignId}, ${metaAdInsights.objectId})`;
   const rows = await getDb()
     .select({
-      id: metaAdInsights.campaignId,
-      name: sql<string>`max(${metaAdInsights.campaignName})`,
+      id: campIdExpr,
+      name: sql<string>`max(coalesce(${metaAdInsights.campaignName}, ${metaAdInsights.objectName}))`,
     })
     .from(metaAdInsights)
     .where(and(...parts))
-    .groupBy(metaAdInsights.campaignId)
+    .groupBy(campIdExpr)
     .limit(30);
   return rows.flatMap((row) => (row.id && row.name ? [{ id: row.id, name: row.name }] : []));
 }

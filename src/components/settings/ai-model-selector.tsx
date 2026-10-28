@@ -5,7 +5,7 @@ import { CheckCircle2, Loader2, Sparkles } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { GOOGLE_AI_MODELS } from "@/lib/ai/model";
+import { getAiModelLabel, GOOGLE_AI_MODELS } from "@/lib/ai/model";
 
 interface HealthResponse {
   provider: string;
@@ -121,8 +121,7 @@ export function AiModelSelector({ defaultModelId }: { defaultModelId: string }) 
         {health && !health.error && health.availableModels && (
           <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-emerald-700">
             <CheckCircle2 className="size-3.5" />
-            Đã nhận {health.availableModels.length} model (có{" "}
-            {health.availableModels.includes(selectedModel) ? selectedModel : "Gemini"})
+            Đã nhận {health.availableModels.length} model (sẵn sàng cho {getAiModelLabel(selectedModel)})
           </span>
         )}
         {health?.error && <span className="text-[11.5px] text-destructive">{health.error}</span>}

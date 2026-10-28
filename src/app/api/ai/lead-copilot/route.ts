@@ -1,4 +1,5 @@
 import { generateText } from "ai";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -95,7 +96,9 @@ export async function POST(request: Request) {
     getReferenceData(viewer.activeProjectId ?? undefined).catch(() => null),
   ]);
   const labels = reference?.labels ?? DEFAULT_CATALOG_LABELS;
-  const candidates = resolveModelCandidates(preferredModel);
+  const cookieStore = await cookies();
+  const configuredModel = preferredModel || cookieStore.get("crm_ai_model")?.value || null;
+  const candidates = resolveModelCandidates(configuredModel);
 
   if (candidates.length === 0) {
     const text = fallbackCopilot(action, lead, logs, labels, draftNote);

@@ -81,7 +81,7 @@ function resolveRange(options?: { since?: string; until?: string }) {
   if (!untilDate) throw new Error("Ngày kết thúc Insights không hợp lệ.");
 
   const defaultSince = new Date(untilDate);
-  defaultSince.setUTCDate(defaultSince.getUTCDate() - 29);
+  defaultSince.setUTCDate(defaultSince.getUTCDate() - 89);
   const since = options?.since ?? toUtcDateString(defaultSince);
   const sinceDate = parseUtcDate(since);
   if (!sinceDate) throw new Error("Ngày bắt đầu Insights không hợp lệ.");

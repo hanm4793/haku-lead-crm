@@ -736,7 +736,7 @@ export function MarketingPage({
         })}
       </div>
       <p className="text-[12px] text-muted-foreground">
-        CPL trung vị{ratedCampaigns.benchmark != null ? `: ${formatCurrency(ratedCampaigns.benchmark)}` : ""} · ≤ trung vị: Hiệu quả · ≤ 1.5x: Trung bình · &gt; 1.5x: Kém.
+        CPL trung vị{ratedCampaigns.benchmark != null ? `: ${formatCurrency(ratedCampaigns.benchmark)}` : ""} · ≤ trung vị (tối đa 300.000 ₫): Hiệu quả · ≤ 1.5x (tối đa 600.000 ₫): Trung bình · &gt; ngưỡng: Kém.
       </p>
 
       {rows.length === 0 ? (

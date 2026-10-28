@@ -29,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { ExportPreview } from "@/lib/ai/export-preview";
 import type { ExportSpec } from "@/lib/ai/export-spec";
-import { GOOGLE_AI_MODELS } from "@/lib/ai/model";
+import { DEFAULT_AI_MODEL_ID, getAiModelLabel } from "@/lib/ai/model";
 import {
   GROUP_LABEL,
   MENTION_TYPES,
@@ -209,9 +209,7 @@ export function AiChatPanel({
   const [mentionLoading, setMentionLoading] = React.useState(false);
 
   const [loading, setLoading] = React.useState(false);
-  const [mode, setMode] = React.useState<"ai" | "fallback" | null>(null);
-  const [selectedModel, setSelectedModel] = React.useState<string>("gemini-4-argon");
-  const [lastUsedModel, setLastUsedModel] = React.useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = React.useState<string>(DEFAULT_AI_MODEL_ID);
   const [lastSpec, setLastSpec] = React.useState<ExportSpec | null>(null);
   const [lastStats, setLastStats] = React.useState<StatsQuery | null>(null);
   const [lastMentions, setLastMentions] = React.useState<ChatMention[]>([]);
@@ -233,17 +231,6 @@ export function AiChatPanel({
     window.addEventListener("crm:ai-model-changed", onModelChanged);
     return () => window.removeEventListener("crm:ai-model-changed", onModelChanged);
   }, []);
-
-  const handleSelectModel = (modelId: string) => {
-    setSelectedModel(modelId);
-    try {
-      window.localStorage.setItem("crm.ai.model", modelId);
-      document.cookie = `crm_ai_model=${encodeURIComponent(modelId)}; path=/; max-age=31536000`;
-      window.dispatchEvent(new CustomEvent("crm:ai-model-changed", { detail: modelId }));
-    } catch {
-      // ignore
-    }
-  };
 
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -414,10 +401,6 @@ export function AiChatPanel({
         }),
       });
       const data = await response.json();
-      setMode(data.mode ?? null);
-      if (data.usage?.model) {
-        setLastUsedModel(data.usage.model);
-      }
       if (data.spec) {
         setLastSpec(data.spec);
       }
@@ -470,7 +453,7 @@ export function AiChatPanel({
           open ? "translate-x-0" : "translate-x-full",
         )}
       >
-        {/* Header hiện đại + Bộ chọn Model AI */}
+        {/* Header hiện đại (hiển thị đúng Model đã cấu hình trong Cài đặt) */}
         <header className="flex items-center justify-between gap-2 border-b border-border bg-card/80 px-4 py-3 backdrop-blur-sm">
           <div className="flex items-center gap-2.5 min-w-0">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
@@ -479,11 +462,9 @@ export function AiChatPanel({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-900">Trợ lý AI</span>
-                {mode === "ai" && (
-                  <span className="rounded-full bg-emerald-50 px-1.5 py-0.2 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200">
-                    {lastUsedModel ?? "Live CRM"}
-                  </span>
-                )}
+                <span className="rounded-full bg-emerald-50 px-1.5 py-0.2 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200">
+                  {getAiModelLabel(selectedModel)}
+                </span>
               </div>
               <p className="truncate text-[11px] text-muted-foreground">
                 Đọc dữ liệu CRM &amp; Ads theo đúng phân quyền
@@ -492,18 +473,6 @@ export function AiChatPanel({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            <select
-              value={selectedModel}
-              onChange={(e) => handleSelectModel(e.target.value)}
-              title="Chọn model AI sử dụng"
-              className="h-7 max-w-[150px] rounded-md border border-border bg-background px-2 text-[11.5px] font-medium text-slate-700 shadow-2xs outline-hidden focus:border-primary focus:ring-1 focus:ring-primary/30"
-            >
-              {GOOGLE_AI_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
             <Button
               variant="ghost"
               size="iconSm"

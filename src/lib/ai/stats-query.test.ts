@@ -181,6 +181,16 @@ describe("parseStatsQuestion", () => {
       dateTo: "2026-09-25",
       hasExplicitTime: true,
     });
+    expect(parseStatsQuestion("data tháng 9", new Date(2026, 9, 28, 12, 0, 0))).toMatchObject({
+      dateFrom: "2026-09-01",
+      dateTo: "2026-09-30",
+      dataset: "both",
+    });
+    expect(parseStatsQuestion("tháng 9", new Date(2026, 9, 28, 12, 0, 0))).toMatchObject({
+      dateFrom: "2026-09-01",
+      dateTo: "2026-09-30",
+      dataset: "both",
+    });
   });
 
   it("filters MANUAL lead source when asking about manual leads", () => {

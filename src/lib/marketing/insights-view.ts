@@ -474,18 +474,27 @@ export function median(values: number[]): number | null {
   return upper ?? null;
 }
 
+/** Ngưỡng trần CPL để tránh trường hợp trung vị bị kéo lên quá cao (VD: 1tr/1 lead) vẫn báo Hiệu quả. */
+const MAX_STRONG_CPL_VND = 300_000;
+const MAX_AVERAGE_CPL_VND = 600_000;
+
 export function efficiencyOf(spend: number, leads: number, cpl: number | null, benchmark: number | null): Efficiency {
   if (leads <= 0) return spend > 0 ? "no_lead" : "average";
-  if (benchmark == null || cpl == null) return "average";
-  if (cpl <= benchmark) return "strong";
-  if (cpl <= benchmark * 1.5) return "average";
+  if (cpl == null) return "average";
+  if (cpl > MAX_AVERAGE_CPL_VND) return "weak";
+  if (benchmark == null) {
+    return cpl <= MAX_STRONG_CPL_VND && leads >= 2 ? "strong" : "average";
+  }
+  const strongCap = Math.min(benchmark, MAX_STRONG_CPL_VND);
+  const averageCap = Math.min(benchmark * 1.5, MAX_AVERAGE_CPL_VND);
+  if (cpl <= strongCap) return "strong";
+  if (cpl <= averageCap) return "average";
   return "weak";
 }
 
 export function attachEfficiency<T extends { spend: number; leads: number; cpl: number | null }>(items: T[]) {
-  const benchmark = median(
-    items.flatMap((item) => (item.leads > 0 && item.cpl != null ? [item.cpl] : [])),
-  );
+  const cplsWithLeads = items.flatMap((item) => (item.leads > 0 && item.cpl != null ? [item.cpl] : []));
+  const benchmark = cplsWithLeads.length >= 2 ? median(cplsWithLeads) : null;
   return {
     benchmark,
     items: items.map((item) => ({

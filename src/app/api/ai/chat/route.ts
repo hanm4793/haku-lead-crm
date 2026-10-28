@@ -1,4 +1,5 @@
 import { generateObject } from "ai";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -194,7 +195,9 @@ export async function POST(request: Request) {
   const previousStats = statsFromLastStats(lastStats);
   const cleanUserMessage = stripMentionLabels(lastUserMessage, effectiveMentions);
 
-  const candidates = resolveModelCandidates(preferredModel);
+  const cookieStore = await cookies();
+  const configuredModel = preferredModel || cookieStore.get("crm_ai_model")?.value || null;
+  const candidates = resolveModelCandidates(configuredModel);
   if (candidates.length === 0) {
     return fallbackResponse(lastUserMessage, viewer, now, catalog, effectiveMentions, previousStats, lastSpec);
   }
@@ -222,6 +225,7 @@ export async function POST(request: Request) {
       const usage = {
         provider: resolved.provider,
         model: resolved.modelId,
+        apiModel: resolved.apiModelId,
         requestedModel: candidates[0]!.modelId,
         inputTokens,
         outputTokens,
@@ -330,7 +334,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const detail = lastError instanceof Error ? lastError.message : "lỗi không xác định";
   return fallbackResponse(
     lastUserMessage,
     viewer,
@@ -339,7 +342,6 @@ export async function POST(request: Request) {
     effectiveMentions,
     previousStats,
     lastSpec,
-    `Không gọi được ${candidates[0]!.providerLabel} (${detail}). Mình tạm hiểu theo từ khóa:`,
   );
 }
 

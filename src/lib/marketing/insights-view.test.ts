@@ -146,6 +146,10 @@ describe("marketing insight view", () => {
     expect(rated.benchmark).toBe(175);
     expect(rated.items.map((item) => item.efficiency)).toEqual(["strong", "weak", "no_lead"]);
     expect(efficiencyOf(10, 1, 175, 175)).toBe("strong");
+    // 1 triệu được 1 lead (CPL = 1,000,000) khi đứng một mình hoặc trong bảng đều phải là "weak" (Kém), không được là "strong"
+    const singleExpensive = attachEfficiency([{ spend: 1_000_000, leads: 1, cpl: 1_000_000 }]);
+    expect(singleExpensive.items[0]?.efficiency).toBe("weak");
+    expect(efficiencyOf(1_000_000, 1, 1_000_000, 1_000_000)).toBe("weak");
     expect(
       pageLabelFromCampaigns([
         "T8.2026-Bắc Giang-Kia-Tin nhắn",

@@ -99,7 +99,7 @@ describe("syncFacebookInsights", () => {
     mocks.normalizeAdAccountId.mockImplementation((id: string) => id);
   });
 
-  it("uses the last 30 UTC dates and preserves missing metrics as null", async () => {
+  it("uses the last 90 UTC dates and preserves missing metrics as null", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-23T16:00:00.000Z"));
     const { db, inserted, updated } = createDb();
@@ -136,11 +136,11 @@ describe("syncFacebookInsights", () => {
     expect(campaignCalls[0]?.[1]).toMatchObject({
       level: "campaign",
       time_increment: "1",
-      time_range: JSON.stringify({ since: "2026-08-25", until: "2026-08-31" }),
+      time_range: JSON.stringify({ since: "2026-06-26", until: "2026-07-02" }),
       limit: "500",
     });
     expect(campaignCalls.at(-1)?.[1]).toMatchObject({
-      time_range: JSON.stringify({ since: "2026-09-22", until: "2026-09-23" }),
+      time_range: JSON.stringify({ since: "2026-09-18", until: "2026-09-23" }),
     });
     expect(mocks.graphGetAllData).toHaveBeenCalledWith(
       "/act_123/insights",
@@ -151,7 +151,7 @@ describe("syncFacebookInsights", () => {
       updated: 0,
       skipped: 0,
       errors: 0,
-      since: "2026-08-25",
+      since: "2026-06-26",
       until: "2026-09-23",
     });
     expect(inserted).toContainEqual({

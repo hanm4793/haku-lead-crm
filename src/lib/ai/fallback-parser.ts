@@ -44,7 +44,7 @@ export function parseExportRequestLocally(
   if (!wantsExport) {
     return {
       reply:
-        "Mình hiện chạy ở chế độ không có API key nên xử lý theo từ khóa. Bạn có thể hỏi số liệu (ví dụ: \"dữ liệu của @Fanpage vào tháng 7\", \"tháng 8 thì sao?\") hoặc yêu cầu xuất dữ liệu (\"xuất lead Facebook tháng này, tách sheet theo phụ trách\").",
+        "Bạn có thể hỏi số liệu theo thời gian hoặc đối tượng (ví dụ: \"dữ liệu tháng 9\", \"chi tiêu và CPL theo fanpage tháng này\", \"dữ liệu của @Fanpage vào tháng 9\") hoặc yêu cầu xuất dữ liệu (\"xuất lead tháng 9 ra excel\").",
       spec: null,
     };
   }

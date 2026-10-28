@@ -947,7 +947,7 @@ export function parseTimeRange(text: string, now: Date = new Date()): ParsedTime
   const monthMatch =
     /(?:^|\s)(?:thang|thg)\s*(1[0-2]|0?[1-9])(?:\s*[\/\-]\s*(\d{4})|\s+nam\s+(\d{4}))?(?=\s|$|[?,!.])/.exec(
       cleanQ,
-    ) ?? /(?:^|\s)t(1[0-2]|0?[1-9])(?:\s*\/\s*(\d{4}))?(?=\s|$|[?,!])/.exec(cleanQ);
+    ) ?? /(?:^|\s)t(1[0-2]|0?[1-9])(?:\s*[\/.]\s*(\d{4}))?(?=\s|$|[?,!.])/.exec(cleanQ);
   if (monthMatch) {
     const mNum = Number(monthMatch[1]);
     const yearStr = monthMatch[2] || monthMatch[3];
@@ -1003,15 +1003,15 @@ export function parseStatsQuestion(
   const hasContext = Boolean(context?.lastStats || (context?.mentions && context.mentions.length > 0));
 
   const asksNumbers =
-    /(bao nhieu|so lieu|du lieu|thong ke|bao cao|tinh hinh|ket qua|doanh so|tong|ty le|phan bo|chi tiet|theo fanpage|tung fanpage|moi fanpage|theo page|tung page|theo chien dich|theo nguon|theo kenh|theo phu trach|theo nhan vien|theo sale|theo trang thai|theo phan loai|theo thuong hieu|theo hang|theo san pham|theo dong xe|theo dai ly|theo showroom|theo dia diem|theo chi nhanh|so voi|so sanh|doi chieu|qua han|khqt|gdtd|khd|ky hop dong|bi loai|mat khach|fail|da lien he|chua lien he|chi phi|chi tieu|ngan sach|quang cao|\bads\b|marketing|ctr|\bcpl\b|luot click|\bclick\b|hien thi|impression|thu cong|nhap tay|\bimport\b|tiktok|zalo|website|landing page|google|hotline|facebook|\bmeta\b|nhieu nhat|thap nhat|cao nhat|re nhat|\btop\b)/.test(
+    /(bao nhieu|so lieu|du lieu|\bdata\b|thong ke|bao cao|tinh hinh|ket qua|doanh so|tong|ty le|phan bo|chi tiet|\bxem\b|\bcheck\b|kiem tra|tra cuu|theo fanpage|tung fanpage|moi fanpage|theo page|tung page|theo chien dich|theo nguon|theo kenh|theo phu trach|theo nhan vien|theo sale|theo trang thai|theo phan loai|theo thuong hieu|theo hang|theo san pham|theo dong xe|theo dai ly|theo showroom|theo dia diem|theo chi nhanh|so voi|so sanh|doi chieu|qua han|khqt|gdtd|khd|ky hop dong|bi loai|mat khach|fail|da lien he|chua lien he|chi phi|chi tieu|ngan sach|quang cao|\bads\b|marketing|ctr|\bcpl\b|luot click|\bclick\b|hien thi|impression|thu cong|nhap tay|\bimport\b|tiktok|zalo|website|landing page|google|hotline|facebook|\bmeta\b|nhieu nhat|thap nhat|cao nhat|re nhat|\btop\b|\blead\b)/.test(
       q,
     );
 
   const isFollowUpPhrase = /(thi sao|the nao|nhu the nao|ra sao|\bcon\b|vay con|the con|tuong ung|tiep theo)/.test(q);
-  const isTimeFollowUp = time.hasExplicitTime && (isFollowUpPhrase || hasContext || /fanpage|page|chien dich/.test(q));
+  const isTimeQuery = time.hasExplicitTime;
   const isContextFollowUp = hasContext && (isFollowUpPhrase || time.hasExplicitTime || wantsResetScope(q));
 
-  if (!asksNumbers && !isTimeFollowUp && !isContextFollowUp) return null;
+  if (!asksNumbers && !isTimeQuery && !isContextFollowUp) return null;
 
   const { dateFrom, dateTo } = time;
 

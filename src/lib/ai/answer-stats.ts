@@ -511,12 +511,17 @@ async function marketingSection(
     const projectPages = await listFacebookPages({ projectId: viewer.activeProjectId });
     const projectPageIds = projectPages.map((p) => p.facebookPageId);
     if (viewer.role === "SUPER_ADMIN") {
-      scopedPages = pageIds.length > 0 ? pageIds.filter((id) => projectPageIds.includes(id)) : projectPageIds;
+      scopedPages =
+        pageIds.length > 0
+          ? pageIds.filter((id) => projectPageIds.length === 0 || projectPageIds.includes(id))
+          : projectPageIds.length > 0
+            ? projectPageIds
+            : null;
     } else {
       const allowed = viewer.pageIds.filter((id) => projectPageIds.includes(id));
       scopedPages = pageIds.length > 0 ? pageIds.filter((id) => allowed.includes(id)) : allowed;
     }
-    if (scopedPages.length === 0) {
+    if (scopedPages && scopedPages.length === 0) {
       return {
         reply: "Không có fanpage nào thuộc dự án hiện tại trong phạm vi phân quyền của bạn.",
         rows: null,
