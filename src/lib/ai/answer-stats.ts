@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { canViewMarketing, dataScope } from "@/lib/auth/roles";
+import { CHANNEL_LABEL } from "@/lib/constants";
 import { getDb } from "@/lib/db/client";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
 import {
@@ -132,6 +133,10 @@ function buildScopeLabels(query: StatsQuery, mentions: ChatMention[], matchedPag
   }
   if (query.filters?.sources?.length) {
     labels.push(`Nguồn: ${query.filters.sources.join(", ")}`);
+  }
+  if (query.filters?.channelDetails?.length) {
+    const names = query.filters.channelDetails.map((c) => CHANNEL_LABEL[c as keyof typeof CHANNEL_LABEL] ?? c);
+    labels.push(`Chi tiết kênh: ${names.join(", ")}`);
   }
   return labels;
 }

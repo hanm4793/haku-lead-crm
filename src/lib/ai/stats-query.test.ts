@@ -208,6 +208,32 @@ describe("parseStatsQuestion", () => {
     expect(parseStatsQuestion("Bao nhiêu lead từ Hotline tháng này?", now)?.filters.sources).toEqual(["HOTLINE"]);
     expect(parseStatsQuestion("Bao nhiêu lead từ Facebook tháng này?", now)?.filters.sources).toEqual(["FACEBOOK"]);
     expect(parseStatsQuestion("Bao nhiêu lead nhập tay tháng này?", now)?.filters.sources).toEqual(["MANUAL"]);
+    expect(parseStatsQuestion("Tháng này có bao nhiêu lead tin nhắn?", now)).toMatchObject({
+      dataset: "leads",
+      filters: { channelDetails: ["TIN_NHAN"] },
+    });
+    expect(parseStatsQuestion("Bao nhiêu lead từ comment tháng này?", now)).toMatchObject({
+      dataset: "leads",
+      filters: { channelDetails: ["COMMENT"] },
+    });
+    expect(parseStatsQuestion("Bao nhiêu lead điền form tháng này?", now)).toMatchObject({
+      dataset: "leads",
+      filters: { channelDetails: ["FORM"] },
+    });
+    expect(parseStatsQuestion("Thống kê lead theo chi tiết kênh tháng này", now)).toMatchObject({
+      dataset: "leads",
+      groupBy: "channelDetail",
+    });
+    expect(parseStatsQuestion("Lead theo loại sản phẩm tháng này", now)).toMatchObject({
+      dataset: "leads",
+      groupBy: "product",
+    });
+    expect(parseStatsQuestion("Lead theo địa chỉ chi nhánh tháng này", now)).toMatchObject({
+      dataset: "leads",
+      groupBy: "location",
+    });
+    const exportMsg = parseExportRequestLocally("Xuất lead tin nhắn tháng này ra excel", now);
+    expect(exportMsg.spec?.filters.channelDetails).toEqual(["TIN_NHAN"]);
   });
 
   it("derives current Vietnam date (UTC+7) when server clock is between 00:00 and 06:59 Vietnam time", () => {

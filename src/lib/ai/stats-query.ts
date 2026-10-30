@@ -394,6 +394,7 @@ function mergeExportFilters(base: ExportFilters | undefined, override: ExportFil
   if (override.categories?.length) result.categories = override.categories;
   if (override.failReasons?.length) result.failReasons = override.failReasons;
   if (override.sources?.length) result.sources = override.sources;
+  if (override.channelDetails?.length) result.channelDetails = override.channelDetails;
   if (override.brands?.length) result.brands = override.brands;
   if (override.products?.length) result.products = override.products;
   if (override.locations?.length) result.locations = override.locations;
@@ -404,7 +405,9 @@ function mergeExportFilters(base: ExportFilters | undefined, override: ExportFil
 
 /** Nhận diện khi người dùng muốn thoát khỏi bộ lọc fanpage/thực thể đang ghim để xem toàn hệ thống. */
 export function wantsResetScope(text: string): boolean {
-  const q = fold(text);
+  const rawQ = fold(text);
+  const campaign = extractCampaignName(rawQ);
+  const q = campaign ? rawQ.replace(campaign, " ") : rawQ;
   return /(?:tat ca|toan bo)\s+(?:cac\s+)?(?:fanpage|page|lead|he thong)|toan he thong|bo loc|xoa loc|bo ghim/.test(
     q,
   );
@@ -451,7 +454,9 @@ export function mergeContextMentions(
 }
 
 function hasAnyTimeWord(text: string): boolean {
-  const q = fold(text);
+  const rawQ = fold(text);
+  const campaign = extractCampaignName(rawQ);
+  const q = campaign ? rawQ.replace(campaign, " ") : rawQ;
   return /(ngay|tuan|thang|\bthg\b|\bt\d{1,2}\b|quy|nam|hom nay|hom qua|hom kia|ky nay|ky truoc|\d{1,2}\/\d{1,2})/.test(
     q,
   );
@@ -468,7 +473,9 @@ export function inheritStatsQuery(
 ): StatsQuery {
   if (!lastStats) return current;
 
-  const q = fold(text);
+  const rawQ = fold(text);
+  const campaign = extractCampaignName(rawQ);
+  const q = campaign ? rawQ.replace(campaign, " ") : rawQ;
   const resetScope = wantsResetScope(text);
   const time = parseTimeRange(text, now);
   const local = parseStatsQuestion(text, now);
@@ -696,7 +703,9 @@ export function extractCampaignName(text: string): string | null {
 }
 
 export function extractPageFilter(text: string): string | null {
-  const q = fold(text);
+  const rawQ = fold(text);
+  const campaign = extractCampaignName(rawQ);
+  const q = campaign ? rawQ.replace(campaign, " ") : rawQ;
   if (/theo fanpage|tung fanpage|moi fanpage|theo page|tung page|tat ca fanpage|tat ca cac page|tat ca page|toan bo fanpage/.test(q)) {
     return null;
   }
@@ -792,9 +801,11 @@ export interface ParsedTimeRange {
  * khoảng ngày dd/mm/yyyy - dd/mm/yyyy, và "tất cả thời gian".
  */
 export function parseTimeRange(text: string, now: Date = new Date()): ParsedTimeRange {
-  const q = fold(text);
-  const campaign = extractCampaignName(q);
-  const cleanQ = campaign ? q.replace(campaign, " ") : q;
+  const rawQ = fold(text);
+  const campaign = extractCampaignName(rawQ);
+  const q = campaign ? rawQ.replace(campaign, " ") : rawQ;
+  const cleanQ = q;
+
   const vn = toVnParts(now);
   const ymd = (y: number, m: number, d: number) => {
     const utc = new Date(Date.UTC(y, m, d));
@@ -1004,7 +1015,7 @@ export function parseStatsQuestion(
   const hasContext = Boolean(context?.lastStats || (context?.mentions && context.mentions.length > 0));
 
   const asksNumbers =
-    /(bao nhieu|so lieu|du lieu|\bdata\b|thong ke|bao cao|tinh hinh|ket qua|doanh so|tong|ty le|phan bo|chi tiet|\bxem\b|\bcheck\b|kiem tra|tra cuu|theo fanpage|tung fanpage|moi fanpage|theo page|tung page|theo chien dich|theo nguon|theo kenh|theo phu trach|theo nhan vien|theo sale|theo trang thai|theo phan loai|theo thuong hieu|theo hang|theo san pham|theo dong xe|theo dai ly|theo showroom|theo dia diem|theo chi nhanh|so voi|so sanh|doi chieu|qua han|khqt|gdtd|khd|ky hop dong|bi loai|mat khach|fail|da lien he|chua lien he|chi phi|chi tieu|ngan sach|quang cao|\bads\b|marketing|ctr|\bcpl\b|luot click|\bclick\b|hien thi|impression|thu cong|nhap tay|\bimport\b|tiktok|zalo|website|landing page|google|hotline|facebook|\bmeta\b|nhieu nhat|thap nhat|cao nhat|re nhat|\btop\b|\blead\b)/.test(
+    /(bao nhieu|so lieu|du lieu|\bdata\b|thong ke|bao cao|tinh hinh|ket qua|doanh so|tong|ty le|phan bo|chi tiet|\bxem\b|\bcheck\b|kiem tra|tra cuu|theo fanpage|tung fanpage|moi fanpage|theo page|tung page|theo chien dich|theo nguon|theo kenh|chi tiet kenh|theo phu trach|theo nhan vien|theo sale|theo trang thai|theo phan loai|theo thuong hieu|theo hang|theo san pham|theo loai san pham|loai san pham|theo dong xe|theo dai ly|theo showroom|theo dia diem|theo dia chi|dia chi|theo chi nhanh|chi nhanh|khu vuc|so voi|so sanh|doi chieu|qua han|khqt|gdtd|khd|ky hop dong|bi loai|mat khach|fail|da lien he|chua lien he|chi phi|chi tieu|ngan sach|quang cao|\bads\b|marketing|ctr|\bcpl\b|luot click|\bclick\b|hien thi|impression|thu cong|nhap tay|\bimport\b|tiktok|zalo|website|landing page|google|hotline|facebook|\bmeta\b|tin nhan|messenger|\binbox\b|comment|binh luan|\bform\b|cuoc goi|chat web|nhieu nhat|thap nhat|cao nhat|re nhat|\btop\b|\blead\b)/.test(
       q,
     );
 
@@ -1034,6 +1045,7 @@ export function parseStatsQuestion(
   if (/quang cao|\bads\b/.test(q) && (ranking || campaignQuery)) groupBy = "ad";
   else if (/theo fanpage|tung fanpage|moi fanpage|theo page|tung page/.test(q)) groupBy = "fanpage";
   else if (/chien dich|campaign/.test(q) && !campaignQuery) groupBy = "campaign";
+  else if (/chi tiet kenh|theo hinh thuc|theo form.*tin nhan|tin nhan.*comment/.test(q)) groupBy = "channelDetail";
   else if (
     /theo nguon|tung nguon|theo kenh|phan bo.*nguon/.test(q) ||
     (/nguon|kenh/.test(q) && !/thu cong|nhap tay|\bimport\b|tiktok|zalo|landing|website|google|hotline|facebook|\bmeta\b/.test(q))
@@ -1073,6 +1085,18 @@ export function parseStatsQuestion(
     else if (/hotline/.test(q)) filters.sources = ["HOTLINE"];
     else if (/facebook|\bmeta\b/.test(q)) filters.sources = ["FACEBOOK"];
   }
+  const qNoCampaign = campaignQuery ? q.replace(campaignQuery, " ") : q;
+  if (groupBy !== "channelDetail" && groupBy !== "ad") {
+    const channelDetails: NonNullable<ExportFilters["channelDetails"]> = [];
+    if (/tin nhan|messenger|\binbox\b/.test(qNoCampaign)) channelDetails.push("TIN_NHAN");
+    if (/comment|binh luan/.test(qNoCampaign)) channelDetails.push("COMMENT");
+    if (/\bform\b|dien form/.test(qNoCampaign)) channelDetails.push("FORM");
+    if (/cuoc goi/.test(qNoCampaign)) channelDetails.push("CUOC_GOI");
+    if (/chat web/.test(qNoCampaign)) channelDetails.push("CHAT_WEB");
+    if (channelDetails.length) {
+      filters.channelDetails = channelDetails;
+    }
+  }
 
   const parsedResult: StatsQuery = {
     dateFrom,
@@ -1099,26 +1123,30 @@ export function parseStatsQuestion(
 }
 
 export function hasExplicitDataset(text: string): boolean {
-  const q = fold(text);
+  const rawQ = fold(text);
+  const campaign = extractCampaignName(rawQ);
+  const q = campaign ? rawQ.replace(campaign, " ") : rawQ;
   const marketing =
     /(chi phi|chi tieu|ngan sach|spend|impression|hien thi|luot click|\bclick\b|ctr|\bcpl\b|quang cao|\bads\b|marketing|hieu qua)/.test(
       q,
     );
   const crm =
-    /(lien he|khqt|gdtd|\bkhd\b|qua han|ky hop dong|bi loai|phu trach|nhan vien|trang thai|phan loai|dai ly|showroom|dia diem|crm|thu cong)/.test(
+    /(lien he|khqt|gdtd|\bkhd\b|qua han|ky hop dong|bi loai|phu trach|nhan vien|trang thai|phan loai|dai ly|showroom|dia diem|dia chi|chi nhanh|khu vuc|loai san pham|san pham|dong xe|chi tiet kenh|tin nhan|messenger|\binbox\b|comment|binh luan|\bform\b|cuoc goi|chat web|crm|thu cong)/.test(
       q,
     );
   return marketing || crm;
 }
 
 export function datasetFor(text: string): StatsDataset {
-  const q = fold(text);
+  const rawQ = fold(text);
+  const campaign = extractCampaignName(rawQ);
+  const q = campaign ? rawQ.replace(campaign, " ") : rawQ;
   const marketing =
     /(chi phi|chi tieu|ngan sach|spend|impression|hien thi|luot click|\bclick\b|ctr|\bcpl\b|quang cao|\bads\b|marketing|hieu qua)/.test(
       q,
     );
   const crm =
-    /(lien he|khqt|gdtd|\bkhd\b|qua han|ky hop dong|bi loai|phu trach|nhan vien|trang thai|phan loai|dai ly|showroom|dia diem|crm|thu cong)/.test(
+    /(lien he|khqt|gdtd|\bkhd\b|qua han|ky hop dong|bi loai|phu trach|nhan vien|trang thai|phan loai|dai ly|showroom|dia diem|dia chi|chi nhanh|khu vuc|loai san pham|san pham|dong xe|chi tiet kenh|tin nhan|messenger|\binbox\b|comment|binh luan|\bform\b|cuoc goi|chat web|crm|thu cong)/.test(
       q,
     );
   if (marketing && crm) return "both";

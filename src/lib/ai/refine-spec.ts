@@ -1,4 +1,4 @@
-import { SOURCE_OPTIONS } from "@/lib/constants";
+import { CHANNEL_DETAIL_OPTIONS, SOURCE_OPTIONS } from "@/lib/constants";
 import { PIVOT_DIMENSIONS, type PivotDimension } from "@/lib/metrics";
 
 import { DEFAULT_AI_CATALOG, type AiCatalog } from "./catalog-context";
@@ -106,6 +106,10 @@ export function refineSpec(
     filters.sources,
     SOURCE_OPTIONS.map((o) => o.value),
   );
+  filters.channelDetails = dropIfExhaustive(
+    filters.channelDetails,
+    CHANNEL_DETAIL_OPTIONS.map((o) => o.value),
+  );
   filters.brands = dropIfExhaustive(keepKnown(filters.brands, catalog.brands), catalog.brands);
   filters.products = dropIfExhaustive(keepKnown(filters.products, catalog.products), catalog.products);
   filters.locations = dropIfExhaustive(keepKnown(filters.locations, catalog.locations), catalog.locations);
@@ -169,6 +173,16 @@ export function refineSpec(
     if (sources.length) filters.sources = sources;
   }
 
+  if (!filters.channelDetails?.length) {
+    const channelDetails: NonNullable<ExportFilters["channelDetails"]> = [];
+    if (/tin nhan|messenger|\binbox\b/.test(q)) channelDetails.push("TIN_NHAN");
+    if (/comment|binh luan/.test(q)) channelDetails.push("COMMENT");
+    if (/\bform\b|dien form/.test(q)) channelDetails.push("FORM");
+    if (/cuoc goi/.test(q)) channelDetails.push("CUOC_GOI");
+    if (/chat web/.test(q)) channelDetails.push("CHAT_WEB");
+    if (channelDetails.length) filters.channelDetails = channelDetails;
+  }
+
   if (!filters.overdueOnly && /qua han/.test(q)) filters.overdueOnly = true;
 
   const columns = [...(spec.columns?.length ? spec.columns : (lastSpec?.columns ?? []))];
@@ -196,4 +210,3 @@ export function refineSpec(
     format,
   };
 }
-

@@ -1,4 +1,4 @@
-import { SOURCE_OPTIONS } from "@/lib/constants";
+import { CHANNEL_DETAIL_OPTIONS, SOURCE_OPTIONS } from "@/lib/constants";
 
 import { DEFAULT_AI_CATALOG, type AiCatalog } from "./catalog-context";
 import { DEFAULT_EXPORT_COLUMNS, type ExportSpec } from "./export-spec";
@@ -79,6 +79,20 @@ export function parseExportRequestLocally(
     described.push(`nguồn ${sources.join(", ")}`);
   }
 
+  const channelDetails: NonNullable<ExportSpec["filters"]["channelDetails"]> = [];
+  if (/tin nhan|messenger|\binbox\b/.test(q)) channelDetails.push("TIN_NHAN");
+  if (/comment|binh luan/.test(q)) channelDetails.push("COMMENT");
+  if (/\bform\b|dien form/.test(q)) channelDetails.push("FORM");
+  if (/cuoc goi/.test(q)) channelDetails.push("CUOC_GOI");
+  if (/chat web/.test(q)) channelDetails.push("CHAT_WEB");
+  if (channelDetails.length) {
+    filters.channelDetails = channelDetails;
+    const labelsText = channelDetails
+      .map((c) => CHANNEL_DETAIL_OPTIONS.find((o) => o.value === c)?.label ?? c)
+      .join(", ");
+    described.push(`chi tiết kênh ${labelsText}`);
+  }
+
   if (/khqt|quan tam/.test(q)) {
     filters.categories = /tro len/.test(q) ? ["KHQT", "GDTD", "KHD"] : ["KHQT"];
     described.push("khách quan tâm");
@@ -128,8 +142,9 @@ export function parseExportRequestLocally(
   if (/tach.*(sheet|cot)|moi .* mot sheet/.test(q)) {
     if (/phu trach|nhan vien|sale/.test(q)) splitSheetsBy = "assignee";
     else if (/dong xe|san pham|loai san pham/.test(q) || q.includes(productWord)) splitSheetsBy = "product";
+    else if (/chi tiet kenh|hinh thuc/.test(q)) splitSheetsBy = "channelDetail";
     else if (/nguon|kenh/.test(q)) splitSheetsBy = "source";
-    else if (/dai ly|showroom|dia diem|chi nhanh/.test(q) || q.includes(locationWord)) splitSheetsBy = "location";
+    else if (/dai ly|showroom|dia diem|dia chi|chi nhanh|khu vuc/.test(q) || q.includes(locationWord)) splitSheetsBy = "location";
     else if (/trang thai|phan loai/.test(q)) splitSheetsBy = "category";
   }
 
@@ -152,4 +167,3 @@ export function parseExportRequestLocally(
     },
   };
 }
-
