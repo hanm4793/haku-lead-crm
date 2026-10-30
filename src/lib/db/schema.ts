@@ -120,7 +120,7 @@ export const projects = pgTable("projects", {
   name: text("name").notNull(),
   brandLabel: text("brand_label").notNull().default("Thương hiệu"),
   productLabel: text("product_label").notNull().default("Loại sản phẩm"),
-  locationLabel: text("location_label").notNull().default("Đại lý"),
+  locationLabel: text("location_label").notNull().default("Địa chỉ/Chi nhánh"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

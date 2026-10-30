@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { LEAD_COLUMNS } from "@/components/leads/columns";
-import { CATEGORY_OPTIONS, FAIL_REASON_OPTIONS, SOURCE_OPTIONS } from "@/lib/constants";
+import { CATEGORY_OPTIONS, CHANNEL_DETAIL_OPTIONS, FAIL_REASON_OPTIONS, SOURCE_OPTIONS } from "@/lib/constants";
 import { PIVOT_DIMENSIONS } from "@/lib/metrics";
 
 export const COLUMN_IDS = LEAD_COLUMNS.map((c) => c.id) as [string, ...string[]];
@@ -27,9 +27,10 @@ export const exportFiltersSchema = z.object({
   categories: z.array(z.enum(CATEGORY_OPTIONS.map((o) => o.value) as [string, ...string[]])).optional(),
   failReasons: z.array(z.enum(FAIL_REASON_OPTIONS.map((o) => o.value) as [string, ...string[]])).optional(),
   sources: z.array(z.enum(SOURCE_OPTIONS.map((o) => o.value) as [string, ...string[]])).optional().describe("Nguồn lead. Bỏ trống nếu người dùng không giới hạn nguồn"),
+  channelDetails: z.array(z.enum(CHANNEL_DETAIL_OPTIONS.map((o) => o.value) as [string, ...string[]])).optional().describe("Chi tiết kênh tương tác (FORM, TIN_NHAN, COMMENT, CUOC_GOI, CHAT_WEB)"),
   brands: z.array(z.string().max(40)).optional().describe("Mã thương hiệu khách quan tâm, đúng theo danh sách hợp lệ"),
   products: z.array(z.string().max(80)).optional().describe("BẮT BUỘC điền khi người dùng nhắc tên loại sản phẩm / sản phẩm, đúng theo danh sách hợp lệ"),
-  locations: z.array(z.string().max(120)).optional().describe("Đại lý / chi nhánh / địa điểm. Bỏ trống nếu không giới hạn — kể cả khi tách sheet theo đại lý"),
+  locations: z.array(z.string().max(120)).optional().describe("Địa chỉ / chi nhánh / đại lý. Bỏ trống nếu không giới hạn — kể cả khi tách sheet theo địa chỉ/chi nhánh"),
   assignees: z.array(z.string().max(120)).optional().describe("Nhân viên phụ trách"),
   facebookPageIds: z
     .array(z.string().min(1).max(80))

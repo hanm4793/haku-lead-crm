@@ -104,8 +104,8 @@ const CATEGORY_META: Record<
     color: "text-emerald-600 bg-emerald-50 border-emerald-200",
   },
   location: {
-    label: "Đại lý / Chi nhánh",
-    desc: "Đại lý hoặc chi nhánh tiếp nhận và phục vụ khách",
+    label: "Địa chỉ/Chi nhánh",
+    desc: "Địa chỉ hoặc chi nhánh tiếp nhận và phục vụ khách",
     icon: MapPin,
     color: "text-orange-600 bg-orange-50 border-orange-200",
   },

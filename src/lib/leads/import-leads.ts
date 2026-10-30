@@ -536,6 +536,8 @@ export async function parseAndValidateImportWorkbook(
     if (
       [
         normalizeHeader(labels.product),
+        "loại sản phẩm",
+        "loai san pham",
         "dòng xe",
         "dong xe",
         "loại xe",
@@ -553,6 +555,12 @@ export async function parseAndValidateImportWorkbook(
     if (
       [
         normalizeHeader(labels.location),
+        "địa chỉ/chi nhánh",
+        "dia chi/chi nhanh",
+        "địa chỉ / chi nhánh",
+        "dia chi / chi nhanh",
+        "khu vực",
+        "khu vuc",
         "đại lý",
         "dai ly",
         "tên đại lý",

@@ -1,6 +1,6 @@
 import type { ExportSpec } from "@/lib/ai/export-spec";
 import { EMPTY_FILTERS } from "@/lib/filters";
-import type { FailReason, LeadCategory, LeadFilters, LeadSource } from "@/lib/types";
+import type { ChannelDetail, FailReason, LeadCategory, LeadFilters, LeadSource } from "@/lib/types";
 
 /** Chiều ngược của filtersToExportSpec — để nút "Áp lên danh sách" hoạt động. */
 export function exportSpecToFilters(spec: ExportSpec): LeadFilters {
@@ -18,6 +18,7 @@ export function exportSpecToFilters(spec: ExportSpec): LeadFilters {
     dateFrom: f.dateFrom ?? null,
     dateTo: f.dateTo ?? null,
     sources: (f.sources ?? []) as LeadSource[],
+    channelDetails: (f.channelDetails ?? []) as ChannelDetail[],
     brands: f.brands ?? [],
     locations: f.locations ?? [],
     assignees: f.assignees ?? [],

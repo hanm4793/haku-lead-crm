@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { CATEGORY_OPTIONS, FAIL_REASON_OPTIONS, SOURCE_OPTIONS } from "@/lib/constants";
+import { CATEGORY_OPTIONS, CHANNEL_DETAIL_OPTIONS, FAIL_REASON_OPTIONS, SOURCE_OPTIONS } from "@/lib/constants";
 
 const enumOf = <T extends string>(values: T[]) => z.enum(values as [T, ...T[]]);
 
@@ -18,6 +18,7 @@ export const leadFiltersSchema = z.object({
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
   sources: z.array(enumOf(SOURCE_OPTIONS.map((o) => o.value))).default([]),
+  channelDetails: z.array(enumOf(CHANNEL_DETAIL_OPTIONS.map((o) => o.value))).default([]),
   brands: z.array(z.string().max(40)).default([]),
   locations: z.array(z.string().max(120)).default([]),
   assignees: z.array(z.string().max(120)).default([]),

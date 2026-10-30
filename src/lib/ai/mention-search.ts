@@ -253,7 +253,7 @@ async function searchProducts(viewer: ViewerScope, q: string): Promise<MentionHi
     id: row.id,
     label: row.label,
     type: "product" as const,
-    categoryLabel: "Sản phẩm",
+    categoryLabel: "Loại sản phẩm",
     hint: null,
   }));
 }
@@ -295,7 +295,7 @@ async function searchLocations(viewer: ViewerScope, q: string): Promise<MentionH
     id: row.id,
     label: row.label,
     type: "location" as const,
-    categoryLabel: "Địa điểm",
+    categoryLabel: "Địa chỉ/Chi nhánh",
     hint: null,
   }));
 }

@@ -17,6 +17,7 @@ export function filtersToExportSpec(filters: LeadFilters, columns: string[]): Ex
       categories: filters.categories.length ? filters.categories : undefined,
       failReasons: filters.failReasons.length ? filters.failReasons : undefined,
       sources: filters.sources.length ? filters.sources : undefined,
+      channelDetails: filters.channelDetails?.length ? filters.channelDetails : undefined,
       brands: filters.brands.length ? filters.brands : undefined,
       products: filters.products.length ? filters.products : undefined,
       locations: filters.locations.length ? filters.locations : undefined,

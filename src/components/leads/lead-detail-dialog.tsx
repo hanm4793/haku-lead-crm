@@ -67,6 +67,17 @@ const CATEGORY_VALUES: LeadCategory[] = ["CHUA_PHAN_LOAI", "KHQT", "GDTD", "KHD"
 /** Sentinel cho "chưa chọn" — Radix Select không nhận value rỗng. */
 const NONE = "__NONE__";
 
+const SYSTEM_ATTR_LABELS: Record<string, string> = {
+  noi_dung_tin_nhan: "Nội dung tin nhắn",
+  link_inbox: "Hộp thư Messenger",
+  inbox_url: "Hộp thư Messenger",
+  psid: "Mã khách hàng (PSID)",
+  noi_dung_comment: "Nội dung bình luận",
+  link_comment: "Bình luận Facebook",
+  post_id: "Mã bài viết (Post ID)",
+  fb_user_id: "Facebook User ID",
+};
+
 /** Chuyển chuỗi ISO sang định dạng YYYY-MM-DDTHH:mm theo giờ Việt Nam (+07:00) cho input datetime-local. */
 function toDateTimeLocalValue(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -1075,7 +1086,7 @@ function LeadDetailDialogBody({
                   <div className="rounded-lg border border-border bg-slate-50/60 p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        Dữ liệu thô từ form đăng ký
+                        Dữ liệu từ Form / Tin nhắn / Bình luận
                       </div>
                       {leftoverAttrs.length > 0 && (
                         <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
@@ -1092,24 +1103,26 @@ function LeadDetailDialogBody({
                       <dl className="space-y-2.5 text-sm">
                         {leftoverAttrs.map(([key, value]) => {
                           const trimmed = (value ?? "").trim();
+                          const attrLabel = SYSTEM_ATTR_LABELS[key] ?? key;
                           const isUrl = /^https?:\/\//i.test(trimmed);
                           if (isUrl) {
-                            const isFbInbox = key === "inbox_url" || /facebook\.com|fb\.com/i.test(trimmed);
+                            const isFbComment = key === "link_comment";
+                            const isFbInbox = !isFbComment && (key === "inbox_url" || key === "link_inbox" || /facebook\.com|fb\.com/i.test(trimmed));
                             return (
-                              <RowControl key={key} label={key}>
+                              <RowControl key={key} label={attrLabel}>
                                 <a
                                   href={trimmed}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-800"
                                 >
-                                  <span>{isFbInbox ? "Mở Inbox Facebook" : "Mở liên kết"}</span>
+                                  <span>{isFbComment ? "Mở bình luận Facebook" : isFbInbox ? "Mở Inbox Facebook" : "Mở liên kết"}</span>
                                   <ExternalLink className="size-3.5" />
                                 </a>
                               </RowControl>
                             );
                           }
-                          return <Row key={key} label={key} value={value} />;
+                          return <Row key={key} label={attrLabel} value={value} />;
                         })}
                       </dl>
                     )}

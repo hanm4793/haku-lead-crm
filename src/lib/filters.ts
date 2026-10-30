@@ -9,6 +9,7 @@ export const EMPTY_FILTERS: LeadFilters = {
   dateFrom: null,
   dateTo: null,
   sources: [],
+  channelDetails: [],
   brands: [],
   locations: [],
   assignees: [],
@@ -75,6 +76,7 @@ export function applyLeadFilters(leads: Lead[], filters: LeadFilters, now: Date 
     }
 
     if (filters.sources.length && !filters.sources.includes(lead.source)) return false;
+    if (filters.channelDetails?.length && !filters.channelDetails.includes(lead.channelDetail)) return false;
     if (filters.brands.length && (!lead.brand || !filters.brands.includes(lead.brand))) return false;
     if (filters.locations.length && !filters.locations.includes(lead.location)) return false;
     if (filters.assignees.length) {
@@ -100,6 +102,7 @@ export function applyLeadFilters(leads: Lead[], filters: LeadFilters, now: Date 
 export function countActiveFilters(filters: LeadFilters) {
   let n = 0;
   n += filters.sources.length ? 1 : 0;
+  n += filters.channelDetails?.length ? 1 : 0;
   n += filters.brands.length ? 1 : 0;
   n += filters.locations.length ? 1 : 0;
   n += filters.assignees.length ? 1 : 0;

@@ -314,6 +314,7 @@ export function statsToFilters(query: StatsQuery, pageIds: string[]): LeadFilter
     dateFrom: query.dateFrom,
     dateTo: query.dateTo,
     sources: (filters.sources ?? []) as LeadFilters["sources"],
+    channelDetails: (filters.channelDetails ?? []) as LeadFilters["channelDetails"],
     brands: filters.brands ?? [],
     locations: filters.locations ?? [],
     assignees: filters.assignees ?? [],
@@ -715,9 +716,9 @@ export const MENTION_TYPES = [
   { id: "ad", label: "Quảng cáo" },
   { id: "lead", label: "Lead" },
   { id: "assignee", label: "Nhân viên" },
-  { id: "product", label: "Sản phẩm" },
+  { id: "product", label: "Loại sản phẩm" },
   { id: "brand", label: "Thương hiệu" },
-  { id: "location", label: "Địa điểm" },
+  { id: "location", label: "Địa chỉ/Chi nhánh" },
 ] as const;
 
 export type MentionType = (typeof MENTION_TYPES)[number]["id"];
@@ -1042,7 +1043,7 @@ export function parseStatsQuestion(
   else if (/trang thai|phan loai/.test(q)) groupBy = "category";
   else if (/thuong hieu|hang xe|\bhang\b/.test(q)) groupBy = "brand";
   else if (/dong xe|san pham|loai san pham/.test(q)) groupBy = "product";
-  else if (/dai ly|showroom|dia diem|chi nhanh/.test(q)) groupBy = "location";
+  else if (/dai ly|showroom|dia diem|dia chi|chi nhanh|khu vuc/.test(q)) groupBy = "location";
 
   let pageQuery = extractPageFilter(q);
   if (!pageQuery && groupBy !== "fanpage" && !wantsResetScope(q)) {

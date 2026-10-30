@@ -17,6 +17,7 @@ export function criteriaFromExportFilters(filters: ExportFilters | undefined): L
     categories: f.categories as LeadCriteria["categories"],
     failReasons: f.failReasons as LeadCriteria["failReasons"],
     sources: f.sources as LeadCriteria["sources"],
+    channelDetails: f.channelDetails as LeadCriteria["channelDetails"],
     brands: f.brands,
     locations: f.locations,
     assignees: f.assignees,

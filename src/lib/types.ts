@@ -113,6 +113,7 @@ export interface LeadFilters {
   dateFrom: string | null;
   dateTo: string | null;
   sources: LeadSource[];
+  channelDetails: ChannelDetail[];
   /** Brand codes. */
   brands: BrandCode[];
   locations: string[];

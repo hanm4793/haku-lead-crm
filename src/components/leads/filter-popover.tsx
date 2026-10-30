@@ -10,12 +10,13 @@ import { allProducts, DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/li
 import {
   ASSIGNEES,
   CATEGORY_OPTIONS,
+  CHANNEL_DETAIL_OPTIONS,
   FAIL_REASON_OPTIONS,
   SOURCE_OPTIONS,
   UNASSIGNED_FILTER_VALUE,
 } from "@/lib/constants";
 import { countActiveFilters } from "@/lib/filters";
-import type { FailReason, LeadCategory, LeadFilters, LeadSource } from "@/lib/types";
+import type { ChannelDetail, FailReason, LeadCategory, LeadFilters, LeadSource } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const toOptions = (values: readonly string[]) => values.map((v) => ({ value: v, label: v }));
@@ -111,6 +112,14 @@ export function LeadFilterPopover({
               options={SOURCE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
               selected={filters.sources}
               onChange={(v) => onChange({ sources: v as LeadSource[] })}
+            />
+          </Field>
+          <Field label="Chi tiết kênh">
+            <MultiSelect
+              options={CHANNEL_DETAIL_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              selected={filters.channelDetails ?? []}
+              onChange={(v) => onChange({ channelDetails: v as ChannelDetail[] })}
+              searchable={false}
             />
           </Field>
           <Field label="Fanpage">

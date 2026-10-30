@@ -125,10 +125,10 @@ function buildScopeLabels(query: StatsQuery, mentions: ChatMention[], matchedPag
     labels.push(`Thương hiệu: ${query.filters.brands.join(", ")}`);
   }
   if (query.filters?.products?.length) {
-    labels.push(`Sản phẩm: ${query.filters.products.join(", ")}`);
+    labels.push(`Loại sản phẩm: ${query.filters.products.join(", ")}`);
   }
   if (query.filters?.locations?.length) {
-    labels.push(`Địa điểm: ${query.filters.locations.join(", ")}`);
+    labels.push(`Địa chỉ/Chi nhánh: ${query.filters.locations.join(", ")}`);
   }
   if (query.filters?.sources?.length) {
     labels.push(`Nguồn: ${query.filters.sources.join(", ")}`);

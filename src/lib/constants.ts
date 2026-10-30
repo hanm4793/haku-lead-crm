@@ -94,7 +94,7 @@ export const DEFAULT_PROJECT_NAME = "Semtop Auto";
 export const DEFAULT_CATALOG_LABELS: CatalogLabels = {
   brand: "Thương hiệu",
   product: "Loại sản phẩm",
-  location: "Đại lý",
+  location: "Địa chỉ/Chi nhánh",
 };
 
 export const DEFAULT_BRAND_SEED: { code: BrandCode; name: string }[] = [

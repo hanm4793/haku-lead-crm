@@ -72,6 +72,7 @@ export interface LeadCriteria {
   categories?: Lead["category"][];
   failReasons?: NonNullable<Lead["failReason"]>[];
   sources?: Lead["source"][];
+  channelDetails?: Lead["channelDetail"][];
   /** Mã brand (brands.code). */
   brands?: BrandCode[];
   /** Tên location (locations.name). */
@@ -183,6 +184,7 @@ export function criteriaConditions(criteria: LeadCriteria, viewer: ViewerScope, 
 
   if (criteria.contactStatus) parts.push(eq(leads.contactStatus, criteria.contactStatus));
   if (criteria.sources?.length) parts.push(inArray(leads.source, criteria.sources));
+  if (criteria.channelDetails?.length) parts.push(inArray(leads.channelDetail, criteria.channelDetails));
   if (criteria.brands?.length) parts.push(inArray(brands.code, criteria.brands));
   if (criteria.categories?.length) parts.push(inArray(leads.category, criteria.categories));
   if (criteria.failReasons?.length) parts.push(inArray(leads.failReason, criteria.failReasons));
@@ -250,6 +252,7 @@ export function criteriaFromLeadFilters(filters: LeadFilters, includeTab = true)
     dateFrom: filters.dateFrom,
     dateTo: filters.dateTo,
     sources: filters.sources,
+    channelDetails: filters.channelDetails,
     brands: filters.brands,
     locations: filters.locations,
     assignees: filters.assignees,

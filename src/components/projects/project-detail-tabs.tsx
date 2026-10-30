@@ -169,7 +169,7 @@ export function ProjectDetailTabs({
             Cấu hình Dự án & Nhãn ngành hàng
           </h3>
           <p className="text-xs text-muted-foreground mb-4">
-            Đổi tên nhãn thương hiệu, sản phẩm, địa điểm để phù hợp với từng ngành nghề kinh doanh
+            Đổi tên nhãn thương hiệu, loại sản phẩm, địa chỉ/chi nhánh để phù hợp với từng ngành nghề kinh doanh
             (Ô tô, Bất động sản, Spa, v.v.).
           </p>
           <ProjectOverviewForm
