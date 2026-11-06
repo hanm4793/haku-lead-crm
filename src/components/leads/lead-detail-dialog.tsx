@@ -190,6 +190,8 @@ interface LeadDetailDialogProps {
   catalog?: LeadCatalogOptions;
   /** Định nghĩa field phụ (active) của project. */
   attrFields?: AttrFieldRow[];
+  /** Tab mở sẵn khi điều hướng từ thông báo đẩy (VD: "comments"). */
+  initialTab?: DetailTab;
 }
 
 export function LeadDetailDialog({ lead, ...props }: LeadDetailDialogProps) {
@@ -214,9 +216,15 @@ function LeadDetailDialogBody({
   assignees = ASSIGNEES,
   catalog = DEFAULT_LEAD_CATALOG,
   attrFields = [],
+  initialTab = "care",
 }: LeadDetailDialogProps & { lead: Lead }) {
   const profileEditable = !readOnly && (canEditProfile ?? lead.source === "MANUAL");
-  const [activeTab, setActiveTab] = React.useState<DetailTab>("care");
+  const [activeTab, setActiveTab] = React.useState<DetailTab>(initialTab);
+  const [prevInitialTab, setPrevInitialTab] = React.useState<DetailTab>(initialTab);
+  if (initialTab !== prevInitialTab) {
+    setPrevInitialTab(initialTab);
+    setActiveTab(initialTab);
+  }
   const [draft, setDraft] = React.useState<DraftState>(() => toDraft(lead));
   const [attrDraft, setAttrDraft] = React.useState<Record<string, string>>(() => ({ ...(lead.attrs ?? {}) }));
   const [prevAttrs, setPrevAttrs] = React.useState(lead.attrs);
@@ -1101,6 +1109,7 @@ function LeadDetailDialogBody({
                 submitting={submittingComment}
                 canComment={canComment}
                 readOnly={readOnly}
+                mentionUsers={assignees}
                 onAddComment={addComment}
               />
             </TabsContent>

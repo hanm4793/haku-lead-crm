@@ -17,6 +17,8 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 | Tài khoản | Có | Có. Chỉ nhân viên của mình | Không, chuyển về Lead |
 | Cài đặt và đồng bộ Facebook | Có | Không | Không |
 | Tự động đồng bộ dữ liệu Facebook (`/api/cron/facebook-sync`, `canSyncFacebook`) | Có (hoặc `CRON_SECRET`) | Không, API trả 403 | Không, API trả 403 |
+| Cron bắn nhắc lịch hẹn & bản tin Push hàng ngày (`/api/cron/push-reminders`, `canTriggerPushCron`) | Có (hoặc `CRON_SECRET`) | Không, API trả 403 | Không, API trả 403 |
+| Bật / tắt nhận PWA Push Notification trên thiết bị (`/api/push/subscription`, `canUsePushNotifications`) | Có | Có | Có |
 | Danh mục / field phụ trên **Cài đặt** | Có. `canManageCatalogs` / `canManageAttrFields` | Không | Không |
 | Danh mục / field phụ trên **Dự án → chi tiết** | Có | Có trên project là thành viên. `canManageCatalogsInProject` | Không |
 | Tạo nhanh field phụ từ file dữ liệu mẫu bằng AI (`canSuggestAttrFieldsFromSample`) | Có | Có trên project là thành viên | Không |
@@ -41,6 +43,7 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 | Sinh tệp khách hàng (Audience), Tệp tương tự (Lookalike 1%–10%), Chân dung đã lưu (Saved Audience) & Phân tích nhân khẩu học Fanpage (`canManageAudiences`) | Có | Không | Không |
 | Giao / đổi người phụ trách lead (`canAssignLead`) | Có | Có | Không |
 | Người được giao lead | Mọi nhân viên đang hoạt động | Nhân viên cùng partner | Nhân viên cùng partner |
+| Nội dung PWA Push Notification (Lead mới FB, giao lead, `@mention`, nhắc lịch gọi `callbackAt`, bản tin hàng ngày — `canReceiveNewFacebookLeadPush`, `canReceiveLeadPush`) | Mọi fanpage & mọi lead | Fanpage được gán + lead thủ công thuộc project thành viên | Chỉ lead được giao cho chính mình (trong phạm vi fanpage/project của partner) |
 
 ## Tài khoản
 

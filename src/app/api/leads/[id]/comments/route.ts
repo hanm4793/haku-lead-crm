@@ -5,6 +5,7 @@ import { canCommentLead } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import { CommentInputError, createLeadComment, getLeadComments } from "@/lib/db/lead-comments-repo";
 import { getLeadById } from "@/lib/db/leads-repo";
+import { notifyLeadCommentAndMentions } from "@/lib/push/web-push";
 
 export const runtime = "nodejs";
 
@@ -66,6 +67,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       },
       viewer,
     );
+
+    if (viewer.appUserId) {
+      await notifyLeadCommentAndMentions({
+        lead: {
+          id: lead.id,
+          name: lead.name,
+          phone: lead.phone,
+          assigneeId: lead.assigneeId,
+          facebookPageId: lead.facebookPageId,
+          source: lead.source,
+          projectId: viewer.activeProjectId ?? viewer.projectId ?? null,
+        },
+        commentContent: parsed.data.content,
+        actorId: viewer.appUserId,
+        actorName: viewer.fullName,
+      }).catch((err) => console.error("[lead-comments] push notification failed:", err));
+    }
+
     return NextResponse.json({ ok: true, comment });
   } catch (error) {
     if (error instanceof CommentInputError) {

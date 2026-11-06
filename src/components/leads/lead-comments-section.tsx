@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CornerDownRight, Loader2, MessageSquare, RotateCw, Send, X } from "lucide-react";
+import { AtSign, CornerDownRight, Loader2, MessageSquare, RotateCw, Send, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -115,6 +115,7 @@ interface LeadCommentsSectionProps {
   submitting: boolean;
   canComment: boolean;
   readOnly?: boolean;
+  mentionUsers?: readonly string[];
   onAddComment: (content: string, parentId?: string | null) => Promise<boolean>;
 }
 
@@ -126,13 +127,38 @@ export function LeadCommentsSection({
   submitting,
   canComment,
   readOnly = false,
+  mentionUsers = [],
   onAddComment,
 }: LeadCommentsSectionProps) {
   const [rootText, setRootText] = React.useState("");
   const [replyTarget, setReplyTarget] = React.useState<{ rootId: string; targetUserName: string } | null>(null);
   const [replyText, setReplyText] = React.useState("");
+  const rootTextareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   const isPostingAllowed = canComment && !readOnly;
+
+  const quickMentionNames = React.useMemo(() => {
+    const names = new Set<string>();
+    for (const c of comments) {
+      if (c.userName?.trim()) names.add(c.userName.trim());
+      for (const r of c.replies ?? []) {
+        if (r.userName?.trim()) names.add(r.userName.trim());
+      }
+    }
+    for (const u of mentionUsers) {
+      if (u?.trim()) names.add(u.trim());
+    }
+    return [...names].slice(0, 8);
+  }, [comments, mentionUsers]);
+
+  const insertRootMention = (name: string) => {
+    const tag = `@${name} `;
+    setRootText((prev) => {
+      if (!prev) return tag;
+      return prev.endsWith(" ") ? `${prev}${tag}` : `${prev} ${tag}`;
+    });
+    rootTextareaRef.current?.focus();
+  };
 
   const handlePostRoot = async () => {
     if (!rootText.trim() || submitting || !isPostingAllowed) return;
@@ -226,7 +252,7 @@ export function LeadCommentsSection({
                     <Textarea
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
-                      placeholder="Nhập câu trả lời... (Ctrl+Enter để gửi)"
+                      placeholder="Nhập câu trả lời... (gõ @Tên để bắn thông báo đẩy)"
                       rows={2}
                       maxLength={3000}
                       autoFocus
@@ -272,12 +298,33 @@ export function LeadCommentsSection({
       {/* Ô nhập bình luận gốc */}
       <div className="rounded-lg border border-border bg-slate-50/60 p-3">
         <div className="space-y-2">
+          {isPostingAllowed && quickMentionNames.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                <AtSign className="size-3 text-primary" />
+                Nhắc nhanh:
+              </span>
+              {quickMentionNames.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => insertRootMention(name)}
+                  className="rounded-full border border-border bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary active:scale-95"
+                >
+                  @{name}
+                </button>
+              ))}
+            </div>
+          )}
+
           <Textarea
+            ref={rootTextareaRef}
             value={rootText}
             onChange={(e) => setRootText(e.target.value)}
             placeholder={
               isPostingAllowed
-                ? "Viết bình luận, trao đổi về lead này... (Ctrl+Enter để gửi)"
+                ? "Viết bình luận, @Tên đồng nghiệp để bắn thông báo... (Ctrl+Enter để gửi)"
                 : "Chỉ người phụ trách hoặc quản lý mới có quyền bình luận trên lead này."
             }
             disabled={!isPostingAllowed || submitting}

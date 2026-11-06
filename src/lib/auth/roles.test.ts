@@ -22,6 +22,10 @@ import {
   canSeeNav,
   canSuggestAttrFieldsFromSample,
   canSyncFacebook,
+  canTriggerPushCron,
+  canUsePushNotifications,
+  canReceiveNewFacebookLeadPush,
+  canReceiveLeadPush,
   canViewProjects,
   canUseAi,
   canViewMarketing,
@@ -363,3 +367,45 @@ describe("AI", () => {
   });
 });
 
+
+describe("PWA Push Notifications", () => {
+  it("allows any linked non-demo user to subscribe to push notifications and restricts cron trigger to super admin", () => {
+    for (const role of ROLES) {
+      expect(canUsePushNotifications({ role, appUserId: "u-1" })).toBe(true);
+      expect(canUsePushNotifications({ role, appUserId: null })).toBe(false);
+      expect(canUsePushNotifications({ role, appUserId: "u-1", isDemo: true })).toBe(false);
+    }
+
+    expect(canTriggerPushCron("SUPER_ADMIN")).toBe(true);
+    expect(canTriggerPushCron("PARTNER_ADMIN")).toBe(false);
+    expect(canTriggerPushCron("STAFF")).toBe(false);
+  });
+
+  it("scopes new Facebook lead push to super admin and granted partner admins only", () => {
+    expect(canReceiveNewFacebookLeadPush({ role: "SUPER_ADMIN", pageIds: [] }, "page-1")).toBe(true);
+    expect(canReceiveNewFacebookLeadPush({ role: "SUPER_ADMIN", pageIds: [] }, null)).toBe(true);
+    expect(canReceiveNewFacebookLeadPush({ role: "PARTNER_ADMIN", pageIds: ["page-1"] }, "page-1")).toBe(true);
+    expect(canReceiveNewFacebookLeadPush({ role: "PARTNER_ADMIN", pageIds: ["page-1"] }, "page-2")).toBe(false);
+    expect(canReceiveNewFacebookLeadPush({ role: "STAFF", pageIds: ["page-1"] }, "page-1")).toBe(false);
+  });
+
+  it("scopes lead assignment, @mention, and callback reminders by fanpage/project grant and staff ownership", () => {
+    const superAdmin = { role: "SUPER_ADMIN" as const, appUserId: "sa-1", pageIds: [] };
+    const partner = { role: "PARTNER_ADMIN" as const, appUserId: "pa-1", pageIds: ["p1"], projectIds: ["proj-1"] };
+    const staff = { role: "STAFF" as const, appUserId: "st-1", pageIds: ["p1"], projectIds: ["proj-1"] };
+
+    expect(canReceiveLeadPush(superAdmin, { assigneeId: null, facebookPageId: "p9", source: "FACEBOOK" })).toBe(true);
+    expect(canReceiveLeadPush(partner, { assigneeId: null, facebookPageId: "p1", source: "FACEBOOK" })).toBe(true);
+    expect(canReceiveLeadPush(partner, { assigneeId: null, facebookPageId: "p2", source: "FACEBOOK" })).toBe(false);
+    expect(
+      canReceiveLeadPush(partner, { assigneeId: null, facebookPageId: null, source: "MANUAL", projectId: "proj-1" }),
+    ).toBe(true);
+
+    expect(canReceiveLeadPush(staff, { assigneeId: "st-1", facebookPageId: "p1", source: "FACEBOOK" })).toBe(true);
+    expect(canReceiveLeadPush(staff, { assigneeId: "st-2", facebookPageId: "p1", source: "FACEBOOK" })).toBe(false);
+    expect(canReceiveLeadPush(staff, { assigneeId: null, facebookPageId: "p1", source: "FACEBOOK" })).toBe(false);
+    expect(
+      canReceiveLeadPush(staff, { assigneeId: "st-1", facebookPageId: null, source: "MANUAL", projectId: "proj-1" }),
+    ).toBe(true);
+  });
+});

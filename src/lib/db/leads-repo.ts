@@ -1405,9 +1405,9 @@ export async function bulkUpdateLeads(
   patch: BulkUpdateLeadsPatch,
   viewer: ViewerScope,
   actor: Actor,
-): Promise<{ updatedCount: number }> {
+): Promise<{ updatedCount: number; assignedByUserId: Map<string, number> }> {
   const uniqueIds = [...new Set(ids)];
-  if (uniqueIds.length === 0) return { updatedCount: 0 };
+  if (uniqueIds.length === 0) return { updatedCount: 0, assignedByUserId: new Map() };
 
   if (patch.assignee !== undefined && viewer.role !== "SUPER_ADMIN" && viewer.role !== "PARTNER_ADMIN") {
     throw new Error("Chỉ quản trị viên mới có quyền giao phụ trách hàng loạt.");
@@ -1422,7 +1422,7 @@ export async function bulkUpdateLeads(
 
   const targetRows = await selectLeadRows().where(and(inArray(leads.id, uniqueIds), ...scopeConditions(viewer)));
   const editableRows = targetRows.map(toLead).filter((lead) => canEditLead(viewer, lead));
-  if (editableRows.length === 0) return { updatedCount: 0 };
+  if (editableRows.length === 0) return { updatedCount: 0, assignedByUserId: new Map() };
 
   const now = new Date();
   const values: Record<string, unknown> = { updatedAt: now };
@@ -1490,20 +1490,25 @@ export async function bulkUpdateLeads(
     }
   });
 
-  return { updatedCount: editableIds.length };
+  const assignedByUserId = new Map<string, number>();
+  if (resolvedAssigneeId) {
+    const newlyAssigned = editableRows.filter((r) => r.assigneeId !== resolvedAssigneeId).length;
+    if (newlyAssigned > 0) assignedByUserId.set(resolvedAssigneeId, newlyAssigned);
+  }
+  return { updatedCount: editableIds.length, assignedByUserId };
 }
 
 export async function autoAssignLeadsRoundRobin(
   ids: string[],
   viewer: ViewerScope,
   actor: Actor,
-): Promise<{ assignedCount: number; staffCount: number }> {
+): Promise<{ assignedCount: number; staffCount: number; assignedByUserId: Map<string, number> }> {
   if (viewer.role !== "SUPER_ADMIN" && viewer.role !== "PARTNER_ADMIN") {
     throw new Error("Chỉ quản trị viên mới có quyền phân bổ tự động.");
   }
 
   const uniqueIds = [...new Set(ids)];
-  if (uniqueIds.length === 0) return { assignedCount: 0, staffCount: 0 };
+  if (uniqueIds.length === 0) return { assignedCount: 0, staffCount: 0, assignedByUserId: new Map() };
 
   const staffNames = await listAssignableStaff(viewer);
   if (staffNames.length === 0) {
@@ -1527,7 +1532,7 @@ export async function autoAssignLeadsRoundRobin(
     .map((id) => rowById.get(id))
     .filter((lead): lead is Lead => Boolean(lead && canEditLead(viewer, lead)));
 
-  if (editableLeads.length === 0) return { assignedCount: 0, staffCount: staffRows.length };
+  if (editableLeads.length === 0) return { assignedCount: 0, staffCount: staffRows.length, assignedByUserId: new Map() };
 
   const now = new Date();
   await db.transaction(async (tx) => {
@@ -1554,7 +1559,15 @@ export async function autoAssignLeadsRoundRobin(
     }
   });
 
-  return { assignedCount: editableLeads.length, staffCount: staffRows.length };
+  const assignedByUserId = new Map<string, number>();
+  for (let i = 0; i < editableLeads.length; i++) {
+    const lead = editableLeads[i];
+    const staff = staffRows[i % staffRows.length];
+    if (lead.assigneeId !== staff.id) {
+      assignedByUserId.set(staff.id, (assignedByUserId.get(staff.id) ?? 0) + 1);
+    }
+  }
+  return { assignedCount: editableLeads.length, staffCount: staffRows.length, assignedByUserId };
 }
 
 export interface BrandOption {

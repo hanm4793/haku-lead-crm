@@ -59,6 +59,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               viewer={
                 viewer
                   ? {
+                      appUserId: viewer.appUserId,
                       fullName: viewer.fullName,
                       role: viewer.role,
                       email: viewer.email,

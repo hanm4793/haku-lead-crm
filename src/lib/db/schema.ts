@@ -612,3 +612,52 @@ export const productsRelations = relations(products, ({ one }) => ({
 export const locationsRelations = relations(locations, ({ one }) => ({
   project: one(projects, { fields: [locations.projectId], references: [projects.id] }),
 }));
+
+
+/**
+ * Thiết bị đăng ký nhận Web Push Notification (PWA iOS/Android & trình duyệt Desktop) theo từng nhân sự.
+ */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull().unique(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    userAgent: text("user_agent"),
+    notifyNewLead: boolean("notify_new_lead").notNull().default(true),
+    notifyMention: boolean("notify_mention").notNull().default(true),
+    notifyCallback: boolean("notify_callback").notNull().default(true),
+    notifyDailyDigest: boolean("notify_daily_digest").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("push_subscriptions_user_idx").on(table.userId)],
+);
+
+/**
+ * Sổ ghi chống bắn trùng thông báo tự động (nhắc lịch hẹn callbackAt & bản tin hàng ngày).
+ */
+export const pushNotificationLogs = pgTable(
+  "push_notification_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    dedupeKey: text("dedupe_key").notNull().unique(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("push_notification_logs_user_idx").on(table.userId),
+    index("push_notification_logs_sent_at_idx").on(table.sentAt.desc()),
+  ],
+);
+
+export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
+  user: one(appUsers, { fields: [pushSubscriptions.userId], references: [appUsers.id] }),
+}));

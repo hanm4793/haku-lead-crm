@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/facebook-sync?kind=insights",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/push-reminders",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

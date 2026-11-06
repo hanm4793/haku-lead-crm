@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { activityLogs, facebookPages, leads, metaSyncRuns } from "@/lib/db/schema";
@@ -9,6 +9,7 @@ import {
   resolveActiveFacebookPageIds,
 } from "@/lib/db/facebook-pages-repo";
 import { getDefaultProject } from "@/lib/db/project-repo";
+import { notifyNewFacebookLeads } from "@/lib/push/web-push";
 import { FacebookGraphError, graphGet, graphGetAllData } from "./graph-client";
 import {
   mapFacebookCommentLead,
@@ -157,6 +158,7 @@ async function refreshFacebookPageName(pageId: string, name: string | null) {
 
 export async function syncFacebookLeads(options?: { projectId?: string; recentDays?: number }): Promise<SyncLeadsResult> {
   const cutoffMs = options?.recentDays ? Date.now() - options.recentDays * 86_400_000 : null;
+  const recentPushThresholdMs = Date.now() - 48 * 3_600_000;
   const tag = syncScopeTag(options?.projectId);
   const config = getFacebookConfig();
   if (!config) {
@@ -190,6 +192,13 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
   const byChannel = { form: 0, message: 0, comment: 0 };
   const errorDetails: string[] = [];
   const warningSet = new Set<string>();
+  const newlyImportedLeads: {
+    leadId: string;
+    name: string | null;
+    phone: string;
+    pageId: string;
+    pageName: string | null;
+  }[] = [];
 
   function recordError(error: unknown) {
     counts.errors += 1;
@@ -302,7 +311,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
                 }
 
                 const createdAt = parseCreatedAt(facebookLead.created_time);
-                await db.transaction(async (tx) => {
+                const insertedId = await db.transaction(async (tx) => {
                   const [inserted] = await tx
                     .insert(leads)
                     .values({
@@ -332,9 +341,20 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
                     message: "Lead created from Facebook Lead Ads (Form).",
                     actorName: "Facebook sync",
                   });
+
+                  return inserted.id;
                 });
                 counts.imported += 1;
                 byChannel.form += 1;
+                if (!createdAt || createdAt.getTime() >= recentPushThresholdMs) {
+                  newlyImportedLeads.push({
+                    leadId: insertedId,
+                    name: mapped.name,
+                    phone: mapped.phone || "Chưa có SĐT",
+                    pageId,
+                    pageName: pageAuth.name ?? null,
+                  });
+                }
               } catch (error) {
                 recordError(error);
               }
@@ -388,7 +408,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
               continue;
             }
 
-            await db.transaction(async (tx) => {
+            const insertedId = await db.transaction(async (tx) => {
               const [inserted] = await tx
                 .insert(leads)
                 .values({
@@ -415,9 +435,20 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
                 message: "Lead đồng bộ từ Hộp thư Tin nhắn Fanpage (Messenger).",
                 actorName: "Facebook sync",
               });
+
+              return inserted.id;
             });
             counts.imported += 1;
             byChannel.message += 1;
+            if (!mapped.createdAt || mapped.createdAt.getTime() >= recentPushThresholdMs) {
+              newlyImportedLeads.push({
+                leadId: insertedId,
+                name: mapped.name,
+                phone: mapped.phone,
+                pageId,
+                pageName: pageAuth.name ?? null,
+              });
+            }
           } catch (error) {
             recordError(error);
           }
@@ -508,7 +539,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
                 continue;
               }
 
-              await db.transaction(async (tx) => {
+              const insertedId = await db.transaction(async (tx) => {
                 const [inserted] = await tx
                   .insert(leads)
                   .values({
@@ -536,9 +567,20 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
                   message: "Lead đồng bộ từ Bình luận Fanpage (Comment).",
                   actorName: "Facebook sync",
                 });
+
+                return inserted.id;
               });
               counts.imported += 1;
               byChannel.comment += 1;
+              if (!mapped.createdAt || mapped.createdAt.getTime() >= recentPushThresholdMs) {
+                newlyImportedLeads.push({
+                  leadId: insertedId,
+                  name: mapped.name,
+                  phone: mapped.phone,
+                  pageId,
+                  pageName: pageAuth.name ?? null,
+                });
+              }
             } catch (error) {
               recordError(error);
             }
@@ -583,6 +625,12 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
       })
       .where(eq(metaSyncRuns.id, run.id));
 
+    if (newlyImportedLeads.length > 0) {
+      await notifyNewFacebookLeads(newlyImportedLeads).catch((err) => {
+        console.error("[syncFacebookLeads] push notification failed:", err);
+      });
+    }
+
     return { ...counts, byChannel, warnings, message, runId: run.id };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Facebook lead sync failed.";
@@ -593,7 +641,6 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
     throw error;
   }
 }
-
 
 /**
  * Xóa leads từ kênh Messenger/Comment mà không có SĐT.

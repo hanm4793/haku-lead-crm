@@ -338,3 +338,72 @@ export function canEditLeadProfile(
   return lead.source === "MANUAL";
 }
 
+
+/** Mọi tài khoản đã đăng nhập có liên kết `app_users` đều được bật/tắt Web Push Notification trên thiết bị của mình. */
+export function canUsePushNotifications(viewer: {
+  role: UserRole;
+  appUserId?: string | null;
+  isDemo?: boolean;
+}): boolean {
+  if (viewer.isDemo) return false;
+  return Boolean(
+    viewer.appUserId &&
+      (viewer.role === "SUPER_ADMIN" || viewer.role === "PARTNER_ADMIN" || viewer.role === "STAFF"),
+  );
+}
+
+/** Chạy tay hoặc giám sát Cron bắn nhắc lịch hẹn & bản tin hàng ngày — chỉ super admin (hoặc CRON_SECRET). */
+export function canTriggerPushCron(role: UserRole): boolean {
+  return canSyncFacebook(role);
+}
+
+/**
+ * Nhận thông báo khi có Lead mới đồng bộ từ Facebook Ads (chưa giao phụ trách):
+ * - Super admin: nhận mọi fanpage.
+ * - Partner admin: chỉ nhận các fanpage đã gán cho mình (`isPageVisible`).
+ * - Nhân viên (STAFF): không nhận tin thô toàn fanpage — chỉ nhận ngay khi được giao phụ trách lead.
+ */
+export function canReceiveNewFacebookLeadPush(
+  recipient: { role: UserRole; pageIds: readonly string[] },
+  facebookPageId: string | null | undefined,
+): boolean {
+  if (recipient.role === "SUPER_ADMIN") return true;
+  if (recipient.role === "PARTNER_ADMIN") {
+    return isPageVisible(recipient, facebookPageId);
+  }
+  return false;
+}
+
+/**
+ * Kiểm tra người nhận có quyền nhận thông báo về một Lead cụ thể (giao việc, @mention, nhắc lịch hẹn gọi lại):
+ * - Super admin: mọi lead.
+ * - Partner admin: lead thuộc fanpage được gán hoặc lead thủ công thuộc project thành viên.
+ * - Nhân viên (STAFF): chỉ nhận cho lead đang giao cho chính mình (`assigneeId === appUserId`) và nằm trong phạm vi xem.
+ */
+export function canReceiveLeadPush(
+  recipient: {
+    role: UserRole;
+    appUserId: string;
+    pageIds: readonly string[];
+    projectIds?: readonly string[];
+  },
+  lead: {
+    assigneeId?: string | null;
+    facebookPageId?: string | null;
+    source?: string | null;
+    projectId?: string | null;
+  },
+): boolean {
+  if (!recipient.appUserId) return false;
+  if (recipient.role === "SUPER_ADMIN") return true;
+
+  const inPageScope = isPageVisible(recipient, lead.facebookPageId);
+  const inManualProjectScope =
+    lead.source === "MANUAL" &&
+    Boolean(lead.projectId && recipient.projectIds?.includes(lead.projectId));
+
+  if (!inPageScope && !inManualProjectScope) return false;
+
+  if (recipient.role === "PARTNER_ADMIN") return true;
+  return Boolean(lead.assigneeId && lead.assigneeId === recipient.appUserId);
+}

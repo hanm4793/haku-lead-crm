@@ -134,6 +134,7 @@ export function LeadsPage({
   const [prevInitialData, setPrevInitialData] = React.useState(initialData);
   const [datePreset, setDatePreset] = React.useState<PresetId>("ALL");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [detailInitialTab, setDetailInitialTab] = React.useState<"care" | "comments" | "details" | "logs">("care");
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [bulkLoading, setBulkLoading] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
@@ -180,6 +181,21 @@ export function LeadsPage({
       const params = new URLSearchParams(window.location.search);
       const pageParam = params.get("page")?.trim();
       const searchParam = params.get("search")?.trim();
+      const leadIdParam = params.get("leadId")?.trim();
+      const detailTabParam = params.get("detailTab")?.trim();
+      if (leadIdParam) {
+        setSelectedId(leadIdParam);
+        if (
+          detailTabParam === "care" ||
+          detailTabParam === "comments" ||
+          detailTabParam === "details" ||
+          detailTabParam === "logs"
+        ) {
+          setDetailInitialTab(detailTabParam);
+        } else {
+          setDetailInitialTab("care");
+        }
+      }
       const nextPatch: Partial<LeadFilters> = {};
       if (pageParam) {
         if (/^\d{1,4}$/.test(pageParam)) {
@@ -268,11 +284,13 @@ export function LeadsPage({
   const allowAssign = editor ? canAssignLead(editor.role) : true;
   const { detailLead, logs: selectedLogs, loading: logsLoading, reload: reloadLogs } = useLeadLogs(selectedId);
   const selected = React.useMemo(() => {
-    if (!baseSelected) return null;
+    if (!baseSelected) {
+      return detailLead && detailLead.id === selectedId ? detailLead : null;
+    }
     return detailLead && detailLead.id === baseSelected.id
       ? { ...detailLead, ...baseSelected, attrs: detailLead.attrs }
       : baseSelected;
-  }, [baseSelected, detailLead]);
+  }, [baseSelected, detailLead, selectedId]);
 
   const hasActiveFilters =
     filters.tab !== "ALL" ||
@@ -957,7 +975,19 @@ export function LeadsPage({
         logs={selectedLogs}
         logsLoading={logsLoading}
         open={Boolean(selected)}
-        onOpenChange={(open) => !open && setSelectedId(null)}
+        initialTab={detailInitialTab}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedId(null);
+            setDetailInitialTab("care");
+            if (typeof window !== "undefined" && window.location.search.includes("leadId=")) {
+              const url = new URL(window.location.href);
+              url.searchParams.delete("leadId");
+              url.searchParams.delete("detailTab");
+              window.history.replaceState(null, "", url.pathname + url.search);
+            }
+          }
+        }}
         assignees={assignees}
         catalog={catalog}
         attrFields={attrFields}

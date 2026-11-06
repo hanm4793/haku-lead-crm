@@ -24,6 +24,11 @@ import {
   parseAndValidateImportWorkbook,
   type ImportValidationReport,
 } from "@/lib/leads/import-leads";
+import {
+  notifyBulkLeadsAssigned,
+  notifyLeadAssigned,
+  notifyLeadCommentAndMentions,
+} from "@/lib/push/web-push";
 import type { ActivityLog, LeadComment } from "@/lib/types";
 import {
   CATEGORY_OPTIONS,
@@ -102,11 +107,34 @@ export async function updateLeadAction(input: unknown): Promise<UpdateLeadResult
   const { id, patch, logs } = parsed.data;
 
   try {
+    const prevLead =
+      patch.assignee !== undefined ? await getLeadById(id, viewer).catch(() => null) : null;
+
     const lead = await updateLead(id, patch, logs, viewer, {
       appUserId: viewer.appUserId,
       fullName: viewer.fullName,
     });
     if (!lead) return { ok: false, error: "Không tìm thấy lead hoặc bạn không có quyền sửa." };
+
+    if (
+      patch.assignee !== undefined &&
+      lead.assigneeId &&
+      lead.assigneeId !== prevLead?.assigneeId &&
+      lead.assigneeId !== viewer.appUserId
+    ) {
+      await notifyLeadAssigned({
+        leadId: lead.id,
+        leadName: lead.name,
+        leadPhone: lead.phone,
+        assigneeId: lead.assigneeId,
+        actorId: viewer.appUserId,
+        actorName: viewer.fullName,
+        facebookPageId: lead.facebookPageId,
+        source: lead.source,
+        projectId: viewer.activeProjectId ?? viewer.projectId ?? null,
+      }).catch((err) => console.error("[updateLeadAction] push error:", err));
+    }
+
     return { ok: true, lead };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Lưu thất bại." };
@@ -166,6 +194,24 @@ export async function addLeadCommentAction(input: unknown): Promise<AddLeadComme
     }
 
     const comment = await createLeadComment(parsed.data, viewer);
+
+    if (viewer.appUserId) {
+      await notifyLeadCommentAndMentions({
+        lead: {
+          id: lead.id,
+          name: lead.name,
+          phone: lead.phone,
+          assigneeId: lead.assigneeId,
+          facebookPageId: lead.facebookPageId,
+          source: lead.source,
+          projectId: viewer.activeProjectId ?? viewer.projectId ?? null,
+        },
+        commentContent: parsed.data.content,
+        actorId: viewer.appUserId,
+        actorName: viewer.fullName,
+      }).catch((err) => console.error("[addLeadCommentAction] push error:", err));
+    }
+
     return { ok: true, comment };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Thêm bình luận thất bại." };
@@ -208,6 +254,21 @@ export async function createManualLeadAction(input: unknown): Promise<CreateManu
       appUserId: viewer.appUserId,
       fullName: viewer.fullName,
     });
+
+    if (lead.assigneeId && lead.assigneeId !== viewer.appUserId) {
+      await notifyLeadAssigned({
+        leadId: lead.id,
+        leadName: lead.name,
+        leadPhone: lead.phone,
+        assigneeId: lead.assigneeId,
+        actorId: viewer.appUserId,
+        actorName: viewer.fullName,
+        facebookPageId: lead.facebookPageId,
+        source: lead.source,
+        projectId: viewer.activeProjectId ?? viewer.projectId ?? null,
+      }).catch((err) => console.error("[createManualLeadAction] push error:", err));
+    }
+
     return { ok: true, lead };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Tạo lead thất bại." };
@@ -333,6 +394,15 @@ export async function bulkUpdateLeadsAction(input: unknown): Promise<BulkUpdateL
       appUserId: viewer.appUserId,
       fullName: viewer.fullName,
     });
+
+    if (res.assignedByUserId.size > 0) {
+      await notifyBulkLeadsAssigned(
+        res.assignedByUserId,
+        viewer.appUserId,
+        viewer.fullName,
+      ).catch((err) => console.error("[bulkUpdateLeadsAction] push error:", err));
+    }
+
     return { ok: true, updatedCount: res.updatedCount };
   } catch (error) {
     return {
@@ -364,6 +434,15 @@ export async function autoAssignLeadsAction(input: unknown): Promise<AutoAssignL
       appUserId: viewer.appUserId,
       fullName: viewer.fullName,
     });
+
+    if (res.assignedByUserId.size > 0) {
+      await notifyBulkLeadsAssigned(
+        res.assignedByUserId,
+        viewer.appUserId,
+        viewer.fullName,
+      ).catch((err) => console.error("[autoAssignLeadsAction] push error:", err));
+    }
+
     return { ok: true, assignedCount: res.assignedCount, staffCount: res.staffCount };
   } catch (error) {
     return {
@@ -372,5 +451,3 @@ export async function autoAssignLeadsAction(input: unknown): Promise<AutoAssignL
     };
   }
 }
-
-

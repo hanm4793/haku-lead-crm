@@ -25,9 +25,18 @@ import { signOut } from "@/app/auth/actions";
 import { AiChatPanel } from "@/components/ai/ai-chat-panel";
 import { ProjectProvider, ProjectSwitcher, useProjectContext } from "@/components/layout/project-switcher";
 import { UserMenu } from "@/components/layout/user-menu";
+import { PushNotificationBell } from "@/components/pwa/push-notification-manager";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { canSeeNav, canUseAi, canViewMarketing, ROLE_LABELS, type NavGate, type UserRole } from "@/lib/auth/roles";
+import {
+  canSeeNav,
+  canUseAi,
+  canUsePushNotifications,
+  canViewMarketing,
+  ROLE_LABELS,
+  type NavGate,
+  type UserRole,
+} from "@/lib/auth/roles";
 import type { ProjectInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -119,6 +128,7 @@ export function AppShell({
 }: {
   children: React.ReactNode;
   viewer?: {
+    appUserId?: string | null;
     fullName: string;
     role: UserRole;
     email?: string | null;
@@ -158,6 +168,7 @@ export function AppShell({
   }, []);
 
   const user = viewer ?? {
+    appUserId: null,
     fullName: "Chế độ demo",
     role: "SUPER_ADMIN" as const,
     email: null,
@@ -165,6 +176,7 @@ export function AppShell({
     aiEnabled: true,
   };
   const showAi = canUseAi(user);
+  const showPush = canUsePushNotifications(user);
 
   // Phím tắt toàn cục Ctrl+K / Cmd+K mở nhanh Trợ lý AI trên Desktop
   React.useEffect(() => {
@@ -322,6 +334,7 @@ export function AppShell({
           </nav>
 
           <div className="space-y-1 px-2.5 pb-2">
+            {showPush && <PushNotificationBell variant="sidebar" collapsed={collapsed} />}
             {!collapsed && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] text-white/55">
                 <span className="size-1.5 rounded-full bg-emerald-400" />
@@ -375,7 +388,8 @@ export function AppShell({
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
-            <ProjectSwitcher className="h-8 max-w-[164px] rounded-full border-border/90 bg-slate-50/90 px-2.5 text-xs shadow-none" />
+            <ProjectSwitcher className="h-8 max-w-[148px] rounded-full border-border/90 bg-slate-50/90 px-2.5 text-xs shadow-none" />
+            {showPush && <PushNotificationBell variant="mobile-header" />}
             {showAi && (
               <button
                 type="button"

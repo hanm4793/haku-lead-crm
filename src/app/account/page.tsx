@@ -3,10 +3,11 @@ import Link from "next/link";
 import { KeyRound } from "lucide-react";
 
 import { AccountProfileForm } from "@/components/account/account-profile-form";
+import { PushNotificationCard } from "@/components/pwa/push-notification-manager";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getViewer } from "@/lib/auth/viewer";
-import { ROLE_LABELS } from "@/lib/auth/roles";
+import { canUsePushNotifications, ROLE_LABELS } from "@/lib/auth/roles";
 
 export const metadata = { title: "Tài khoản — SEMTOP Marketing CRM" };
 export const dynamic = "force-dynamic";
@@ -15,14 +16,18 @@ export default async function AccountPage() {
   const viewer = await getViewer();
   if (!viewer) redirect("/login?next=%2Faccount");
 
+  const showPushSettings = canUsePushNotifications(viewer);
+
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-3 sm:space-y-5 sm:p-5">
       <div className="max-md:hidden">
         <h1 className="text-xl font-bold tracking-tight">Tài khoản</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Cập nhật hồ sơ hiển thị trên SEMTOP Marketing CRM.
+          Cập nhật hồ sơ hiển thị và cài đặt thông báo trên SEMTOP Marketing CRM.
         </p>
       </div>
+
+      {showPushSettings && <PushNotificationCard />}
 
       <Card>
         <CardHeader>
