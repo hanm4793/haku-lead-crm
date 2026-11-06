@@ -361,7 +361,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
             continue;
           }
           const mapped = mapFacebookConversationLead(conv, pageId);
-          if (!mapped) continue;
+          if (!mapped || !mapped.phone) continue;
 
           try {
             const existing = await findExistingLead(mapped.facebookLeadId);
@@ -485,7 +485,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
               postId: post.id,
               postMessage: post.message,
             });
-            if (!mapped) continue;
+            if (!mapped || !mapped.phone) continue;
 
             try {
               const existing = await findExistingLead(mapped.facebookLeadId);
