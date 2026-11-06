@@ -6,7 +6,7 @@
 :root {
   --radius: 0.625rem;
 
-  /* Surfaces — cool neutral, not cream */
+  /* Surfaces — cool neutral, crisp contrast */
   --background: #f3f5f9;
   --foreground: #0c1222;
   --card: #ffffff;
@@ -56,6 +56,11 @@
 
   --space-page: 1.25rem;
   --space-section: 1rem;
+
+  /* Safe-area & mobile shell metrics */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-nav-height: calc(3.75rem + var(--safe-bottom));
 }
 
 @theme inline {
@@ -110,21 +115,64 @@
 @layer base {
   * {
     border-color: var(--border);
+    -webkit-tap-highlight-color: transparent;
   }
+
+  /* Tắt hiệu ứng đàn hồi cuộn trang trên Desktop nhưng vẫn giữ pull-to-refresh tự nhiên trên cảm ứng */
+  @media (pointer: fine) {
+    html {
+      overscroll-behavior-y: none;
+    }
+  }
+
   body {
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.011em;
+    overflow-x: clip;
   }
+
+  /* Loại bỏ độ trễ 300ms khi chạm trên thiết bị di động */
+  button,
+  a,
+  summary,
+  label,
+  [role="button"],
+  [role="tab"],
+  [role="menuitem"],
+  [role="option"] {
+    touch-action: manipulation;
+  }
+
+  /* Chặn đứng lỗi tự động zoom khung nhìn của iOS Safari khi focus ô nhập < 16px */
+  @media (max-width: 767px) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   .thin-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: #b8c3d6 transparent;
   }
   .thin-scrollbar::-webkit-scrollbar {
-    height: 10px;
-    width: 10px;
+    height: 8px;
+    width: 8px;
   }
   .thin-scrollbar::-webkit-scrollbar-thumb {
     background: #b8c3d6;
@@ -132,6 +180,14 @@
   }
   .thin-scrollbar::-webkit-scrollbar-track {
     background: transparent;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
 

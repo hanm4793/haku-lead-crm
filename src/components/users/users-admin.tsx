@@ -29,7 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles";
+import { canManageProjects, ROLE_LABELS, type UserRole } from "@/lib/auth/roles";
 import type { ManagedUser } from "@/lib/db/users-repo";
 import { useToast } from "@/components/providers/toast-provider";
 
@@ -59,9 +59,9 @@ const EMPTY_FORM: FormState = {
   active: true,
 };
 
-function toForm(user: ManagedUser | null, actorRole: UserRole): FormState {
+function toForm(user: ManagedUser | null, isSuper: boolean): FormState {
   if (!user) {
-    return { ...EMPTY_FORM, role: actorRole === "PARTNER_ADMIN" ? "STAFF" : "PARTNER_ADMIN" };
+    return { ...EMPTY_FORM, role: isSuper ? "PARTNER_ADMIN" : "STAFF" };
   }
   return {
     fullName: user.fullName,
@@ -92,11 +92,10 @@ export function UsersAdmin({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const isSuper = canManageProjects(actorRole);
   const [users, setUsers] = React.useState(initialUsers);
   const [query, setQuery] = React.useState("");
-  const [tab, setTab] = React.useState<"PARTNER_ADMIN" | "STAFF">(
-    actorRole === "PARTNER_ADMIN" ? "STAFF" : "PARTNER_ADMIN",
-  );
+  const [tab, setTab] = React.useState<"PARTNER_ADMIN" | "STAFF">(isSuper ? "PARTNER_ADMIN" : "STAFF");
   const [editing, setEditing] = React.useState<ManagedUser | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [form, setForm] = React.useState<FormState>(EMPTY_FORM);
@@ -111,7 +110,6 @@ export function UsersAdmin({
   const [statusFilter, setStatusFilter] = React.useState("all");
   const [partnerFilter, setPartnerFilter] = React.useState("all");
 
-  const isSuper = actorRole === "SUPER_ADMIN";
   const visible = users.filter((user) => {
     if (isSuper && user.role !== tab) return false;
     if (isSuper && user.role === "SUPER_ADMIN") return false;
@@ -184,7 +182,7 @@ export function UsersAdmin({
   const openEdit = (user: ManagedUser) => {
     setCreating(false);
     setEditing(user);
-    setForm(toForm(user, actorRole));
+    setForm(toForm(user, isSuper));
   };
 
   const close = () => {
@@ -240,11 +238,11 @@ export function UsersAdmin({
   const dialogOpen = creating || Boolean(editing);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-3.5 p-3 sm:space-y-4 sm:p-4">
       <div>
-        <h1 className="text-xl font-bold">{actorRole === "PARTNER_ADMIN" ? "Nhân viên" : "Tài khoản"}</h1>
+        <h1 className="text-xl font-bold max-md:hidden">{!isSuper ? "Nhân viên" : "Tài khoản"}</h1>
         <p className="text-[13px] text-muted-foreground">
-          {actorRole === "PARTNER_ADMIN"
+          {!isSuper
             ? "Nhân viên của bạn xuất hiện trong ô phụ trách trên màn lead."
             : "Partner admin gắn theo fanpage. Nhân viên thuộc một partner và chỉ sửa lead được giao."}
         </p>
@@ -271,7 +269,9 @@ export function UsersAdmin({
             search={{ value: query, onChange: setQuery, placeholder: "Tìm tên / email" }}
             filters={
               <>
-                <ProjectSwitcher />
+                <div className="max-md:hidden">
+                  <ProjectSwitcher />
+                </div>
                 <FilterSelect
                   value={statusFilter}
                   onChange={setStatusFilter}
@@ -344,7 +344,7 @@ export function UsersAdmin({
                   onChange={(event) => setForm((f) => ({ ...f, email: event.target.value }))}
                 />
               </Field>
-              {form.role === "STAFF" && actorRole === "SUPER_ADMIN" && (
+              {form.role === "STAFF" && isSuper && (
                 <Field label="Thuộc partner">
                   <Select
                     value={form.partnerId ?? ""}
@@ -363,7 +363,7 @@ export function UsersAdmin({
                   </Select>
                 </Field>
               )}
-              {form.role === "PARTNER_ADMIN" && actorRole === "SUPER_ADMIN" && (
+              {form.role === "PARTNER_ADMIN" && isSuper && (
                 <Field label="Project">
                   <Select
                     value={form.projectId ?? ""}
@@ -392,7 +392,7 @@ export function UsersAdmin({
                   />
                 </Field>
               )}
-              {form.role === "PARTNER_ADMIN" && actorRole === "SUPER_ADMIN" && (
+              {form.role === "PARTNER_ADMIN" && isSuper && (
                 <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
                   <div>
                     <div className="text-sm font-medium">Trợ lý AI</div>

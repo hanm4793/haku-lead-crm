@@ -17,28 +17,33 @@ interface HealthResponse {
   error?: string;
 }
 
+function subscribeAiModel(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const handler = () => onStoreChange();
+  window.addEventListener("crm:ai-model-changed", handler);
+  window.addEventListener("storage", handler);
+  return () => {
+    window.removeEventListener("crm:ai-model-changed", handler);
+    window.removeEventListener("storage", handler);
+  };
+}
+
 export function AiModelSelector({ defaultModelId }: { defaultModelId: string }) {
-  const [selectedModel, setSelectedModel] = React.useState<string>(defaultModelId);
+  const selectedModel = React.useSyncExternalStore(
+    subscribeAiModel,
+    () => {
+      try {
+        return window.localStorage.getItem("crm.ai.model") || defaultModelId;
+      } catch {
+        return defaultModelId;
+      }
+    },
+    () => defaultModelId,
+  );
   const [checking, setChecking] = React.useState(false);
   const [health, setHealth] = React.useState<HealthResponse | null>(null);
 
-  React.useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("crm.ai.model");
-      if (saved) setSelectedModel(saved);
-    } catch {
-      // ignore
-    }
-    const onModelChanged = (e: Event) => {
-      const detail = (e as CustomEvent<string>).detail;
-      if (detail) setSelectedModel(detail);
-    };
-    window.addEventListener("crm:ai-model-changed", onModelChanged);
-    return () => window.removeEventListener("crm:ai-model-changed", onModelChanged);
-  }, []);
-
   const handleChangeModel = (modelId: string) => {
-    setSelectedModel(modelId);
     try {
       window.localStorage.setItem("crm.ai.model", modelId);
       document.cookie = `crm_ai_model=${encodeURIComponent(modelId)}; path=/; max-age=31536000`;

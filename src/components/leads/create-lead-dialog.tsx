@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { UserRole } from "@/lib/auth/roles";
+import { canAssignLead, type UserRole } from "@/lib/auth/roles";
 import { DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/lib/catalog";
 import {
   CATEGORY_OPTIONS,
@@ -61,7 +61,7 @@ export function CreateLeadDialog({
   onCreated,
 }: CreateLeadDialogProps) {
   const toast = useToast();
-  const isStaff = editor?.role === "STAFF";
+  const canPickAssignee = editor ? canAssignLead(editor.role) : true;
   const { labels } = catalog;
   const hasCustomEmail = attrFields.some((f) => f.key.toLowerCase() === "email");
 
@@ -150,7 +150,7 @@ export function CreateLeadDialog({
         brand,
         product,
         location,
-        assignee: isStaff ? null : assignee,
+        assignee: canPickAssignee ? assignee : null,
         channelDetail,
         category,
         failReason: category === "FAIL" ? failReason : null,
@@ -175,19 +175,19 @@ export function CreateLeadDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
+      <DialogContent className="flex max-h-[92dvh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 border-b border-border px-4 py-3.5 sm:px-6 sm:py-4">
           <DialogTitle className="text-lg font-bold">Tạo lead thủ công</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             Nguồn mặc định là <strong>Thủ công</strong>.{" "}
-            {isStaff
+            {!canPickAssignee
               ? "Tài khoản nhân viên sẽ tự động gán phụ trách là chính bạn."
               : "Tài khoản quản trị mặc định để trạng thái Chưa giao (hoặc có thể chọn nhân viên)."}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="thin-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+          <div className="thin-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:space-y-5 sm:p-6">
             {/* Thông tin định danh */}
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
@@ -199,8 +199,8 @@ export function CreateLeadDialog({
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Nguyễn Văn A"
                   maxLength={120}
-                  autoFocus
                   required
+                  className="max-md:h-10"
                 />
               </div>
 
@@ -213,7 +213,7 @@ export function CreateLeadDialog({
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="0901234567"
                   inputMode="tel"
-                  className="tabular-nums"
+                  className="tabular-nums max-md:h-10"
                   required
                 />
               </div>
@@ -226,28 +226,29 @@ export function CreateLeadDialog({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="khachhang@example.com"
+                    className="max-md:h-10"
                   />
                 </div>
               )}
             </div>
 
             {/* Phụ trách & Phân bổ */}
-            <div className="rounded-lg border border-border bg-slate-50/60 p-4">
+            <div className="rounded-xl border border-border bg-slate-50/60 p-4">
               <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Phân bổ & Nguồn tiếp cận
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Nguồn lead</Label>
-                  <div className="flex h-8 items-center rounded-md border border-border bg-slate-100 px-3 text-xs font-semibold text-slate-700">
+                  <div className="flex h-8 items-center rounded-md border border-border bg-slate-100 px-3 text-xs font-semibold text-slate-700 max-md:h-9">
                     Thủ công
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Nhân viên phụ trách</Label>
-                  {isStaff ? (
-                    <div className="flex h-8 items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-800">
+                  {!canPickAssignee ? (
+                    <div className="flex h-8 items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-800 max-md:h-9">
                       <UserCheck className="size-3.5 shrink-0" />
                       <span className="truncate">{editor?.fullName || "Tài khoản của bạn"}</span>
                     </div>
@@ -405,7 +406,7 @@ export function CreateLeadDialog({
                     type="datetime-local"
                     value={callbackAt}
                     onChange={(e) => setCallbackAt(e.target.value)}
-                    className="h-8 bg-white"
+                    className="h-8 bg-white max-md:h-9"
                   />
                 </div>
               </div>
@@ -413,7 +414,7 @@ export function CreateLeadDialog({
 
             {/* Field phụ cấu hình thêm */}
             {attrFields.length > 0 && (
-              <div className="rounded-lg border border-border bg-slate-50/60 p-4">
+              <div className="rounded-xl border border-border bg-slate-50/60 p-4">
                 <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Thông tin mở rộng ({attrFields.length})
                 </div>
@@ -454,7 +455,7 @@ export function CreateLeadDialog({
                               .filter(Boolean)}
                             onChange={(next) => setVal(next.join(", "))}
                             placeholder="Chưa chọn"
-                            className="w-full justify-between bg-white"
+                            className="w-full justify-between bg-white max-md:h-9"
                           />
                         ) : field.fieldType === "boolean" ? (
                           <Select
@@ -481,7 +482,7 @@ export function CreateLeadDialog({
                             }
                             value={value}
                             onChange={(e) => setVal(e.target.value)}
-                            className="h-8 bg-white"
+                            className="h-8 bg-white max-md:h-9"
                             placeholder={field.required ? "Bắt buộc" : "Chưa nhập"}
                           />
                         )}
@@ -504,17 +505,18 @@ export function CreateLeadDialog({
             </div>
           </div>
 
-          <DialogFooter className="shrink-0 border-t border-border bg-slate-50/70 px-6 py-3">
+          <DialogFooter className="shrink-0 border-t border-border bg-slate-50/70 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] sm:px-6 md:py-3">
             <Button
               type="button"
               variant="outline"
               size="sm"
               disabled={submitting}
               onClick={() => handleOpenChange(false)}
+              className="max-sm:h-10"
             >
               Hủy
             </Button>
-            <Button type="submit" size="sm" disabled={submitting} className="gap-1.5">
+            <Button type="submit" size="sm" disabled={submitting} className="gap-1.5 max-sm:h-10">
               {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
               Tạo lead
             </Button>

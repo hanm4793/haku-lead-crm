@@ -10,6 +10,7 @@ import {
   FileUp,
   ListFilter,
   Loader2,
+  MoreHorizontal,
   Plus,
   RefreshCw,
   Search,
@@ -49,6 +50,7 @@ import {
   updateLeadAction,
 } from "@/app/leads/actions";
 import {
+  canAssignLead,
   canCreateLead,
   canEditLead,
   canEditLeadProfile,
@@ -74,11 +76,17 @@ interface LogEntry {
 
 const NO_ATTR_FIELDS: AttrFieldRow[] = [];
 
-const STATUS_TABS: { id: LeadFilters["tab"]; label: string; buttonLabel: string; dotClass: string }[] = [
-  { id: "ALL", label: "Tất cả trạng thái", buttonLabel: "Tất cả trạng thái", dotClass: "bg-slate-400" },
-  { id: "CHUA_LIEN_HE", label: "Chưa liên hệ", buttonLabel: "Chưa liên hệ", dotClass: "bg-blue-500" },
-  { id: "DA_LIEN_HE", label: "Đã liên hệ", buttonLabel: "Đã liên hệ", dotClass: "bg-emerald-500" },
-  { id: "QUA_HAN", label: "Quá hạn hẹn gọi", buttonLabel: "Quá hạn", dotClass: "bg-rose-500" },
+const STATUS_TABS: {
+  id: LeadFilters["tab"];
+  label: string;
+  shortLabel: string;
+  buttonLabel: string;
+  dotClass: string;
+}[] = [
+  { id: "ALL", label: "Tất cả trạng thái", shortLabel: "Tất cả", buttonLabel: "Tất cả trạng thái", dotClass: "bg-slate-400" },
+  { id: "CHUA_LIEN_HE", label: "Chưa liên hệ", shortLabel: "Chưa LH", buttonLabel: "Chưa liên hệ", dotClass: "bg-blue-500" },
+  { id: "DA_LIEN_HE", label: "Đã liên hệ", shortLabel: "Đã LH", buttonLabel: "Đã liên hệ", dotClass: "bg-emerald-500" },
+  { id: "QUA_HAN", label: "Quá hạn hẹn gọi", shortLabel: "Quá hạn", buttonLabel: "Quá hạn", dotClass: "bg-rose-500" },
 ];
 
 export function LeadsPage({
@@ -100,12 +108,11 @@ export function LeadsPage({
 }) {
   const now = useNow();
   const toast = useToast();
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
   const filters = useLeadStore((s) => s.filters);
   const setFilters = useLeadStore((s) => s.setFilters);
   const resetFilters = useLeadStore((s) => s.resetFilters);
 
-  // Field phụ đã cấu hình hiện thành cột (mặc định bật). Người dùng tự chọn cột thì giữ
-  // lựa chọn đó cho đến khi danh sách field của project đổi, lúc đó dùng lại mặc định.
   const attrSignature = attrFields.map((f) => f.key).join("|");
   const defaultColumns = React.useMemo(
     () => [...DEFAULT_VISIBLE_COLUMNS, ...attrFields.map((f) => attrColumnId(f.key))],
@@ -145,45 +152,68 @@ export function LeadsPage({
     setSelectedIds([]);
   }
 
+  // Phím tắt `/` để nhảy ngay vào ô tìm kiếm trên Desktop
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   // Đọc tham số ?page= hoặc ?search= từ URL (ví dụ liên kết sâu từ trợ lý AI)
   React.useEffect(() => {
     if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const pageParam = params.get("page")?.trim();
-    const searchParam = params.get("search")?.trim();
-    const nextPatch: Partial<LeadFilters> = {};
-    if (pageParam) {
-      if (/^\d{1,4}$/.test(pageParam)) {
-        setPage(Math.max(1, Number(pageParam)));
-      } else {
-        const matchedPage = fanpageOptions.find(
-          (fp) => fp.value === pageParam || fp.label.toLowerCase() === pageParam.toLowerCase(),
-        );
-        if (matchedPage) {
-          nextPatch.facebookPageIds = [matchedPage.value];
-        } else if (/^\d{5,}$/.test(pageParam)) {
-          nextPatch.facebookPageIds = [pageParam];
+    const syncFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const pageParam = params.get("page")?.trim();
+      const searchParam = params.get("search")?.trim();
+      const nextPatch: Partial<LeadFilters> = {};
+      if (pageParam) {
+        if (/^\d{1,4}$/.test(pageParam)) {
+          setPage(Math.max(1, Number(pageParam)));
+        } else {
+          const matchedPage = fanpageOptions.find(
+            (fp) => fp.value === pageParam || fp.label.toLowerCase() === pageParam.toLowerCase(),
+          );
+          if (matchedPage) {
+            nextPatch.facebookPageIds = [matchedPage.value];
+          } else if (/^\d{5,}$/.test(pageParam)) {
+            nextPatch.facebookPageIds = [pageParam];
+          }
         }
       }
-    }
-    if (searchParam) {
-      nextPatch.search = searchParam;
-    }
-    if (Object.keys(nextPatch).length > 0) {
-      setFilters(nextPatch);
-    }
+      if (searchParam) {
+        nextPatch.search = searchParam;
+      }
+      if (Object.keys(nextPatch).length > 0) {
+        setFilters(nextPatch);
+      }
+    };
+    queueMicrotask(syncFromUrl);
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Gõ tìm kiếm nhanh nhưng chỉ truy vấn sau khi người dùng ngừng gõ.
   React.useEffect(() => {
     if (searchInput === filters.search) return;
-    const timer = setTimeout(() => setFilters({ search: searchInput }), 300);
+    const timer = setTimeout(() => setFilters({ search: searchInput }), 260);
     return () => clearTimeout(timer);
   }, [searchInput, filters.search, setFilters]);
 
-  // Đổi bộ lọc hoặc cỡ trang thì quay lại trang đầu — điều chỉnh ngay trong lúc
-  // render thay vì dùng effect để tránh một lượt truy vấn thừa ở trang cũ.
   const pagingKey = `${JSON.stringify(filters)}|${pageSize}|${sort.columnId}|${sort.order}`;
   const [lastPagingKey, setLastPagingKey] = React.useState(pagingKey);
   if (pagingKey !== lastPagingKey) {
@@ -227,12 +257,15 @@ export function LeadsPage({
       ? (data.rows[selectedIndex + 1]?.id ?? null)
       : null;
 
-  const leadEditable = (lead: Lead) => (editor ? canEditLead(editor, lead) : true);
+  const leadEditable = React.useCallback(
+    (lead: Lead) => (editor ? canEditLead(editor, lead) : true),
+    [editor],
+  );
   const leadProfileEditable = (lead: Lead) =>
     editor ? canEditLeadProfile(editor, lead) : lead.source === "MANUAL";
   const allowCreate = editor ? canCreateLead(editor.role) : true;
   const allowImport = editor ? canImportLeads(editor.role) : true;
-  const allowAssign = editor ? editor.role === "SUPER_ADMIN" || editor.role === "PARTNER_ADMIN" : true;
+  const allowAssign = editor ? canAssignLead(editor.role) : true;
   const { detailLead, logs: selectedLogs, loading: logsLoading, reload: reloadLogs } = useLeadLogs(selectedId);
   const selected = React.useMemo(() => {
     if (!baseSelected) return null;
@@ -300,10 +333,6 @@ export function LeadsPage({
     }
   };
 
-  /**
-   * Sửa ngay trên giao diện rồi mới gọi server. Nếu server từ chối thì hoàn tác
-   * và hiện lỗi, còn thành công thì tải lại để KPI và số trên tab khớp lại.
-   */
   const save = async (lead: Lead, patch: Partial<Lead>, logs: LogEntry[]): Promise<boolean> => {
     const revert = patchRows([{ id: lead.id, patch }]);
 
@@ -320,36 +349,52 @@ export function LeadsPage({
     return true;
   };
 
-  const handleStatusChange = (lead: Lead, next: ContactStatus) => {
-    if (!leadEditable(lead) || lead.contactStatus === next) return;
-    void save(lead, { contactStatus: next }, [
-      {
-        kind: "STATUS_CHANGE",
-        message: `Đổi trạng thái: ${lead.contactStatus === "DA_LIEN_HE" ? "Đã liên hệ" : "Chưa liên hệ"} → ${next === "DA_LIEN_HE" ? "Đã liên hệ" : "Chưa liên hệ"}.`,
-      },
-    ]);
-  };
+  const handleStatusChange = React.useCallback(
+    (lead: Lead, next: ContactStatus) => {
+      if (!leadEditable(lead) || lead.contactStatus === next) return;
+      void save(lead, { contactStatus: next }, [
+        {
+          kind: "STATUS_CHANGE",
+          message: `Đổi trạng thái: ${lead.contactStatus === "DA_LIEN_HE" ? "Đã liên hệ" : "Chưa liên hệ"} → ${next === "DA_LIEN_HE" ? "Đã liên hệ" : "Chưa liên hệ"}.`,
+        },
+      ]);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [leadEditable],
+  );
 
-  const handleCategoryChange = (lead: Lead, next: LeadCategory, failReason?: FailReason | null) => {
-    const nextFailReason = next === "FAIL" ? (failReason !== undefined ? failReason : lead.failReason) : null;
-    if (!leadEditable(lead) || (lead.category === next && lead.failReason === nextFailReason)) return;
-    void save(lead, { category: next, failReason: nextFailReason }, [
-      {
-        kind: "CATEGORY_CHANGE",
-        message: `Cập nhật phân loại trực tiếp trên bảng: ${next}${nextFailReason ? ` (${nextFailReason})` : ""}.`,
-      },
-    ]);
-  };
+  const handleCategoryChange = React.useCallback(
+    (lead: Lead, next: LeadCategory, failReason?: FailReason | null) => {
+      const nextFailReason = next === "FAIL" ? (failReason !== undefined ? failReason : lead.failReason) : null;
+      if (!leadEditable(lead) || (lead.category === next && lead.failReason === nextFailReason)) return;
+      void save(lead, { category: next, failReason: nextFailReason }, [
+        {
+          kind: "CATEGORY_CHANGE",
+          message: `Cập nhật phân loại trực tiếp trên bảng: ${next}${nextFailReason ? ` (${nextFailReason})` : ""}.`,
+        },
+      ]);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [leadEditable],
+  );
 
-  const handleAssigneeChange = (lead: Lead, next: string | null) => {
-    if (!allowAssign || lead.assignee === next) return;
-    void save(lead, { assignee: next }, [
-      {
-        kind: "ASSIGN_CHANGE",
-        message: `Đổi người phụ trách trực tiếp trên bảng: ${lead.assignee ?? "Chưa giao"} → ${next ?? "Chưa giao"}.`,
-      },
-    ]);
-  };
+  const handleAssigneeChange = React.useCallback(
+    (lead: Lead, next: string | null) => {
+      if (!allowAssign || lead.assignee === next) return;
+      void save(lead, { assignee: next }, [
+        {
+          kind: "ASSIGN_CHANGE",
+          message: `Đổi người phụ trách trực tiếp trên bảng: ${lead.assignee ?? "Chưa giao"} → ${next ?? "Chưa giao"}.`,
+        },
+      ]);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allowAssign],
+  );
+
+  const handleRowClick = React.useCallback((lead: Lead) => {
+    setSelectedId(lead.id);
+  }, []);
 
   const handleLogCall = async (lead: Lead, kind: "CALL" | "MISSED_CALL", message: string): Promise<boolean> => {
     if (!leadEditable(lead)) return false;
@@ -416,24 +461,162 @@ export function LeadsPage({
   };
 
   return (
-    <div className="flex h-[calc(100vh-40px)] flex-col gap-3 p-4">
+    <div className="flex h-[calc(100dvh-3.25rem-3.65rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] flex-col gap-2.5 p-3 md:h-dvh md:gap-3 md:p-4">
       <LeadKpiHeader kpis={data.kpis} />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+        {/* ================================================================= */}
+        {/* MOBILE STICKY COMMAND HEADER (< 768px) — Tối ưu thao tác 1 ngón cái */}
+        {/* ================================================================= */}
+        <div className="space-y-2 border-b border-border bg-card px-2.5 py-2.5 md:hidden">
+          <div className="flex items-center gap-1.5">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Tìm tên hoặc SĐT..."
+                className="h-9 rounded-lg pl-8 pr-7"
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchInput("");
+                    setFilters({ search: "" });
+                  }}
+                  aria-label="Xóa từ khóa"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground active:bg-muted"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+
+            <LeadFilterPopover
+              filters={filters}
+              fanpageOptions={fanpageOptions}
+              assigneeOptions={assignees}
+              catalog={catalog}
+              onChange={setFilters}
+              onReset={handleResetAllFilters}
+            />
+
+            {/* Menu thao tác phụ trên Mobile (Làm mới, Xuất/Nhập Excel) */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="Tác vụ thêm"
+                  className="size-9 shrink-0 rounded-lg"
+                >
+                  {loading || exporting || downloadingTemplate ? (
+                    <Loader2 className="size-4 animate-spin text-primary" />
+                  ) : (
+                    <MoreHorizontal className="size-4" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onSelect={() => refetch()} className="gap-2 text-xs">
+                  <RefreshCw className={cn("size-4 text-emerald-600", loading && "animate-spin")} />
+                  Làm mới dữ liệu ngay
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void handleExport()} disabled={exporting} className="gap-2 text-xs">
+                  <Download className="size-4 text-slate-600" />
+                  Xuất danh sách Excel (.xlsx)
+                </DropdownMenuItem>
+                {allowImport && (
+                  <>
+                    <DropdownMenuItem onSelect={() => setImportOpen(true)} className="gap-2 text-xs">
+                      <FileUp className="size-4 text-primary" />
+                      Import lead từ file Excel
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => void handleDownloadTemplate()}
+                      disabled={downloadingTemplate}
+                      className="gap-2 text-xs"
+                    >
+                      <FileSpreadsheet className="size-4 text-emerald-600" />
+                      Tải file Excel mẫu (.xlsx)
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {/* Hàng Chip trạng thái vuốt ngang 1 chạm + Lọc ngày trên Mobile */}
+          <div className="no-scrollbar -mx-2.5 flex items-center gap-1.5 overflow-x-auto px-2.5">
+            {STATUS_TABS.map((tab) => {
+              const active = filters.tab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setFilters({ tab: tab.id })}
+                  className={cn(
+                    "inline-flex h-7.5 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors active:scale-96",
+                    active
+                      ? "border-primary bg-primary text-primary-foreground shadow-2xs"
+                      : "border-border bg-slate-50/90 text-slate-700",
+                  )}
+                >
+                  <span className={cn("size-1.5 rounded-full", active ? "bg-white" : tab.dotClass)} />
+                  <span>{tab.shortLabel}</span>
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 text-[10.5px] font-semibold tabular-nums",
+                      active ? "bg-white/20 text-white" : "bg-slate-200/75 text-slate-600",
+                    )}
+                  >
+                    {data.tabCounts[tab.id]}
+                  </span>
+                </button>
+              );
+            })}
+
+            <DateRangePicker
+              preset={datePreset}
+              range={{ from: filters.dateFrom, to: filters.dateTo }}
+              onChange={handleDateChange}
+              className="max-md:h-7.5 max-md:rounded-full max-md:text-xs"
+            />
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleResetAllFilters}
+                className="inline-flex h-7.5 shrink-0 items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2.5 text-xs font-semibold text-rose-600"
+              >
+                <X className="size-3" />
+                Xóa lọc
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ================================================================= */}
+        {/* DESKTOP & TABLET COMMAND TOOLBAR (>= 768px)                       */}
+        {/* ================================================================= */}
+        <div className="hidden flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5 md:flex">
           {/* Cụm Trái: Dự án, Tìm kiếm & Bộ lọc */}
           <div className="flex flex-wrap items-center gap-2">
             <ProjectSwitcher />
 
-            <div className="relative w-52 sm:w-60">
+            <div className="relative w-52 lg:w-64">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
+                ref={searchInputRef}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Tìm tên / SĐT..."
-                className="h-8 pl-8 pr-7 text-[13px]"
+                className="h-8 pl-8 pr-11 text-[13px]"
               />
-              {searchInput && (
+              {searchInput ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -443,12 +626,16 @@ export function LeadsPage({
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                   title="Xóa từ khóa"
                 >
-                  <X className="size-3" />
+                  <X className="size-3.5" />
                 </button>
+              ) : (
+                <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-border bg-muted/70 px-1.5 py-0.2 font-sans text-[10px] font-medium text-muted-foreground lg:inline-block">
+                  /
+                </kbd>
               )}
             </div>
 
-            <div className="hidden h-4 w-px bg-border lg:block" />
+            <div className="hidden h-4 w-px bg-border xl:block" />
 
             {/* Dropdown lọc theo Trạng thái liên hệ */}
             <DropdownMenu>
@@ -542,11 +729,12 @@ export function LeadsPage({
               <button
                 type="button"
                 onClick={() => refetch()}
-                title="Nhấn để làm mới dữ liệu ngay"
+                title={`Cập nhật mới nhất: ${formatDateTime(data.lastUpdatedAt)} — Nhấn để làm mới`}
                 className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15"
               >
                 <span className="size-1.5 rounded-full bg-emerald-500" />
-                <span>Cập nhật mới nhất: {formatDateTime(data.lastUpdatedAt)}</span>
+                <span className="hidden xl:inline">Cập nhật:</span>
+                <span className="tabular-nums">{formatDateTime(data.lastUpdatedAt)}</span>
                 <RefreshCw className={cn("size-3 opacity-70", loading && "animate-spin")} />
               </button>
             )}
@@ -573,7 +761,8 @@ export function LeadsPage({
                     ) : (
                       <FileSpreadsheet className="size-3.5 text-emerald-600" />
                     )}
-                    Nhập / Xuất Excel
+                    <span className="hidden lg:inline">Nhập / Xuất Excel</span>
+                    <span className="lg:hidden">Excel</span>
                     <ChevronDown className="size-3 opacity-60" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -619,15 +808,16 @@ export function LeadsPage({
           </div>
         </div>
 
+        {/* Thanh thao tác hàng loạt khi chọn nhiều lead */}
         {selectedIds.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/20 bg-primary/5 px-3 py-2 text-xs">
-            <div className="flex items-center gap-2 font-medium text-primary">
-              <span>Đã chọn {selectedIds.length} lead</span>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/20 bg-primary/6 px-3 py-2 text-xs">
+            <div className="flex items-center gap-2 font-semibold text-primary">
+              <span className="tabular-nums">Đã chọn {selectedIds.length} lead</span>
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs text-slate-600 hover:text-slate-900"
+                size="xs"
+                className="text-slate-600 hover:text-slate-900"
                 disabled={bulkLoading}
                 onClick={() => setSelectedIds([])}
               >
@@ -635,12 +825,12 @@ export function LeadsPage({
               </Button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               {allowAssign && (
                 <>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-7 gap-1.5 bg-white text-xs" disabled={bulkLoading}>
+                      <Button variant="outline" size="xs" className="gap-1.5 bg-white" disabled={bulkLoading}>
                         <UserPlus className="size-3.5" />
                         Giao phụ trách
                         <ChevronDown className="size-3 opacity-60" />
@@ -662,22 +852,23 @@ export function LeadsPage({
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 bg-white text-xs"
+                    size="xs"
+                    className="gap-1.5 bg-white"
                     disabled={bulkLoading}
                     onClick={() => void handleAutoAssignRoundRobin()}
                   >
                     {bulkLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Shuffle className="size-3.5" />}
-                    Chia tự động (Round-Robin)
+                    <span className="hidden sm:inline">Chia tự động (Round-Robin)</span>
+                    <span className="sm:hidden">Chia tự động</span>
                   </Button>
                 </>
               )}
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-7 gap-1.5 bg-white text-xs" disabled={bulkLoading}>
+                  <Button variant="outline" size="xs" className="gap-1.5 bg-white" disabled={bulkLoading}>
                     <CheckCircle2 className="size-3.5" />
-                    Đổi trạng thái liên hệ
+                    Đổi trạng thái
                     <ChevronDown className="size-3 opacity-60" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -702,7 +893,7 @@ export function LeadsPage({
           visibleColumns={visibleColumns}
           sort={sort}
           onSortChange={setSort}
-          onRowClick={(lead) => setSelectedId(lead.id)}
+          onRowClick={handleRowClick}
           onStatusChange={handleStatusChange}
           onCategoryChange={handleCategoryChange}
           onAssigneeChange={handleAssigneeChange}
@@ -713,28 +904,41 @@ export function LeadsPage({
           labels={catalog.labels}
           selectedIds={selectedIds}
           onSelectedIdsChange={setSelectedIds}
+          activeLeadId={selectedId}
           hasActiveFilters={hasActiveFilters}
           onResetFilters={handleResetAllFilters}
         />
 
-        <div className={cn((loading || bulkLoading) && "pointer-events-none select-none opacity-60")}>
-        <Pagination
-          page={page}
-          pageSize={pageSize}
-          total={data.total}
-          onPageChange={(nextPage) => {
-            setPage(nextPage);
-            setSelectedIds([]);
-          }}
-          onPageSizeChange={(nextSize) => {
-            setPageSize(nextSize);
-            setPage(1);
-            setSelectedIds([]);
-          }}
-        />
+        <div className={cn((loading || bulkLoading) && "pointer-events-none select-none opacity-65")}>
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={data.total}
+            onPageChange={(nextPage) => {
+              setPage(nextPage);
+              setSelectedIds([]);
+            }}
+            onPageSizeChange={(nextSize) => {
+              setPageSize(nextSize);
+              setPage(1);
+              setSelectedIds([]);
+            }}
+          />
+        </div>
       </div>
 
-      </div>
+      {/* Nút Floating Action Button (FAB) tạo lead nhanh bằng 1 ngón cái trên Mobile */}
+      {allowCreate && selectedIds.length === 0 && (
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          aria-label="Tạo lead mới"
+          className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-4 z-30 inline-flex h-12 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/30 ring-1 ring-white/20 transition-transform active:scale-94 md:hidden"
+        >
+          <Plus className="size-5" />
+          <span>Tạo lead</span>
+        </button>
+      )}
 
       <LeadDetailDialog
         lead={selected}
@@ -778,4 +982,3 @@ export function LeadsPage({
     </div>
   );
 }
-

@@ -188,12 +188,16 @@ export function MarketingPage({
   React.useEffect(() => {
     if (!tokenConfigured) return;
     let cancelled = false;
-    void listAdAccountsForAudienceAction().then((res) => {
-      if (!cancelled && res.ok && res.accounts.length > 0) {
-        setMetaAdAccounts(res.accounts.map((a) => ({ id: a.id, name: `${a.name} (${a.accountId})` })));
-      }
-    }).catch(() => {});
-    return () => { cancelled = true; };
+    void listAdAccountsForAudienceAction()
+      .then((res) => {
+        if (!cancelled && res.ok && res.accounts.length > 0) {
+          setMetaAdAccounts(res.accounts.map((a) => ({ id: a.id, name: `${a.name} (${a.accountId})` })));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [tokenConfigured]);
 
   const adAccountOptions = React.useMemo(() => {
@@ -326,9 +330,6 @@ export function MarketingPage({
       ),
     [rows, range.from, range.to, selectedAdAccountIds, campaignIds, brands, query, campaignBrands],
   );
-  // Chỉ dùng ad-level khi user chọn fanpage cụ thể.
-  // Project scope (projectAllowedPageIds) vẫn dùng campaign-level để tránh mất data
-  // từ ads thiếu pageId (creative lookup fail).
   const hasExplicitPageFilter = pageIds.length > 0;
   const campaignSummaries = (
     hasExplicitPageFilter
@@ -510,7 +511,6 @@ export function MarketingPage({
     const minutes = Number(autoSyncMinutes) || 0;
     if (!canSync || !configured || minutes <= 0) return;
 
-    // Kiểm tra ngay khi mở trang nếu lần đồng bộ cuối đã cũ hơn chu kỳ cấu hình
     const lastMs = syncedAt ? new Date(syncedAt).getTime() : 0;
     if (!lastMs || Date.now() - lastMs >= minutes * 60_000) {
       void runBackgroundAutoSync(minutes);
@@ -540,8 +540,8 @@ export function MarketingPage({
   }
 
   return (
-    <div className={cn("relative space-y-4 p-4", (pending || isRefreshing) && "pointer-events-none select-none")}>
-      {(pending || isRefreshing) && (
+    <div className={cn("relative space-y-3.5 p-3 sm:space-y-4 sm:p-4", pending && "pointer-events-none select-none")}>
+      {pending && (
         <div
           role="status"
           aria-live="polite"
@@ -551,22 +551,23 @@ export function MarketingPage({
             <RefreshCw className="size-5 shrink-0 animate-spin text-primary" />
             <div className="flex flex-col">
               <span className="text-sm font-semibold text-foreground">
-                {pending ? "Đang đồng bộ dữ liệu Marketing từ Meta..." : "Đang làm mới dữ liệu Marketing..."}
+                Đang đồng bộ dữ liệu Marketing từ Meta...
               </span>
               <span className="text-[11px] text-muted-foreground">Vui lòng đợi trong giây lát</span>
             </div>
           </div>
         </div>
       )}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold">Marketing & Tệp KH</h1>
+
+      <div className="flex flex-wrap items-start justify-between gap-2.5 sm:gap-3">
+        <div className="max-md:hidden">
+          <h1 className="text-xl font-bold">Marketing &amp; Tệp KH</h1>
           <p className="text-[13px] text-muted-foreground">
-            Hiệu quả chiến dịch QC & quản lý tệp KH
+            Hiệu quả chiến dịch QC &amp; quản lý tệp KH
             {span.from && span.to ? ` · ${formatDate(span.from)} – ${formatDate(span.to)}` : ""}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 md:w-auto">
           {syncedAt && (
             <button
               type="button"
@@ -575,14 +576,15 @@ export function MarketingPage({
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15"
             >
               <span className="size-1.5 rounded-full bg-emerald-500" />
-              <span>Cập nhật mới nhất: {formatDateTime(syncedAt)}</span>
+              <span className="max-sm:hidden">Cập nhật:</span>
+              <span className="tabular-nums">{formatDateTime(syncedAt)}</span>
               <RefreshCw className={cn("size-3 opacity-70", (pending || isRefreshing) && "animate-spin")} />
             </button>
           )}
           {canSync && activeTab === "campaigns" ? (
-            <>
+            <div className="ml-auto flex items-center gap-2 md:ml-0">
               <Select value={autoSyncMinutes} onValueChange={handleAutoSyncChange}>
-                <SelectTrigger className="h-8 w-[175px] gap-1.5 text-xs">
+                <SelectTrigger className="h-8 w-[148px] gap-1.5 text-xs sm:w-[175px]">
                   <Clock className="size-3.5 shrink-0 text-primary" />
                   <SelectValue placeholder="Tự động đồng bộ" />
                 </SelectTrigger>
@@ -604,9 +606,10 @@ export function MarketingPage({
 
               <Button type="button" size="sm" className="h-8" disabled={pending || !configured} onClick={() => void sync()}>
                 <RefreshCw className={cn("size-3.5", pending && "animate-spin")} />
-                {pending ? "Đang đồng bộ…" : "Đồng bộ ngay"}
+                <span className="max-sm:hidden">{pending ? "Đang đồng bộ…" : "Đồng bộ ngay"}</span>
+                <span className="sm:hidden">Đồng bộ</span>
               </Button>
-            </>
+            </div>
           ) : null}
         </div>
       </div>
@@ -616,17 +619,17 @@ export function MarketingPage({
           value={activeTab}
           onValueChange={(val) => setActiveTab(val as "campaigns" | "audiences")}
         >
-          <TabsList className="w-full justify-start border-b border-border">
-            <TabsTrigger value="campaigns" className="gap-1.5">
+          <TabsList className="w-full justify-start border-b border-border sm:w-auto">
+            <TabsTrigger value="campaigns" className="gap-1.5 max-sm:flex-1">
               <Megaphone className="size-3.5" />
-              Hiệu quả Chiến dịch & QC
+              <span className="truncate">Chiến dịch &amp; QC</span>
             </TabsTrigger>
-            <TabsTrigger value="audiences" className="gap-1.5">
+            <TabsTrigger value="audiences" className="gap-1.5 max-sm:flex-1">
               <Users className="size-3.5" />
-              Tệp KH
+              <span>Tệp KH</span>
               <Badge
                 variant={activeTab === "audiences" ? "secondary" : "muted"}
-                className="ml-0.5 px-1.5 py-0 text-[10px]"
+                className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums"
               >
                 {savedAudiences.length}
               </Badge>
@@ -652,473 +655,514 @@ export function MarketingPage({
               Thiếu FACEBOOK_AD_ACCOUNT_ID — cấu hình biến môi trường để đồng bộ Insights.
             </p>
           ) : null}
-          <div className="flex flex-wrap items-center gap-2">
-        <DateRangePicker preset={preset} range={range} onChange={applyRange} />
-        {projects.length > 0 && (
-          <MultiSelect
-            options={projectOptions}
-            selected={selectedProjectIds}
-            onChange={handleProjectChange}
-            placeholder="Tất cả dự án"
-            className="h-8 w-[180px] text-[13px]"
-            contentClassName="w-[240px]"
-          />
-        )}
-        <MultiSelect
-          options={adAccountOptions}
-          selected={selectedAdAccountIds}
-          onChange={(next) => {
-            setSelectedAdAccountIds(next);
-            setFanpagePage(1);
-            setCampaignPage(1);
-          }}
-          placeholder="Tất cả TKQC"
-          className="h-8 w-[200px] text-[13px]"
-          contentClassName="w-[280px]"
-        />
-        <MultiSelect
-          options={pageOptions}
-          selected={pageIds}
-          onChange={(next) => {
-            setPageIds(next);
-            setCampaignPage(1);
-          }}
-          placeholder="Tất cả fanpage"
-          className="h-8 w-[200px] text-[13px]"
-          contentClassName="w-[280px]"
-        />
-        <MultiSelect
-          options={campaignOptions}
-          selected={campaignIds}
-          onChange={(next) => {
-            setCampaignIds(next);
-            setCampaignPage(1);
-          }}
-          placeholder="Tất cả chiến dịch"
-          className="h-8 w-[240px] text-[13px]"
-          contentClassName="w-[360px]"
-        />
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setFanpagePage(1);
-              setCampaignPage(1);
-            }}
-            placeholder="Tìm chiến dịch, QC…"
-            className="h-8 w-[220px] pl-8 text-[13px]"
-            aria-label="Tìm chiến dịch"
-          />
-        </div>
-        {filtersActive ? (
-          <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
-            <X />
-            Xóa lọc
-          </Button>
-        ) : null}
-      </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        {campaignBrands.map((brand) => {
-          const active = brands.includes(brand.id);
-          return (
-            <button
-              key={brand.id}
-              type="button"
-              aria-pressed={active}
-              onClick={() => toggleBrand(brand.id)}
-              className={cn(
-                "rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors",
-                active
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
-              )}
-            >
-              {brand.label}
-            </button>
-          );
-        })}
-      </div>
-      <p className="text-[12px] text-muted-foreground">
-        CPL trung vị{ratedCampaigns.benchmark != null ? `: ${formatCurrency(ratedCampaigns.benchmark)}` : ""} · ≤ trung vị (tối đa 300.000 ₫): Hiệu quả · ≤ 1.5x (tối đa 600.000 ₫): Trung bình · &gt; ngưỡng: Kém.
-      </p>
-
-      {rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-          {hasSynced ? "Không có dữ liệu Insights." : "Chưa có dữ liệu Insights — bấm Đồng bộ"}
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <Kpi label="Chi tiêu" value={totals.spend === null ? "—" : formatCurrency(totals.spend)} icon={Wallet} />
-            <Kpi label="Hiển thị" value={totals.impressions === null ? "—" : formatNumber(totals.impressions)} />
-            <Kpi label="Lượt click" value={totals.clicks === null ? "—" : formatNumber(totals.clicks)} icon={MousePointerClick} />
-            <Kpi label="CTR" value={totals.ctr === null ? "—" : formatPercent(totals.ctr)} />
-            <Kpi label="Lead (Meta)" value={totals.leads === null ? "—" : formatNumber(totals.leads)} />
-            <Kpi label="CPL (Meta)" value={totals.cpl === null ? "—" : formatCurrency(totals.cpl)} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-            <Kpi label="Lead thực (CRM)" value={formatNumber(crmTotals.crmLeads)} />
-            <Kpi label="KHQT" value={formatNumber(crmTotals.khqt)} />
-            <Kpi label="KHD (Chốt)" value={formatNumber(crmTotals.khd)} />
-            <Kpi label="CPQL (Chi / KHQT)" value={crmTotals.cpql === null ? "—" : formatCurrency(crmTotals.cpql)} />
-            <Kpi label="CPS (Chi / KHD)" value={crmTotals.cps === null ? "—" : formatCurrency(crmTotals.cps)} />
-          </div>
-
-          <section className="rounded-lg border border-border bg-card p-4 shadow-xs">
-            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-sm font-semibold">
-                {selected ? selected.objectName ?? selected.objectId : "Chi tiêu & Lead theo ngày"}
-              </h2>
-              <p className="text-[12px] text-muted-foreground">Bấm cột ngày để lọc</p>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <div className="col-span-2 sm:col-span-1">
+              <DateRangePicker preset={preset} range={range} onChange={applyRange} />
             </div>
-            {series.length === 0 ? (
-              <p className="py-16 text-center text-sm text-muted-foreground">Không có ngày nào khớp bộ lọc.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={280}>
-                <ComposedChart
-                  data={series}
-                  margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
-                  style={{ cursor: "pointer" }}
-                  onClick={(state) => {
-                    const date = state?.activeLabel;
-                    if (typeof date === "string") applyRange("CUSTOM", { from: date, to: date });
-                  }}
-                >
-                  <CartesianGrid stroke={GRID_COLOR} vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    tick={AXIS_STYLE}
-                    tickLine={false}
-                    axisLine={{ stroke: GRID_COLOR }}
-                    minTickGap={24}
-                    tickFormatter={(value) => shortDate(String(value))}
-                  />
-                  <YAxis
-                    yAxisId="spend"
-                    tick={AXIS_STYLE}
-                    tickLine={false}
-                    axisLine={false}
-                    width={48}
-                    tickFormatter={compactMoney}
-                  />
-                  <YAxis
-                    yAxisId="leads"
-                    orientation="right"
-                    tick={AXIS_STYLE}
-                    tickLine={false}
-                    axisLine={false}
-                    width={32}
-                    allowDecimals={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: 8,
-                      border: `1px solid ${GRID_COLOR}`,
-                      fontSize: 12,
-                      boxShadow: "0 8px 24px rgba(15,28,51,.10)",
-                    }}
-                    labelFormatter={(label) => formatDate(String(label))}
-                    formatter={(value, name) =>
-                      name === "spend"
-                        ? [formatCurrency(Number(value)), "Chi tiêu"]
-                        : [formatNumber(Number(value)), "Lead"]
-                    }
-                  />
-                  <Legend formatter={(value) => (value === "spend" ? "Chi tiêu" : "Lead")} />
-                  <Bar yAxisId="leads" dataKey="leads" fill="#0f9d8f" radius={[3, 3, 0, 0]} maxBarSize={28} />
-                  <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="#12479e" strokeWidth={2} dot={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-          </section>
-
-          <section className="overflow-hidden rounded-lg border border-border bg-card shadow-xs">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <h2 className="text-sm font-semibold">Theo Fanpage</h2>
-              <p className="text-[12px] text-muted-foreground">
-                {sortedPages.length} fanpage · bấm chọn Fanpage để lọc
-              </p>
-            </div>
-            {adRows.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-                Chưa có dữ liệu QC — bấm Đồng bộ Insights.
-              </p>
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[920px] text-left text-[13px]">
-                    <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
-                      <tr>
-                        <th className="px-3 py-2.5 font-medium">Fanpage</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Chi tiêu</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Lead (Meta)</th>
-                        <th className="px-3 py-2.5 text-right font-medium">CPL</th>
-                        <th className="px-3 py-2.5 text-right font-medium">CTR</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Lead CRM</th>
-                        <th className="px-3 py-2.5 text-right font-medium">KHQT</th>
-                        <th className="px-3 py-2.5 text-right font-medium">KHD</th>
-                        <th className="px-3 py-2.5 text-right font-medium">CPQL</th>
-                        <th className="px-3 py-2.5 text-right font-medium">CPS</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Hiệu quả</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pagedFanpages.map((page) => {
-                        const active = pageIds.length === 1 && pageIds[0] === page.pageId;
-                        const label =
-                          pageOptions.find((option) => option.value === page.pageId)?.label ?? "Chưa gắn fanpage";
-                        return (
-                          <tr
-                            key={page.pageId || "unknown"}
-                            className={cn(
-                              "cursor-pointer border-b last:border-b-0 hover:bg-muted/40",
-                              active && "bg-accent",
-                            )}
-                            onClick={() => {
-                              setPageIds(active ? [] : [page.pageId]);
-                              setCampaignPage(1);
-                            }}
-                          >
-                            <td className="px-3 py-2.5 font-medium">{label}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(page.spend)}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(page.leads)}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">
-                              {page.cpl === null ? "—" : formatCurrency(page.cpl)}
-                            </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">
-                              {page.ctr === null ? "—" : formatPercent(page.ctr)}
-                            </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(page.crmLeads)}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(page.khqt)}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(page.khd)}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">
-                              {page.cpql === null ? "—" : formatCurrency(page.cpql)}
-                            </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">
-                              {page.cps === null ? "—" : formatCurrency(page.cps)}
-                            </td>
-                            <td className="px-3 py-2.5 text-right">
-                              <EfficiencyBadge value={page.efficiency} />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                <Pagination
-                  page={safeFanpagePage}
-                  pageSize={fanpagePageSize}
-                  total={sortedPages.length}
-                  unit="fanpage"
-                  onPageChange={setFanpagePage}
-                  onPageSizeChange={(size) => {
-                    setFanpagePageSize(size);
-                    setFanpagePage(1);
-                  }}
-                />
-              </>
-            )}
-          </section>
-
-          <section className="overflow-hidden rounded-lg border border-border bg-card shadow-xs">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <h2 className="text-sm font-semibold">Theo Chiến dịch</h2>
-              <p className="text-[12px] text-muted-foreground">
-                {campaigns.length} chiến dịch · bấm dòng để xem QC
-              </p>
-            </div>
-            {campaigns.length === 0 ? (
-              <p className="px-4 py-10 text-center text-sm text-muted-foreground">Không có chiến dịch khớp bộ lọc.</p>
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[860px] text-left text-[13px]">
-                    <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
-                      <tr>
-                        <SortHeader label="Chiến dịch" sortKey="name" sort={sort} onSort={toggleSort} />
-                        <SortHeader label="Chi tiêu" sortKey="spend" sort={sort} onSort={toggleSort} align="right" />
-                        <SortHeader label="Hiển thị" sortKey="impressions" sort={sort} onSort={toggleSort} align="right" />
-                        <SortHeader label="Click" sortKey="clicks" sort={sort} onSort={toggleSort} align="right" />
-                        <SortHeader label="CTR" sortKey="ctr" sort={sort} onSort={toggleSort} align="right" />
-                        <SortHeader label="Lead" sortKey="leads" sort={sort} onSort={toggleSort} align="right" />
-                        <SortHeader label="CPL" sortKey="cpl" sort={sort} onSort={toggleSort} align="right" />
-                        <SortHeader label="Hiệu quả" sortKey="efficiency" sort={sort} onSort={toggleSort} align="right" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pagedCampaigns.map((campaign) => (
-                        <React.Fragment key={campaign.objectId}>
-                          <tr
-                            className={cn(
-                              "cursor-pointer border-b last:border-b-0 hover:bg-muted/40",
-                              campaign.objectId === activeId && "bg-accent",
-                            )}
-                            onClick={() => {
-                              setSelectedId(campaign.objectId === activeId ? null : campaign.objectId);
-                              setDailyPage(1);
-                            }}
-                          >
-                            <td className="px-3 py-2.5">
-                              <AdsManagerTitle level="campaign" objectId={campaign.objectId} adAccountId={campaign.adAccountId ?? adAccountId}>
-                                {campaign.objectName ?? campaign.objectId}
-                              </AdsManagerTitle>
-                              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
-                                <div
-                                  className="h-full rounded-full bg-primary"
-                                  style={{ width: `${Math.max(2, (campaign.spend / maxSpend) * 100)}%` }}
-                                />
-                              </div>
-                              <span className="mt-1.5 inline-block text-[12px] font-medium text-primary">
-                                {campaign.objectId === activeId ? "Ẩn ads" : "Xem ads"}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(campaign.spend)}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.impressions)}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.clicks)}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">
-                              {campaign.ctr === null ? "—" : formatPercent(campaign.ctr)}
-                            </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.leads)}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">
-                              {campaign.cpl === null ? "—" : formatCurrency(campaign.cpl)}
-                            </td>
-                            <td className="px-3 py-2.5 text-right">
-                              <EfficiencyBadge value={campaign.efficiency} />
-                            </td>
-                          </tr>
-                          {campaign.objectId === activeId && adsInCampaign ? (
-                            <tr className="border-b bg-muted/20">
-                              <td colSpan={8} className="px-4 py-3">
-                                <div className="mb-2 flex items-baseline justify-between gap-3">
-                                  <p className="text-[13px] font-semibold">Ads trong chiến dịch này</p>
-                                  <p className="text-[12px] text-muted-foreground">
-                                    {adsInCampaign.benchmark != null
-                                      ? `CPL trung vị của các ads có lead: ${formatCurrency(adsInCampaign.benchmark)}`
-                                      : "Chưa đủ ads có lead để so CPL"}
-                                  </p>
-                                </div>
-                                {adsInCampaign.items.length === 0 ? (
-                                  <p className="text-sm text-muted-foreground">Chiến dịch này chưa có dòng ads trong bộ lọc.</p>
-                                ) : (
-                                  <div className="thin-scrollbar max-h-[360px] overflow-y-auto">
-                                    <table className="w-full min-w-[760px] text-left text-[13px]">
-                                      <thead className="sticky top-0 bg-muted/90 text-xs text-muted-foreground backdrop-blur-xs">
-                                        <tr>
-                                          <th className="px-2 py-1.5 font-medium">Ads</th>
-                                          <th className="px-2 py-1.5 font-medium">Nhóm</th>
-                                          <th className="px-2 py-1.5 text-right font-medium">Chi tiêu</th>
-                                          <th className="px-2 py-1.5 text-right font-medium">Click</th>
-                                          <th className="px-2 py-1.5 text-right font-medium">CTR</th>
-                                          <th className="px-2 py-1.5 text-right font-medium">Lead</th>
-                                          <th className="px-2 py-1.5 text-right font-medium">CPL</th>
-                                          <th className="px-2 py-1.5 text-right font-medium">Hiệu quả</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {adsInCampaign.items
-                                          .slice()
-                                          .sort((left, right) => right.spend - left.spend)
-                                          .map((ad) => (
-                                            <tr key={ad.objectId} className="border-t border-border/70">
-                                              <td className="px-2 py-2">
-                                                <AdsManagerTitle level="ad" objectId={ad.objectId} adAccountId={ad.adAccountId ?? adAccountId}>
-                                                  {ad.objectName ?? ad.objectId}
-                                                </AdsManagerTitle>
-                                              </td>
-                                              <td className="px-2 py-2 text-muted-foreground">{ad.adsetName ?? "—"}</td>
-                                              <td className="px-2 py-2 text-right tabular-nums">{formatCurrency(ad.spend)}</td>
-                                              <td className="px-2 py-2 text-right tabular-nums">{formatNumber(ad.clicks)}</td>
-                                              <td className="px-2 py-2 text-right tabular-nums">
-                                                {ad.ctr === null ? "—" : formatPercent(ad.ctr)}
-                                              </td>
-                                              <td className="px-2 py-2 text-right tabular-nums">{formatNumber(ad.leads)}</td>
-                                              <td className="px-2 py-2 text-right tabular-nums">
-                                                {ad.cpl === null ? "—" : formatCurrency(ad.cpl)}
-                                              </td>
-                                              <td className="px-2 py-2 text-right">
-                                                <EfficiencyBadge value={ad.efficiency} />
-                                              </td>
-                                            </tr>
-                                          ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          ) : null}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <Pagination
-                  page={safeCampaignPage}
-                  pageSize={campaignPageSize}
-                  total={campaigns.length}
-                  unit="chiến dịch"
-                  onPageChange={setCampaignPage}
-                  onPageSizeChange={(size) => {
-                    setCampaignPageSize(size);
-                    setCampaignPage(1);
-                  }}
-                />
-              </>
-            )}
-          </section>
-
-          {selected ? (
-            <section className="overflow-hidden rounded-lg border border-border bg-card shadow-xs">
-              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-                <h2 className="text-sm font-semibold">Theo ngày · {selected.objectName ?? selected.objectId}</h2>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedId(null)}>
-                  Bỏ chọn
-                </Button>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-[13px]">
-                  <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2.5 font-medium">Ngày</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Chi tiêu</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Hiển thị</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Click</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Lead</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pagedDailyRows.map((row) => (
-                      <tr key={row.date} className="border-b last:border-b-0">
-                        <td className="px-3 py-2.5">{formatDate(row.date)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(row.spend ?? 0)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(row.impressions ?? 0)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(row.clicks ?? 0)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(row.leads ?? 0)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <Pagination
-                page={safeDailyPage}
-                pageSize={dailyPageSize}
-                total={dailyRows.length}
-                unit="ngày"
-                onPageChange={setDailyPage}
-                onPageSizeChange={(size) => {
-                  setDailyPageSize(size);
-                  setDailyPage(1);
-                }}
+            {projects.length > 0 && (
+              <MultiSelect
+                options={projectOptions}
+                selected={selectedProjectIds}
+                onChange={handleProjectChange}
+                placeholder="Tất cả dự án"
+                className="h-8 w-full text-[13px] max-md:h-9 sm:w-[180px]"
+                contentClassName="w-[240px]"
               />
-            </section>
-          ) : null}
-        </>
-      )}
+            )}
+            <MultiSelect
+              options={adAccountOptions}
+              selected={selectedAdAccountIds}
+              onChange={(next) => {
+                setSelectedAdAccountIds(next);
+                setFanpagePage(1);
+                setCampaignPage(1);
+              }}
+              placeholder="Tất cả TKQC"
+              className="h-8 w-full text-[13px] max-md:h-9 sm:w-[200px]"
+              contentClassName="w-[280px]"
+            />
+            <MultiSelect
+              options={pageOptions}
+              selected={pageIds}
+              onChange={(next) => {
+                setPageIds(next);
+                setCampaignPage(1);
+              }}
+              placeholder="Tất cả fanpage"
+              className="h-8 w-full text-[13px] max-md:h-9 sm:w-[200px]"
+              contentClassName="w-[280px]"
+            />
+            <MultiSelect
+              options={campaignOptions}
+              selected={campaignIds}
+              onChange={(next) => {
+                setCampaignIds(next);
+                setCampaignPage(1);
+              }}
+              placeholder="Tất cả chiến dịch"
+              className="h-8 w-full text-[13px] max-md:h-9 sm:w-[240px]"
+              contentClassName="w-[340px]"
+            />
+            <div className="relative col-span-2 sm:col-span-1">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setFanpagePage(1);
+                  setCampaignPage(1);
+                }}
+                placeholder="Tìm chiến dịch, QC…"
+                className="h-8 w-full pl-8 text-[13px] max-md:h-9 sm:w-[220px]"
+                aria-label="Tìm chiến dịch"
+              />
+            </div>
+            {filtersActive ? (
+              <Button type="button" variant="ghost" size="sm" onClick={clearFilters} className="col-span-2 sm:col-span-1">
+                <X />
+                Xóa lọc
+              </Button>
+            ) : null}
+          </div>
+
+          {campaignBrands.length > 0 && (
+            <div className="no-scrollbar -mx-3 flex gap-1.5 overflow-x-auto px-3 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+              {campaignBrands.map((brand) => {
+                const active = brands.includes(brand.id);
+                return (
+                  <button
+                    key={brand.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => toggleBrand(brand.id)}
+                    className={cn(
+                      "shrink-0 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors",
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+                    )}
+                  >
+                    {brand.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <p className="text-[12px] text-muted-foreground">
+            CPL trung vị{ratedCampaigns.benchmark != null ? `: ${formatCurrency(ratedCampaigns.benchmark)}` : ""} · ≤ trung vị (tối đa 300.000 ₫): Hiệu quả · ≤ 1.5x (tối đa 600.000 ₫): Trung bình · &gt; ngưỡng: Kém.
+          </p>
+
+          {rows.length === 0 ? (
+            <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+              {hasSynced ? "Không có dữ liệu Insights." : "Chưa có dữ liệu Insights — bấm Đồng bộ"}
+            </div>
+          ) : (
+            <>
+              <div className="no-scrollbar -mx-3 flex gap-2.5 overflow-x-auto px-3 pb-0.5 md:mx-0 md:grid md:grid-cols-3 md:gap-3 md:overflow-visible md:px-0 md:pb-0 xl:grid-cols-6">
+                <Kpi label="Chi tiêu" value={totals.spend === null ? "—" : formatCurrency(totals.spend)} icon={Wallet} />
+                <Kpi label="Hiển thị" value={totals.impressions === null ? "—" : formatNumber(totals.impressions)} />
+                <Kpi label="Lượt click" value={totals.clicks === null ? "—" : formatNumber(totals.clicks)} icon={MousePointerClick} />
+                <Kpi label="CTR" value={totals.ctr === null ? "—" : formatPercent(totals.ctr)} />
+                <Kpi label="Lead (Meta)" value={totals.leads === null ? "—" : formatNumber(totals.leads)} />
+                <Kpi label="CPL (Meta)" value={totals.cpl === null ? "—" : formatCurrency(totals.cpl)} />
+              </div>
+
+              <div className="no-scrollbar -mx-3 flex gap-2.5 overflow-x-auto px-3 pb-0.5 md:mx-0 md:grid md:grid-cols-5 md:gap-3 md:overflow-visible md:px-0 md:pb-0">
+                <Kpi label="Lead thực (CRM)" value={formatNumber(crmTotals.crmLeads)} />
+                <Kpi label="KHQT" value={formatNumber(crmTotals.khqt)} />
+                <Kpi label="KHD (Chốt)" value={formatNumber(crmTotals.khd)} />
+                <Kpi label="CPQL (Chi / KHQT)" value={crmTotals.cpql === null ? "—" : formatCurrency(crmTotals.cpql)} />
+                <Kpi label="CPS (Chi / KHD)" value={crmTotals.cps === null ? "—" : formatCurrency(crmTotals.cps)} />
+              </div>
+
+              <section className="rounded-xl border border-border bg-card p-3.5 shadow-xs sm:p-4">
+                <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                  <h2 className="text-sm font-semibold">
+                    {selected ? selected.objectName ?? selected.objectId : "Chi tiêu & Lead theo ngày"}
+                  </h2>
+                  <p className="text-[12px] text-muted-foreground">Bấm cột ngày để lọc</p>
+                </div>
+                {series.length === 0 ? (
+                  <p className="py-16 text-center text-sm text-muted-foreground">Không có ngày nào khớp bộ lọc.</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <ComposedChart
+                      data={series}
+                      margin={{ top: 8, right: 4, bottom: 0, left: -4 }}
+                      style={{ cursor: "pointer" }}
+                      onClick={(state) => {
+                        const date = state?.activeLabel;
+                        if (typeof date === "string") applyRange("CUSTOM", { from: date, to: date });
+                      }}
+                    >
+                      <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+                      <XAxis
+                        dataKey="date"
+                        tick={AXIS_STYLE}
+                        tickLine={false}
+                        axisLine={{ stroke: GRID_COLOR }}
+                        minTickGap={24}
+                        tickFormatter={(value) => shortDate(String(value))}
+                      />
+                      <YAxis
+                        yAxisId="spend"
+                        tick={AXIS_STYLE}
+                        tickLine={false}
+                        axisLine={false}
+                        width={46}
+                        tickFormatter={compactMoney}
+                      />
+                      <YAxis
+                        yAxisId="leads"
+                        orientation="right"
+                        tick={AXIS_STYLE}
+                        tickLine={false}
+                        axisLine={false}
+                        width={28}
+                        allowDecimals={false}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: 8,
+                          border: `1px solid ${GRID_COLOR}`,
+                          fontSize: 12,
+                          boxShadow: "0 8px 24px rgba(15,28,51,.10)",
+                        }}
+                        labelFormatter={(label) => formatDate(String(label))}
+                        formatter={(value, name) =>
+                          name === "spend"
+                            ? [formatCurrency(Number(value)), "Chi tiêu"]
+                            : [formatNumber(Number(value)), "Lead"]
+                        }
+                      />
+                      <Legend formatter={(value) => (value === "spend" ? "Chi tiêu" : "Lead")} />
+                      <Bar yAxisId="leads" dataKey="leads" fill="#0f9d8f" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                      <Line yAxisId="spend" type="monotone" dataKey="spend" stroke="#12479e" strokeWidth={2} dot={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                )}
+              </section>
+
+              <section className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <h2 className="text-sm font-semibold">Theo Fanpage</h2>
+                  <p className="text-[12px] text-muted-foreground tabular-nums">
+                    {sortedPages.length} fanpage · bấm chọn để lọc
+                  </p>
+                </div>
+                {adRows.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+                    Chưa có dữ liệu QC — bấm Đồng bộ Insights.
+                  </p>
+                ) : (
+                  <>
+                    <div className="thin-scrollbar overflow-x-auto">
+                      <table className="w-full min-w-[860px] text-left text-[13px]">
+                        <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
+                          <tr>
+                            <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2.5 font-medium shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)]">
+                              Fanpage
+                            </th>
+                            <th className="px-3 py-2.5 text-right font-medium">Chi tiêu</th>
+                            <th className="px-3 py-2.5 text-right font-medium">Lead (Meta)</th>
+                            <th className="px-3 py-2.5 text-right font-medium">CPL</th>
+                            <th className="px-3 py-2.5 text-right font-medium">CTR</th>
+                            <th className="px-3 py-2.5 text-right font-medium">Lead CRM</th>
+                            <th className="px-3 py-2.5 text-right font-medium">KHQT</th>
+                            <th className="px-3 py-2.5 text-right font-medium">KHD</th>
+                            <th className="px-3 py-2.5 text-right font-medium">CPQL</th>
+                            <th className="px-3 py-2.5 text-right font-medium">CPS</th>
+                            <th className="px-3 py-2.5 text-right font-medium">Hiệu quả</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pagedFanpages.map((page) => {
+                            const active = pageIds.length === 1 && pageIds[0] === page.pageId;
+                            const label =
+                              pageOptions.find((option) => option.value === page.pageId)?.label ?? "Chưa gắn fanpage";
+                            return (
+                              <tr
+                                key={page.pageId || "unknown"}
+                                className={cn(
+                                  "group cursor-pointer border-b last:border-b-0 hover:bg-muted/40",
+                                  active && "bg-accent",
+                                )}
+                                onClick={() => {
+                                  setPageIds(active ? [] : [page.pageId]);
+                                  setCampaignPage(1);
+                                }}
+                              >
+                                <td
+                                  className={cn(
+                                    "sticky left-0 z-10 max-w-[180px] truncate bg-card px-3 py-2.5 font-medium shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)] group-hover:bg-slate-50 sm:max-w-[240px]",
+                                    active && "bg-accent",
+                                  )}
+                                  title={label}
+                                >
+                                  {label}
+                                </td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(page.spend)}</td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(page.leads)}</td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">
+                                  {page.cpl === null ? "—" : formatCurrency(page.cpl)}
+                                </td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">
+                                  {page.ctr === null ? "—" : formatPercent(page.ctr)}
+                                </td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(page.crmLeads)}</td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(page.khqt)}</td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(page.khd)}</td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">
+                                  {page.cpql === null ? "—" : formatCurrency(page.cpql)}
+                                </td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">
+                                  {page.cps === null ? "—" : formatCurrency(page.cps)}
+                                </td>
+                                <td className="px-3 py-2.5 text-right">
+                                  <EfficiencyBadge value={page.efficiency} />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Pagination
+                      page={safeFanpagePage}
+                      pageSize={fanpagePageSize}
+                      total={sortedPages.length}
+                      unit="fanpage"
+                      onPageChange={setFanpagePage}
+                      onPageSizeChange={(size) => {
+                        setFanpagePageSize(size);
+                        setFanpagePage(1);
+                      }}
+                    />
+                  </>
+                )}
+              </section>
+
+              <section className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <h2 className="text-sm font-semibold">Theo Chiến dịch</h2>
+                  <p className="text-[12px] text-muted-foreground tabular-nums">
+                    {campaigns.length} chiến dịch · bấm dòng để xem QC
+                  </p>
+                </div>
+                {campaigns.length === 0 ? (
+                  <p className="px-4 py-10 text-center text-sm text-muted-foreground">Không có chiến dịch khớp bộ lọc.</p>
+                ) : (
+                  <>
+                    <div className="thin-scrollbar overflow-x-auto">
+                      <table className="w-full min-w-[820px] text-left text-[13px]">
+                        <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
+                          <tr>
+                            <SortHeader
+                              label="Chiến dịch"
+                              sortKey="name"
+                              sort={sort}
+                              onSort={toggleSort}
+                              stickyLeft
+                            />
+                            <SortHeader label="Chi tiêu" sortKey="spend" sort={sort} onSort={toggleSort} align="right" />
+                            <SortHeader label="Hiển thị" sortKey="impressions" sort={sort} onSort={toggleSort} align="right" />
+                            <SortHeader label="Click" sortKey="clicks" sort={sort} onSort={toggleSort} align="right" />
+                            <SortHeader label="CTR" sortKey="ctr" sort={sort} onSort={toggleSort} align="right" />
+                            <SortHeader label="Lead" sortKey="leads" sort={sort} onSort={toggleSort} align="right" />
+                            <SortHeader label="CPL" sortKey="cpl" sort={sort} onSort={toggleSort} align="right" />
+                            <SortHeader label="Hiệu quả" sortKey="efficiency" sort={sort} onSort={toggleSort} align="right" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pagedCampaigns.map((campaign) => (
+                            <React.Fragment key={campaign.objectId}>
+                              <tr
+                                className={cn(
+                                  "group cursor-pointer border-b last:border-b-0 hover:bg-muted/40",
+                                  campaign.objectId === activeId && "bg-accent",
+                                )}
+                                onClick={() => {
+                                  setSelectedId(campaign.objectId === activeId ? null : campaign.objectId);
+                                  setDailyPage(1);
+                                }}
+                              >
+                                <td
+                                  className={cn(
+                                    "sticky left-0 z-10 max-w-[200px] bg-card px-3 py-2.5 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)] group-hover:bg-slate-50 sm:max-w-[300px]",
+                                    campaign.objectId === activeId && "bg-accent",
+                                  )}
+                                >
+                                  <div className="truncate">
+                                    <AdsManagerTitle
+                                      level="campaign"
+                                      objectId={campaign.objectId}
+                                      adAccountId={campaign.adAccountId ?? adAccountId}
+                                    >
+                                      {campaign.objectName ?? campaign.objectId}
+                                    </AdsManagerTitle>
+                                  </div>
+                                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                                    <div
+                                      className="h-full rounded-full bg-primary"
+                                      style={{ width: `${Math.max(2, (campaign.spend / maxSpend) * 100)}%` }}
+                                    />
+                                  </div>
+                                  <span className="mt-1 inline-block text-[11.5px] font-medium text-primary">
+                                    {campaign.objectId === activeId ? "Ẩn ads" : "Xem ads"}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(campaign.spend)}</td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.impressions)}</td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.clicks)}</td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">
+                                  {campaign.ctr === null ? "—" : formatPercent(campaign.ctr)}
+                                </td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(campaign.leads)}</td>
+                                <td className="px-3 py-2.5 text-right tabular-nums">
+                                  {campaign.cpl === null ? "—" : formatCurrency(campaign.cpl)}
+                                </td>
+                                <td className="px-3 py-2.5 text-right">
+                                  <EfficiencyBadge value={campaign.efficiency} />
+                                </td>
+                              </tr>
+                              {campaign.objectId === activeId && adsInCampaign ? (
+                                <tr className="border-b bg-muted/20">
+                                  <td colSpan={8} className="px-4 py-3">
+                                    <div className="mb-2 flex items-baseline justify-between gap-3">
+                                      <p className="text-[13px] font-semibold">Ads trong chiến dịch này</p>
+                                      <p className="text-[12px] text-muted-foreground">
+                                        {adsInCampaign.benchmark != null
+                                          ? `CPL trung vị của các ads có lead: ${formatCurrency(adsInCampaign.benchmark)}`
+                                          : "Chưa đủ ads có lead để so CPL"}
+                                      </p>
+                                    </div>
+                                    {adsInCampaign.items.length === 0 ? (
+                                      <p className="text-sm text-muted-foreground">
+                                        Chiến dịch này chưa có dòng ads trong bộ lọc.
+                                      </p>
+                                    ) : (
+                                      <div className="thin-scrollbar max-h-[360px] overflow-auto">
+                                        <table className="w-full min-w-[740px] text-left text-[13px]">
+                                          <thead className="sticky top-0 bg-muted/90 text-xs text-muted-foreground backdrop-blur-xs">
+                                            <tr>
+                                              <th className="px-2 py-1.5 font-medium">Ads</th>
+                                              <th className="px-2 py-1.5 font-medium">Nhóm</th>
+                                              <th className="px-2 py-1.5 text-right font-medium">Chi tiêu</th>
+                                              <th className="px-2 py-1.5 text-right font-medium">Click</th>
+                                              <th className="px-2 py-1.5 text-right font-medium">CTR</th>
+                                              <th className="px-2 py-1.5 text-right font-medium">Lead</th>
+                                              <th className="px-2 py-1.5 text-right font-medium">CPL</th>
+                                              <th className="px-2 py-1.5 text-right font-medium">Hiệu quả</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {adsInCampaign.items
+                                              .slice()
+                                              .sort((left, right) => right.spend - left.spend)
+                                              .map((ad) => (
+                                                <tr key={ad.objectId} className="border-t border-border/70">
+                                                  <td className="px-2 py-2">
+                                                    <AdsManagerTitle
+                                                      level="ad"
+                                                      objectId={ad.objectId}
+                                                      adAccountId={ad.adAccountId ?? adAccountId}
+                                                    >
+                                                      {ad.objectName ?? ad.objectId}
+                                                    </AdsManagerTitle>
+                                                  </td>
+                                                  <td className="px-2 py-2 text-muted-foreground">{ad.adsetName ?? "—"}</td>
+                                                  <td className="px-2 py-2 text-right tabular-nums">{formatCurrency(ad.spend)}</td>
+                                                  <td className="px-2 py-2 text-right tabular-nums">{formatNumber(ad.clicks)}</td>
+                                                  <td className="px-2 py-2 text-right tabular-nums">
+                                                    {ad.ctr === null ? "—" : formatPercent(ad.ctr)}
+                                                  </td>
+                                                  <td className="px-2 py-2 text-right tabular-nums">{formatNumber(ad.leads)}</td>
+                                                  <td className="px-2 py-2 text-right tabular-nums">
+                                                    {ad.cpl === null ? "—" : formatCurrency(ad.cpl)}
+                                                  </td>
+                                                  <td className="px-2 py-2 text-right">
+                                                    <EfficiencyBadge value={ad.efficiency} />
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              ) : null}
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Pagination
+                      page={safeCampaignPage}
+                      pageSize={campaignPageSize}
+                      total={campaigns.length}
+                      unit="chiến dịch"
+                      onPageChange={setCampaignPage}
+                      onPageSizeChange={(size) => {
+                        setCampaignPageSize(size);
+                        setCampaignPage(1);
+                      }}
+                    />
+                  </>
+                )}
+              </section>
+
+              {selected ? (
+                <section className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
+                  <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                    <h2 className="truncate text-sm font-semibold">
+                      Theo ngày · {selected.objectName ?? selected.objectId}
+                    </h2>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedId(null)}>
+                      Bỏ chọn
+                    </Button>
+                  </div>
+                  <div className="thin-scrollbar overflow-x-auto">
+                    <table className="w-full min-w-[520px] text-left text-[13px]">
+                      <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2.5 font-medium">Ngày</th>
+                          <th className="px-3 py-2.5 text-right font-medium">Chi tiêu</th>
+                          <th className="px-3 py-2.5 text-right font-medium">Hiển thị</th>
+                          <th className="px-3 py-2.5 text-right font-medium">Click</th>
+                          <th className="px-3 py-2.5 text-right font-medium">Lead</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pagedDailyRows.map((row) => (
+                          <tr key={row.date} className="border-b last:border-b-0">
+                            <td className="px-3 py-2.5 tabular-nums">{formatDate(row.date)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(row.spend ?? 0)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(row.impressions ?? 0)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(row.clicks ?? 0)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(row.leads ?? 0)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <Pagination
+                    page={safeDailyPage}
+                    pageSize={dailyPageSize}
+                    total={dailyRows.length}
+                    unit="ngày"
+                    onPageChange={setDailyPage}
+                    onPageSizeChange={(size) => {
+                      setDailyPageSize(size);
+                      setDailyPage(1);
+                    }}
+                  />
+                </section>
+              ) : null}
+            </>
+          )}
         </>
       )}
     </div>
@@ -1156,7 +1200,7 @@ function EfficiencyBadge({ value }: { value: Efficiency }) {
   return (
     <span
       className={cn(
-        "inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium",
         value === "strong" && "bg-emerald-50 text-emerald-800",
         value === "average" && "bg-slate-100 text-slate-700",
         value === "weak" && "bg-rose-50 text-rose-800",
@@ -1178,12 +1222,12 @@ function Kpi({
   icon?: React.ComponentType<{ className?: string }>;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-xs">
+    <div className="min-w-[144px] shrink-0 rounded-xl border border-border bg-card px-3.5 py-2.5 shadow-xs md:min-w-0 md:px-4 md:py-3">
       <div className="flex items-center justify-between gap-2">
         <div className="truncate text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">{label}</div>
-        {Icon ? <Icon className="size-3.5 text-muted-foreground" /> : null}
+        {Icon ? <Icon className="size-3.5 shrink-0 text-muted-foreground" /> : null}
       </div>
-      <div className="mt-1 truncate text-2xl font-bold tabular-nums">{value}</div>
+      <div className="mt-1 truncate text-xl font-bold tabular-nums sm:text-2xl">{value}</div>
     </div>
   );
 }
@@ -1194,17 +1238,25 @@ function SortHeader({
   sort,
   onSort,
   align = "left",
+  stickyLeft = false,
 }: {
   label: string;
   sortKey: SortKey;
   sort: { key: SortKey; direction: "asc" | "desc" };
   onSort: (key: SortKey) => void;
   align?: "left" | "right";
+  stickyLeft?: boolean;
 }) {
   const active = sort.key === sortKey;
   const Icon = sort.direction === "asc" ? ArrowUp : ArrowDown;
   return (
-    <th className={cn("px-3 py-2.5 font-medium", align === "right" && "text-right")}>
+    <th
+      className={cn(
+        "px-3 py-2.5 font-medium whitespace-nowrap",
+        align === "right" && "text-right",
+        stickyLeft && "sticky left-0 z-10 bg-slate-50 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)]",
+      )}
+    >
       <button
         type="button"
         onClick={() => onSort(sortKey)}

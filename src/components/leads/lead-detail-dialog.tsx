@@ -19,10 +19,8 @@ import {
   PhoneMissed,
   Plus,
   Save,
-  // Sparkles,
   StickyNote,
   UserCog,
-  // Wand2,
   X,
 } from "lucide-react";
 
@@ -165,7 +163,7 @@ function CategoryBadge({ category }: { category: LeadCategory }) {
 }
 
 const TAB_TRIGGER_CLASS =
-  "relative h-11 shrink-0 rounded-none border-b-2 border-transparent px-3 text-xs font-semibold text-slate-600 shadow-none transition-colors data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary";
+  "relative flex h-11 shrink-0 items-center gap-1.5 rounded-none border-b-2 border-transparent px-3 text-xs font-semibold text-slate-600 shadow-none transition-colors data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary";
 
 const UNSAVED_CONFIRM = "Bạn có thay đổi chưa lưu. Đóng và bỏ các thay đổi này?";
 
@@ -286,17 +284,20 @@ function LeadDetailDialogBody({
 
   const dirty = formDirty || profileDirty;
 
-  /** Chặn đóng nhầm (Esc, click nền, nút X) khi còn chỗ sửa chưa lưu. */
+  /** Chặn đóng nhầm (Esc, click nền, nút X, vuốt xuống) khi còn chỗ sửa chưa lưu. */
   const handleOpenChange = (next: boolean) => {
     if (!next && !readOnly && dirty && !window.confirm(UNSAVED_CONFIRM)) return;
     onOpenChange(next);
   };
 
-  const handleNavigate = (cb?: () => void) => {
-    if (!cb) return;
-    if (!readOnly && dirty && !window.confirm(UNSAVED_CONFIRM)) return;
-    cb();
-  };
+  const handleNavigate = React.useCallback(
+    (cb?: () => void) => {
+      if (!cb) return;
+      if (!readOnly && dirty && !window.confirm(UNSAVED_CONFIRM)) return;
+      cb();
+    },
+    [readOnly, dirty],
+  );
 
   const handleSave = React.useCallback(async () => {
     if (readOnly || !dirty || saving) return;
@@ -411,20 +412,28 @@ function LeadDetailDialogBody({
     onSave,
   ]);
 
-  // Phím tắt Ctrl+S / Cmd+S để lưu nhanh
+  // Phím tắt Ctrl+S / Cmd+S để lưu nhanh & Alt+Up / Alt+Down để chuyển sang lead trước/sau
   React.useEffect(() => {
-    if (!open || readOnly) return;
+    if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      if (!readOnly && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
         if (dirty && !saving) {
           void handleSave();
         }
+        return;
+      }
+      if (e.altKey && e.key === "ArrowUp" && onPrev) {
+        e.preventDefault();
+        handleNavigate(onPrev);
+      } else if (e.altKey && e.key === "ArrowDown" && onNext) {
+        e.preventDefault();
+        handleNavigate(onNext);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, readOnly, dirty, saving, handleSave]);
+  }, [open, readOnly, dirty, saving, handleSave, handleNavigate, onPrev, onNext]);
 
   const startEditProfile = () => {
     if (!profileEditable) return;
@@ -524,13 +533,16 @@ function LeadDetailDialogBody({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex max-h-[92vh] max-w-5xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent
+        variant="drawer-right"
+        className="flex h-[94dvh] flex-col gap-0 overflow-hidden p-0 md:h-dvh md:w-[min(920px,calc(100vw-4.25rem))]"
+      >
         {/* Header thông tin khách hàng — chừa chỗ bên phải cho nút đóng */}
-        <div className="shrink-0 border-b border-border bg-white py-4 pl-6 pr-14">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="shrink-0 border-b border-border bg-white py-3.5 pr-12 pl-4 sm:py-4 sm:pr-14 sm:pl-6">
+          <div className="space-y-2.5">
+            <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <DialogTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
+                <DialogTitle className="flex items-center gap-1.5 text-lg font-bold text-slate-900 sm:text-xl">
                   <span className="truncate">{lead.name ?? "Khách chưa có tên"}</span>
                   {profileEditable && !editingProfile && (
                     <button
@@ -538,7 +550,7 @@ function LeadDetailDialogBody({
                       title="Sửa tên, số điện thoại và ngày tạo"
                       aria-label="Sửa tên, số điện thoại và ngày tạo"
                       onClick={startEditProfile}
-                      className="shrink-0 rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
+                      className="flex size-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
                     >
                       <Pencil className="size-4" />
                     </button>
@@ -548,7 +560,7 @@ function LeadDetailDialogBody({
                 {editingProfile ? (
                   <DialogDescription asChild>
                     <form
-                      className="mt-2 space-y-2"
+                      className="mt-2 space-y-2.5"
                       onSubmit={(e) => {
                         e.preventDefault();
                         void saveProfile();
@@ -562,7 +574,6 @@ function LeadDetailDialogBody({
                             onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))}
                             placeholder="Khách chưa có tên"
                             maxLength={120}
-                            autoFocus
                             disabled={savingProfile}
                           />
                         </div>
@@ -612,18 +623,19 @@ function LeadDetailDialogBody({
                   </DialogDescription>
                 ) : (
                   <DialogDescription asChild>
-                    <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                       {lead.phone ? (
                         <a
                           href={`tel:${lead.phone}`}
-                          className="font-medium text-slate-800 tabular-nums hover:text-primary hover:underline"
+                          className="font-semibold text-slate-800 tabular-nums hover:text-primary hover:underline"
                           title="Gọi trực tiếp"
                         >
                           {lead.phone}
                         </a>
                       ) : (
-                        <span className="font-medium text-slate-800">Chưa có số điện thoại</span>
+                        <span className="font-medium text-slate-700">Chưa có số điện thoại</span>
                       )}
+
                       {lead.phone && (
                         <div className="flex flex-wrap items-center gap-1.5">
                           <button
@@ -633,35 +645,42 @@ function LeadDetailDialogBody({
                               toast.info("Đã sao chép số điện thoại");
                             }}
                             title="Sao chép số"
-                            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
+                            aria-label="Sao chép số điện thoại"
+                            className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200"
                           >
-                            <Copy className="size-3.5" />
+                            <Copy className="size-3.5 text-slate-500" />
+                            <span className="max-sm:sr-only">Sao chép</span>
                           </button>
+
                           <a
                             href={`tel:${lead.phone}`}
                             title="Gọi điện"
-                            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
+                            className="inline-flex h-7 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 active:bg-emerald-200"
                           >
                             <Phone className="size-3.5" />
+                            <span>Gọi</span>
                           </a>
+
                           <a
                             href={`https://zalo.me/${lead.phone}`}
                             target="_blank"
                             rel="noreferrer"
                             title="Nhắn Zalo"
-                            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary"
+                            className="inline-flex h-7 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100 active:bg-blue-200"
                           >
                             <MessageSquare className="size-3.5" />
+                            <span>Zalo</span>
                           </a>
+
                           {!readOnly && onLogCall && (
-                            <div className="ml-1 flex items-center gap-1">
+                            <div className="flex items-center gap-1">
                               <Button
                                 type="button"
                                 variant="outline"
                                 size="sm"
                                 disabled={Boolean(loggingCall)}
                                 onClick={() => void handleQuickLogCall("CALL")}
-                                className="h-6 gap-1 px-2 text-[11px] text-emerald-700 hover:bg-emerald-50"
+                                className="h-7 gap-1 px-2 text-[11.5px] text-emerald-700 hover:bg-emerald-50"
                               >
                                 {loggingCall === "CALL" ? (
                                   <Loader2 className="size-3 animate-spin" />
@@ -676,7 +695,7 @@ function LeadDetailDialogBody({
                                 size="sm"
                                 disabled={Boolean(loggingCall)}
                                 onClick={() => void handleQuickLogCall("MISSED_CALL")}
-                                className="h-6 gap-1 px-2 text-[11px] text-rose-700 hover:bg-rose-50"
+                                className="h-7 gap-1 px-2 text-[11.5px] text-rose-700 hover:bg-rose-50"
                               >
                                 {loggingCall === "MISSED_CALL" ? (
                                   <Loader2 className="size-3 animate-spin" />
@@ -702,11 +721,12 @@ function LeadDetailDialogBody({
                     size="sm"
                     disabled={!onPrev}
                     onClick={() => handleNavigate(onPrev)}
-                    title="Lead trước"
+                    title="Lead trước (Alt + ↑)"
+                    aria-label="Lead trước"
                     className="h-7 gap-1 px-2 text-xs"
                   >
                     <ChevronLeft className="size-3.5" />
-                    Trước
+                    <span className="max-sm:hidden">Trước</span>
                   </Button>
                   <Button
                     type="button"
@@ -714,10 +734,11 @@ function LeadDetailDialogBody({
                     size="sm"
                     disabled={!onNext}
                     onClick={() => handleNavigate(onNext)}
-                    title="Lead tiếp theo"
+                    title="Lead tiếp theo (Alt + ↓)"
+                    aria-label="Lead tiếp theo"
                     className="h-7 gap-1 px-2 text-xs"
                   >
-                    Tiếp
+                    <span className="max-sm:hidden">Tiếp</span>
                     <ChevronRight className="size-3.5" />
                   </Button>
                 </div>
@@ -725,14 +746,18 @@ function LeadDetailDialogBody({
             </div>
 
             {/* Quick status badges, nằm dưới thông tin khách để không đè nút đóng */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:gap-2">
               <CategoryBadge category={draft.category} />
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-                {[draft.brand || `Chưa chọn ${labels.brand.toLowerCase()}`, draft.product, draft.location || `Chưa phân bổ ${labels.location.toLowerCase()}`]
+              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                {[
+                  draft.brand || `Chưa chọn ${labels.brand.toLowerCase()}`,
+                  draft.product,
+                  draft.location || `Chưa phân bổ ${labels.location.toLowerCase()}`,
+                ]
                   .filter(Boolean)
                   .join(" · ")}
               </span>
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs text-slate-600">
+              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs text-slate-600">
                 Phụ trách: <strong className="font-medium text-slate-800">{draft.assignee || "Chưa giao"}</strong>
               </span>
             </div>
@@ -745,8 +770,8 @@ function LeadDetailDialogBody({
           onValueChange={(v) => setActiveTab(v as DetailTab)}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
-          <div className="shrink-0 overflow-x-auto overflow-y-hidden border-b border-border bg-slate-50/80 px-6">
-            <TabsList className="flex h-11 w-max justify-start gap-4 rounded-none bg-transparent p-0">
+          <div className="no-scrollbar shrink-0 overflow-x-auto overflow-y-hidden border-b border-border bg-slate-50/80 px-4 sm:px-6">
+            <TabsList className="flex h-11 w-max justify-start gap-2 rounded-none bg-transparent p-0 sm:gap-4">
               <TabsTrigger value="care" className={TAB_TRIGGER_CLASS}>
                 <PhoneCall className="size-4" />
                 Xử lý & Chăm sóc
@@ -755,7 +780,7 @@ function LeadDetailDialogBody({
                 <MessageSquare className="size-4" />
                 Bình luận
                 {commentCount > 0 && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold tabular-nums text-primary">
                     {commentCount}
                   </span>
                 )}
@@ -767,20 +792,20 @@ function LeadDetailDialogBody({
               <TabsTrigger value="logs" className={TAB_TRIGGER_CLASS}>
                 <History className="size-4" />
                 Nhật ký
-                <span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+                <span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-[11px] font-bold tabular-nums text-slate-600">
                   {logs.length}
                 </span>
               </TabsTrigger>
             </TabsList>
           </div>
 
-          <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
             {/* TAB 1: XỬ LÝ & CHĂM SÓC */}
             <TabsContent value="care" className="mt-0 space-y-4">
               <div className="grid gap-4 lg:grid-cols-12 lg:items-stretch">
                 {/* Cột trái: Thông tin liên hệ & phân bổ */}
                 <fieldset disabled={readOnly} className="flex flex-col gap-4 border-0 p-0 lg:col-span-5">
-                  <div className="rounded-lg border border-border bg-slate-50/60 p-4">
+                  <div className="rounded-xl border border-border bg-slate-50/60 p-4">
                     <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Phân bổ & Trách nhiệm
                     </div>
@@ -790,7 +815,7 @@ function LeadDetailDialogBody({
                           value={draft.location ?? NONE}
                           onValueChange={(v) => patch({ location: v === NONE ? null : v })}
                         >
-                          <SelectTrigger size="sm" className="w-48 bg-white">
+                          <SelectTrigger size="sm" className="w-full bg-white sm:w-48">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -810,7 +835,7 @@ function LeadDetailDialogBody({
                           onValueChange={(v) => patch({ assignee: v === NONE ? null : v })}
                           disabled={readOnly || !canAssign}
                         >
-                          <SelectTrigger size="sm" className="w-48 bg-white">
+                          <SelectTrigger size="sm" className="w-full bg-white sm:w-48">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -826,7 +851,7 @@ function LeadDetailDialogBody({
                     </dl>
                   </div>
 
-                  <div className="flex-1 rounded-lg border border-border bg-slate-50/60 p-4">
+                  <div className="flex-1 rounded-xl border border-border bg-slate-50/60 p-4">
                     <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Kênh & Nguồn tiếp cận
                     </div>
@@ -837,7 +862,7 @@ function LeadDetailDialogBody({
                           onValueChange={(v) => patch({ source: v as LeadSource })}
                           disabled={readOnly || lead.source === "MANUAL"}
                         >
-                          <SelectTrigger size="sm" className="w-48 bg-white">
+                          <SelectTrigger size="sm" className="w-full bg-white sm:w-48">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -855,7 +880,7 @@ function LeadDetailDialogBody({
                           value={draft.channelDetail}
                           onValueChange={(v) => patch({ channelDetail: v as ChannelDetail })}
                         >
-                          <SelectTrigger size="sm" className="w-48 bg-white">
+                          <SelectTrigger size="sm" className="w-full bg-white sm:w-48">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -881,7 +906,7 @@ function LeadDetailDialogBody({
                             patch({ contactCount: isNaN(val) ? 0 : Math.min(9999, Math.max(0, val)) });
                           }}
                           disabled={readOnly}
-                          className="h-8 w-48 bg-white text-sm tabular-nums"
+                          className="h-8 w-full bg-white text-sm tabular-nums sm:w-48"
                         />
                       </RowControl>
                     </dl>
@@ -893,7 +918,7 @@ function LeadDetailDialogBody({
                   disabled={readOnly}
                   className="order-first flex flex-col border-0 p-0 lg:order-0 lg:col-span-7"
                 >
-                  <div className="flex flex-1 flex-col rounded-lg border border-border bg-white p-4 shadow-2xs">
+                  <div className="flex flex-1 flex-col rounded-xl border border-border bg-white p-4 shadow-2xs">
                     <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Cập nhật kết quả tư vấn
                     </div>
@@ -955,7 +980,7 @@ function LeadDetailDialogBody({
                               {brandOptions.map((o) => (
                                 <SelectItem key={o.value} value={o.value}>
                                   {o.label}
-                                                              </SelectItem>
+                                </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -999,7 +1024,7 @@ function LeadDetailDialogBody({
 
                       {/* Ghi chú chăm sóc & Gợi ý kịch bản mẫu */}
                       <div className="flex flex-1 flex-col space-y-1.5">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <Label className="text-[13px] font-medium">Ghi chú nội dung đã liên hệ</Label>
                           {!readOnly && (
                             <div className="flex items-center gap-1">
@@ -1034,12 +1059,12 @@ function LeadDetailDialogBody({
               {/* Field phụ do project cấu hình — trải rộng full-width theo lưới 3 cột để cân đối bố cục */}
               {attrFields.length > 0 && (
                 <fieldset disabled={readOnly} className="border-0 p-0">
-                  <div className="rounded-lg border border-border bg-slate-50/60 p-4">
+                  <div className="rounded-xl border border-border bg-slate-50/60 p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Thông tin bổ sung
                       </div>
-                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-slate-700">
                         {attrFields.length} trường
                       </span>
                     </div>
@@ -1081,15 +1106,15 @@ function LeadDetailDialogBody({
             {/* TAB 3: DỮ LIỆU FORM & MARKETING */}
             <TabsContent value="details" className="mt-0">
               <fieldset disabled={readOnly} className="border-0 p-0">
-                <div className="grid gap-6 lg:grid-cols-2">
+                <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
                   {/* Cột 1: Câu hỏi & dữ liệu từ form khách điền */}
-                  <div className="rounded-lg border border-border bg-slate-50/60 p-4">
+                  <div className="rounded-xl border border-border bg-slate-50/60 p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Dữ liệu từ Form / Tin nhắn / Bình luận
                       </div>
                       {leftoverAttrs.length > 0 && (
-                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-slate-700">
                           {leftoverAttrs.length} trường
                         </span>
                       )}
@@ -1107,7 +1132,11 @@ function LeadDetailDialogBody({
                           const isUrl = /^https?:\/\//i.test(trimmed);
                           if (isUrl) {
                             const isFbComment = key === "link_comment";
-                            const isFbInbox = !isFbComment && (key === "inbox_url" || key === "link_inbox" || /facebook\.com|fb\.com/i.test(trimmed));
+                            const isFbInbox =
+                              !isFbComment &&
+                              (key === "inbox_url" ||
+                                key === "link_inbox" ||
+                                /facebook\.com|fb\.com/i.test(trimmed));
                             return (
                               <RowControl key={key} label={attrLabel}>
                                 <a
@@ -1116,7 +1145,13 @@ function LeadDetailDialogBody({
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-800"
                                 >
-                                  <span>{isFbComment ? "Mở bình luận Facebook" : isFbInbox ? "Mở Inbox Facebook" : "Mở liên kết"}</span>
+                                  <span>
+                                    {isFbComment
+                                      ? "Mở bình luận Facebook"
+                                      : isFbInbox
+                                        ? "Mở Inbox Facebook"
+                                        : "Mở liên kết"}
+                                  </span>
                                   <ExternalLink className="size-3.5" />
                                 </a>
                               </RowControl>
@@ -1129,7 +1164,7 @@ function LeadDetailDialogBody({
                   </div>
 
                   {/* Cột 2: Thông tin chiến dịch & kỹ thuật */}
-                  <div className="rounded-lg border border-border bg-slate-50/60 p-4">
+                  <div className="rounded-xl border border-border bg-slate-50/60 p-4">
                     <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Chiến dịch & Thông số Marketing
                     </div>
@@ -1163,24 +1198,27 @@ function LeadDetailDialogBody({
                     </h3>
                     <p className="text-xs text-muted-foreground">Toàn bộ thao tác trên lead — ai thực hiện, lúc nào.</p>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-600">
                     {logs.length} thao tác
                   </span>
                 </div>
 
                 {logsLoading ? (
-                  <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border py-10 text-xs text-muted-foreground">
+                  <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-xs text-muted-foreground">
                     <Loader2 className="size-4 animate-spin" />
                     Đang tải nhật ký hoạt động...
                   </div>
                 ) : logs.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">
+                  <div className="rounded-xl border border-dashed border-border py-8 text-center text-xs text-muted-foreground">
                     Chưa có nhật ký ghi nhận.
                   </div>
                 ) : (
-                  <ol className="divide-y divide-border/60 rounded-lg border border-border bg-white shadow-2xs">
+                  <ol className="divide-y divide-border/60 rounded-xl border border-border bg-white shadow-2xs">
                     {logs.map((log) => (
-                      <li key={log.id} className="flex items-start gap-3 p-3.5 text-[13px] transition-colors hover:bg-slate-50/50">
+                      <li
+                        key={log.id}
+                        className="flex items-start gap-3 p-3.5 text-[13px] transition-colors hover:bg-slate-50/50"
+                      >
                         <LogIcon kind={log.kind} />
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-slate-800">{log.message}</p>
@@ -1203,12 +1241,14 @@ function LeadDetailDialogBody({
         </Tabs>
 
         {/* Footer lưu thay đổi */}
-        <div className="flex shrink-0 items-center justify-between border-t border-border bg-white px-6 py-3.5">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-white px-4 pt-3 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] sm:px-6 md:py-3.5">
           <div className="text-xs text-muted-foreground">
             {readOnly ? (
               <span className="text-slate-500">Chế độ chỉ xem. Lead này chưa được giao cho bạn.</span>
             ) : dirty ? (
-              <span className="font-medium text-amber-600">• Có thông tin chưa lưu (Ctrl+S để lưu)</span>
+              <span className="font-medium text-amber-600">
+                • Có thông tin chưa lưu <span className="max-md:hidden">(Ctrl+S để lưu)</span>
+              </span>
             ) : justSaved ? (
               <span className="font-medium text-emerald-600">✓ Đã lưu tất cả thay đổi</span>
             ) : (
@@ -1216,8 +1256,14 @@ function LeadDetailDialogBody({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => handleOpenChange(false)}>
+          <div className="flex items-center gap-2 max-sm:w-full">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleOpenChange(false)}
+              className="max-sm:h-9 max-sm:flex-1"
+            >
               Đóng
             </Button>
             {!readOnly && (
@@ -1226,7 +1272,7 @@ function LeadDetailDialogBody({
                 size="sm"
                 onClick={() => void handleSave()}
                 disabled={!dirty || saving}
-                className="gap-1.5"
+                className="gap-1.5 max-sm:h-9 max-sm:flex-[1.5]"
               >
                 {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
                 Lưu thay đổi
@@ -1252,22 +1298,26 @@ const DEFAULT_SALE_TEMPLATES: SaleTemplateItem[] = [
   {
     id: "quote-interested",
     title: "Đã tư vấn & báo giá (Khách quan tâm)",
-    content: "Đã liên hệ tư vấn thông tin và báo giá {san_pham}. Khách hàng quan tâm, đang cân nhắc thêm và hẹn phản hồi lại.",
+    content:
+      "Đã liên hệ tư vấn thông tin và báo giá {san_pham}. Khách hàng quan tâm, đang cân nhắc thêm và hẹn phản hồi lại.",
   },
   {
     id: "visit-appointment",
     title: "Hẹn khách ghé trực tiếp / Trải nghiệm",
-    content: "Đã tư vấn chi tiết {san_pham}. Khách hẹn sắp xếp thời gian ghé {dai_ly} để xem và trải nghiệm trực tiếp.",
+    content:
+      "Đã tư vấn chi tiết {san_pham}. Khách hẹn sắp xếp thời gian ghé {dai_ly} để xem và trải nghiệm trực tiếp.",
   },
   {
     id: "zalo-installment",
     title: "Gửi bảng tính trả góp & ưu đãi qua Zalo",
-    content: "Đã kết bạn Zalo và gửi bảng tính chi phí trả góp kèm chương trình ưu đãi {san_pham}. Đang chờ khách xem và phản hồi.",
+    content:
+      "Đã kết bạn Zalo và gửi bảng tính chi phí trả góp kèm chương trình ưu đãi {san_pham}. Đang chờ khách xem và phản hồi.",
   },
   {
     id: "no-answer",
     title: "Gọi chưa nghe máy (Chưa LH được)",
-    content: "Liên hệ số điện thoại nhưng khách chưa bắt máy. Đã nhắn tin Zalo giới thiệu thông tin {san_pham}, hẹn gọi lại khung giờ khác.",
+    content:
+      "Liên hệ số điện thoại nhưng khách chưa bắt máy. Đã nhắn tin Zalo giới thiệu thông tin {san_pham}, hẹn gọi lại khung giờ khác.",
   },
   {
     id: "busy-callback",
@@ -1277,7 +1327,8 @@ const DEFAULT_SALE_TEMPLATES: SaleTemplateItem[] = [
   {
     id: "researching",
     title: "Khách tham khảo giá — Chưa mua ngay",
-    content: "Khách mới tìm hiểu thông tin {san_pham} để tham khảo giá, dự kiến thời gian tới mới có kế hoạch mua. Lưu lịch chăm sóc định kỳ.",
+    content:
+      "Khách mới tìm hiểu thông tin {san_pham} để tham khảo giá, dự kiến thời gian tới mới có kế hoạch mua. Lưu lịch chăm sóc định kỳ.",
   },
   {
     id: "not-interested",
@@ -1360,13 +1411,13 @@ function SaleNoteTemplatePicker({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-6 gap-1 px-1.5 text-[11px] text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+          className="h-7 gap-1 px-2 text-[11.5px] text-blue-600 hover:bg-blue-50 hover:text-blue-700"
         >
-          <Lightbulb className="size-3" />
+          <Lightbulb className="size-3.5" />
           Gợi ý kịch bản
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-88 p-2.5 sm:w-96">
+      <PopoverContent align="end" className="w-88 max-w-[calc(100vw-1.5rem)] p-2.5 sm:w-96">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs font-semibold text-slate-800">Chọn mẫu ghi chú / kịch bản sale</span>
           <Button
@@ -1419,7 +1470,7 @@ function SaleNoteTemplatePicker({
           </div>
         )}
 
-        <div className="thin-scrollbar max-h-64 space-y-1 overflow-y-auto">
+        <div className="thin-scrollbar max-h-64 space-y-1 overflow-y-auto overscroll-contain">
           {allTemplates.map((tpl) => {
             const preview = interpolateTemplate(tpl.content, {
               productLabel,
@@ -1442,7 +1493,7 @@ function SaleNoteTemplatePicker({
                     setOpen(false);
                   }
                 }}
-                className="group flex cursor-pointer items-start justify-between gap-2 rounded-md border border-transparent p-2 text-left transition-colors hover:border-blue-100 hover:bg-blue-50/50"
+                className="group flex cursor-pointer items-start justify-between gap-2 rounded-md border border-transparent p-2 text-left transition-colors hover:border-blue-100 hover:bg-blue-50/50 active:bg-blue-50"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
@@ -1541,7 +1592,7 @@ function AttrFieldInput({
         searchable={mergedOptions.length > 5}
         disabled={disabled}
         displayMode="labels"
-        className="h-8 bg-white text-xs"
+        className="h-8 bg-white text-xs max-md:h-9"
       />
     );
   }
@@ -1550,7 +1601,7 @@ function AttrFieldInput({
     return (
       <label
         className={cn(
-          "flex h-8 cursor-pointer items-center gap-2.5 rounded-md border border-input bg-white px-3 text-xs shadow-xs transition-colors hover:bg-slate-50",
+          "flex h-8 cursor-pointer items-center gap-2.5 rounded-md border border-input bg-white px-3 text-xs shadow-xs transition-colors hover:bg-slate-50 max-md:h-9",
           disabled && "cursor-not-allowed opacity-50",
         )}
       >
@@ -1571,7 +1622,7 @@ function AttrFieldInput({
         type="date"
         value={value ? toDateInputValue(value) : ""}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 bg-white"
+        className="h-8 bg-white max-md:h-9"
       />
     );
   }
@@ -1580,7 +1631,7 @@ function AttrFieldInput({
       type={field.fieldType === "number" ? "number" : "text"}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-8 bg-white"
+      className="h-8 bg-white max-md:h-9"
     />
   );
 }
@@ -1593,9 +1644,9 @@ function withCurrent(options: { value: string; label: string }[], current: strin
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-4">
+    <div className="flex items-start justify-between gap-3">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="truncate text-right font-medium text-slate-800" title={value}>
+      <dd className="min-w-0 wrap-break-word text-right font-medium text-slate-800" title={value}>
         {value}
       </dd>
     </div>
@@ -1604,9 +1655,9 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function RowControl({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd>{children}</dd>
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <dt className="shrink-0 text-xs text-muted-foreground sm:text-sm">{label}</dt>
+      <dd className="min-w-0">{children}</dd>
     </div>
   );
 }

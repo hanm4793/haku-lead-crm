@@ -66,58 +66,58 @@ export function ProjectDetailTabs({
 
   return (
     <Tabs defaultValue="catalog" className="space-y-4">
-      <div className="border-b border-border/80 pb-1">
-        <TabsList className="bg-slate-100/90 p-1 flex h-auto flex-wrap justify-start gap-1">
-          <TabsTrigger value="catalog" className="gap-2 text-[13px] font-medium">
+      <div className="no-scrollbar -mx-3 overflow-x-auto border-b border-border/80 px-3 pb-1 sm:mx-0 sm:px-0">
+        <TabsList className="flex h-auto w-max justify-start gap-1 bg-slate-100/90 p-1 sm:w-auto sm:flex-wrap">
+          <TabsTrigger value="catalog" className="shrink-0 gap-1.5 text-[13px] font-medium">
             <Layers className="size-3.5 text-primary" />
             <span>Catalog danh mục</span>
-            <Badge variant="muted" className="ml-1 px-1.5 py-0 text-[10px]">
+            <Badge variant="muted" className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums">
               {totalCatalogItems}
             </Badge>
           </TabsTrigger>
 
-          <TabsTrigger value="attrs" className="gap-2 text-[13px] font-medium">
+          <TabsTrigger value="attrs" className="shrink-0 gap-1.5 text-[13px] font-medium">
             <SlidersHorizontal className="size-3.5 text-slate-600" />
             <span>Field phụ</span>
-            <Badge variant="muted" className="ml-1 px-1.5 py-0 text-[10px]">
+            <Badge variant="muted" className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums">
               {attrFields.length}
             </Badge>
           </TabsTrigger>
 
-          <TabsTrigger value="fanpages" className="gap-2 text-[13px] font-medium">
+          <TabsTrigger value="fanpages" className="shrink-0 gap-1.5 text-[13px] font-medium">
             <Building2 className="size-3.5 text-blue-600" />
             <span>Fanpage</span>
-            <Badge variant="muted" className="ml-1 px-1.5 py-0 text-[10px]">
+            <Badge variant="muted" className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums">
               {projectPages.length}
             </Badge>
           </TabsTrigger>
 
           {canManageProject && (
-            <TabsTrigger value="ads" className="gap-2 text-[13px] font-medium">
+            <TabsTrigger value="ads" className="shrink-0 gap-1.5 text-[13px] font-medium">
               <Megaphone className="size-3.5 text-amber-600" />
               <span>Tài khoản Ads</span>
-              <Badge variant="muted" className="ml-1 px-1.5 py-0 text-[10px]">
+              <Badge variant="muted" className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums">
                 {adAccounts.length}
               </Badge>
             </TabsTrigger>
           )}
 
-          <TabsTrigger value="partners" className="gap-2 text-[13px] font-medium">
+          <TabsTrigger value="partners" className="shrink-0 gap-1.5 text-[13px] font-medium">
             <Users className="size-3.5 text-emerald-600" />
             <span>Đối tác / Partner</span>
-            <Badge variant="muted" className="ml-1 px-1.5 py-0 text-[10px]">
+            <Badge variant="muted" className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums">
               {partners.length}
             </Badge>
           </TabsTrigger>
 
-          <TabsTrigger value="overview" className="gap-2 text-[13px] font-medium">
+          <TabsTrigger value="overview" className="shrink-0 gap-1.5 text-[13px] font-medium">
             <FolderKanban className="size-3.5 text-slate-600" />
-            <span>Cài đặt & Nhãn</span>
+            <span>Cài đặt &amp; Nhãn</span>
           </TabsTrigger>
         </TabsList>
       </div>
 
-      <TabsContent value="catalog" className="pt-2">
+      <TabsContent value="catalog" className="pt-1 sm:pt-2">
         <CatalogPanel
           catalog={catalog}
           labels={labels}
@@ -127,7 +127,7 @@ export function ProjectDetailTabs({
         />
       </TabsContent>
 
-      <TabsContent value="attrs" className="pt-2">
+      <TabsContent value="attrs" className="pt-1 sm:pt-2">
         <AttrFieldsPanel
           fields={attrFields}
           isAdmin={canManageCatalog}
@@ -136,7 +136,7 @@ export function ProjectDetailTabs({
         />
       </TabsContent>
 
-      <TabsContent value="fanpages" className="space-y-3 pt-2">
+      <TabsContent value="fanpages" className="space-y-3 pt-1 sm:pt-2">
         {canManageProject && (
           <ProjectFacebookSync
             projectId={project.id}
@@ -149,12 +149,12 @@ export function ProjectDetailTabs({
       </TabsContent>
 
       {canManageProject && (
-        <TabsContent value="ads" className="pt-2">
+        <TabsContent value="ads" className="pt-1 sm:pt-2">
           <ProjectAdAccountsTable projectId={project.id} accounts={adAccounts} canManage={canManageProject} />
         </TabsContent>
       )}
 
-      <TabsContent value="partners" className="pt-2">
+      <TabsContent value="partners" className="pt-1 sm:pt-2">
         <ProjectPartnersTable
           projectId={project.id}
           partners={partners}
@@ -163,12 +163,12 @@ export function ProjectDetailTabs({
         />
       </TabsContent>
 
-      <TabsContent value="overview" className="pt-2">
-        <div className="max-w-2xl rounded-xl border border-border/80 bg-card p-5 shadow-xs">
-          <h3 className="text-base font-semibold text-slate-900 mb-1">
-            Cấu hình Dự án & Nhãn ngành hàng
+      <TabsContent value="overview" className="pt-1 sm:pt-2">
+        <div className="max-w-2xl rounded-xl border border-border/80 bg-card p-4 shadow-xs sm:p-5">
+          <h3 className="mb-1 text-base font-semibold text-slate-900">
+            Cấu hình Dự án &amp; Nhãn ngành hàng
           </h3>
-          <p className="text-xs text-muted-foreground mb-4">
+          <p className="mb-4 text-xs text-muted-foreground">
             Đổi tên nhãn thương hiệu, loại sản phẩm, địa chỉ/chi nhánh để phù hợp với từng ngành nghề kinh doanh
             (Ô tô, Bất động sản, Spa, v.v.).
           </p>

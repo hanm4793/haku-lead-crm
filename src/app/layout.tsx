@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -17,9 +17,24 @@ const plusJakarta = Plus_Jakarta_Sans({
   display: "swap",
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#102a6b",
+};
+
 export const metadata: Metadata = {
   title: "SEMTOP Marketing CRM",
   description: "SEMTOP Marketing CRM — quản lý lead đa kênh, marketing Insights và trợ lý AI.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "SEMTOP CRM",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -37,26 +52,26 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="vi" className={plusJakarta.variable}>
-      <body className="min-h-screen bg-background font-sans antialiased">
-        <TooltipProvider delayDuration={200}>
+      <body className="min-h-dvh bg-background font-sans antialiased selection:bg-primary/15 selection:text-primary">
+        <TooltipProvider delayDuration={150}>
           <ToastProvider>
-          <AppShell
-            viewer={
-              viewer
-                ? {
-                    fullName: viewer.fullName,
-                    role: viewer.role,
-                    email: viewer.email,
-                    isDemo: viewer.isDemo,
-                    aiEnabled: Boolean(viewer.aiEnabled),
-                  }
-                : null
-            }
-            projects={projects}
-            activeProjectId={activeProjectId}
-          >
-            {children}
-          </AppShell>
+            <AppShell
+              viewer={
+                viewer
+                  ? {
+                      fullName: viewer.fullName,
+                      role: viewer.role,
+                      email: viewer.email,
+                      isDemo: viewer.isDemo,
+                      aiEnabled: Boolean(viewer.aiEnabled),
+                    }
+                  : null
+              }
+              projects={projects}
+              activeProjectId={activeProjectId}
+            >
+              {children}
+            </AppShell>
           </ToastProvider>
         </TooltipProvider>
       </body>

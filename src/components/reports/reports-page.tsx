@@ -16,7 +16,7 @@ import { ReportKpiCards } from "@/components/reports/report-kpi-cards";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLeadLogs } from "@/hooks/use-lead-logs";
-import { canEditLead, canEditLeadProfile, type UserRole } from "@/lib/auth/roles";
+import { canAssignLead, canEditLead, canEditLeadProfile, type UserRole } from "@/lib/auth/roles";
 import { DEFAULT_LEAD_CATALOG, type LeadCatalogOptions } from "@/lib/catalog";
 import type { AttrFieldRow } from "@/lib/db/attr-fields-repo";
 import { countActiveFilters, EMPTY_FILTERS } from "@/lib/filters";
@@ -79,6 +79,7 @@ export function ReportsPage({
   const leadEditable = (lead: Lead) => (editor ? canEditLead(editor, { assigneeId: lead.assigneeId }) : true);
   const leadProfileEditable = (lead: Lead) =>
     editor ? canEditLeadProfile(editor, lead) : lead.source === "MANUAL";
+  const allowAssign = editor ? canAssignLead(editor.role) : true;
 
   const filterCount = countActiveFilters(filters);
 
@@ -169,15 +170,15 @@ export function ReportsPage({
   };
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+    <div className="space-y-3.5 p-3 sm:space-y-4 sm:p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2.5 sm:gap-3">
+        <div className="max-md:hidden">
           <h1 className="text-xl font-bold">Báo cáo</h1>
           <p className="text-[13px] text-muted-foreground">
             Phân tích hiệu quả lead theo kênh, lý do loại, hiệu suất đội ngũ Sale &amp; tỷ lệ ký HĐ
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 md:w-auto">
           {summary.lastUpdatedAt && (
             <button
               type="button"
@@ -186,7 +187,8 @@ export function ReportsPage({
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15"
             >
               <span className="size-1.5 rounded-full bg-emerald-500" />
-              <span>Cập nhật mới nhất: {formatDateTime(summary.lastUpdatedAt)}</span>
+              <span className="max-sm:hidden">Cập nhật:</span>
+              <span className="tabular-nums">{formatDateTime(summary.lastUpdatedAt)}</span>
               <RefreshCw className={cn("size-3 opacity-70", loading && "animate-spin")} />
             </button>
           )}
@@ -197,25 +199,29 @@ export function ReportsPage({
               Xóa lọc ({filterCount})
             </Button>
           )}
-          <ProjectSwitcher />
-          <LeadFilterPopover
-            filters={filters}
-            fanpageOptions={fanpageOptions}
-            assigneeOptions={assignees}
-            catalog={catalog}
-            onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
-            onReset={resetAllFilters}
-          />
-          <DateRangePicker
-            preset={preset}
-            range={range}
-            onChange={(nextPreset, nextRange) => {
-              setPreset(nextPreset);
-              const resolved = nextPreset === "CUSTOM" ? nextRange : resolvePreset(nextPreset, now);
-              setRange(resolved);
-              setFilters((f) => ({ ...f, dateFrom: resolved.from, dateTo: resolved.to }));
-            }}
-          />
+          <div className="max-md:hidden">
+            <ProjectSwitcher />
+          </div>
+          <div className="ml-auto flex items-center gap-2 md:ml-0">
+            <LeadFilterPopover
+              filters={filters}
+              fanpageOptions={fanpageOptions}
+              assigneeOptions={assignees}
+              catalog={catalog}
+              onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
+              onReset={resetAllFilters}
+            />
+            <DateRangePicker
+              preset={preset}
+              range={range}
+              onChange={(nextPreset, nextRange) => {
+                setPreset(nextPreset);
+                const resolved = nextPreset === "CUSTOM" ? nextRange : resolvePreset(nextPreset, now);
+                setRange(resolved);
+                setFilters((f) => ({ ...f, dateFrom: resolved.from, dateTo: resolved.to }));
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -224,49 +230,49 @@ export function ReportsPage({
           <div
             role="status"
             aria-live="polite"
-            className="absolute inset-0 z-30 flex cursor-wait items-start justify-center rounded-xl bg-white/55 pt-28 backdrop-blur-[1px]"
+            className="pointer-events-none sticky top-14 z-30 mb-2 flex justify-center md:top-2"
           >
-            <div className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-4 py-2.5 text-xs font-medium text-foreground shadow-md">
-              <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
-              <span>Đang tải dữ liệu báo cáo...</span>
+            <div className="flex items-center gap-2 rounded-full border border-border bg-card/95 px-3.5 py-1.5 text-xs font-medium text-foreground shadow-md backdrop-blur-xs">
+              <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+              <span>Đang cập nhật số liệu...</span>
             </div>
           </div>
         )}
-        <div className={cn("space-y-4 transition-opacity", loading && "pointer-events-none select-none opacity-60")}>
-        <ReportKpiCards current={summary.kpis} previous={summary.previousKpis} />
+        <div className={cn("space-y-4 transition-opacity duration-150", loading && "opacity-70")}>
+          <ReportKpiCards current={summary.kpis} previous={summary.previousKpis} />
 
-        <Tabs defaultValue="overview">
-          <TabsList className="border-b border-border">
-            <TabsTrigger value="overview" className="gap-1.5">
-              <BarChart3 className="size-3.5" />
-              Tổng quan
-            </TabsTrigger>
-            <TabsTrigger value="pivot" className="gap-1.5">
-              <Table2 className="size-3.5" />
-              Bảng chi tiết
-            </TabsTrigger>
-          </TabsList>
+          <Tabs defaultValue="overview">
+            <TabsList className="w-full justify-start border-b border-border sm:w-auto">
+              <TabsTrigger value="overview" className="gap-1.5 max-sm:flex-1">
+                <BarChart3 className="size-3.5" />
+                Tổng quan
+              </TabsTrigger>
+              <TabsTrigger value="pivot" className="gap-1.5 max-sm:flex-1">
+                <Table2 className="size-3.5" />
+                Bảng chi tiết
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="overview" className="pt-4">
-            <OverviewTab
-              data={{ ...summary.overview, callList }}
-              totalLeads={summary.totalLeads}
-              onSelectLead={setSelectedLead}
-              labels={catalog.labels}
-            />
-          </TabsContent>
-          <TabsContent value="pivot" className="pt-4">
-            <PivotTab
-              pivot={summary.pivot.current}
-              pivotByDimension={summary.pivot.byDimension}
-              groupBy={groupBy}
-              splitBy={splitBy}
-              onGroupByChange={setGroupBy}
-              onSplitByChange={setSplitBy}
-              labels={catalog.labels}
-            />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="overview" className="pt-3.5 sm:pt-4">
+              <OverviewTab
+                data={{ ...summary.overview, callList }}
+                totalLeads={summary.totalLeads}
+                onSelectLead={setSelectedLead}
+                labels={catalog.labels}
+              />
+            </TabsContent>
+            <TabsContent value="pivot" className="pt-3.5 sm:pt-4">
+              <PivotTab
+                pivot={summary.pivot.current}
+                pivotByDimension={summary.pivot.byDimension}
+                groupBy={groupBy}
+                splitBy={splitBy}
+                onGroupByChange={setGroupBy}
+                onSplitByChange={setSplitBy}
+                labels={catalog.labels}
+              />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 
@@ -279,6 +285,7 @@ export function ReportsPage({
         assignees={assignees}
         catalog={catalog}
         attrFields={attrFields}
+        canAssign={allowAssign}
         readOnly={liveSelected ? !leadEditable(liveSelected) : false}
         canEditProfile={liveSelected ? leadProfileEditable(liveSelected) : false}
         onSave={(patch, entries) =>

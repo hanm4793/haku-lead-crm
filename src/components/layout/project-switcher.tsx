@@ -12,7 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { UserRole } from "@/lib/auth/roles";
+import { canAssignLead, type UserRole } from "@/lib/auth/roles";
 import type { ProjectInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useLeadStore } from "@/store/lead-store";
@@ -51,13 +51,19 @@ export function ProjectProvider({
   const [targetProjectId, setTargetProjectId] = React.useState<string | null>(null);
 
   // Khi activeProjectId từ server đã khớp với project đích và transition xong → tắt trạng thái chờ
-  React.useEffect(() => {
-    if (targetProjectId && value.activeProjectId === targetProjectId && !isTransitioning && !actionPending) {
-      setTargetProjectId(null);
-    }
-  }, [value.activeProjectId, targetProjectId, isTransitioning, actionPending]);
+  if (
+    targetProjectId &&
+    value.activeProjectId === targetProjectId &&
+    !isTransitioning &&
+    !actionPending
+  ) {
+    setTargetProjectId(null);
+  }
 
-  const isSwitchingProject = actionPending || isTransitioning || Boolean(targetProjectId && value.activeProjectId !== targetProjectId);
+  const isSwitchingProject =
+    actionPending ||
+    isTransitioning ||
+    Boolean(targetProjectId && value.activeProjectId !== targetProjectId);
 
   const switchingToProject = React.useMemo(
     () => (targetProjectId ? (value.projects.find((p) => p.id === targetProjectId) ?? null) : null),
@@ -127,7 +133,7 @@ export function ProjectSwitcher({
   const activeProjectId =
     propActiveProjectId !== undefined ? propActiveProjectId : ctx.activeProjectId;
   const shouldHideSingle =
-    hideWhenSingle !== undefined ? hideWhenSingle : ctx.role === "STAFF";
+    hideWhenSingle !== undefined ? hideWhenSingle : !canAssignLead(ctx.role);
 
   const active =
     ctx.switchingToProject ??

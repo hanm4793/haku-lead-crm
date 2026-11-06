@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 import { MarketingPage } from "@/components/marketing/marketing-page";
 import {
   canManageAudiences,
+  canManageProjects,
   canManageSettings,
   canViewMarketing,
+  dataScope,
   isMarketingRowVisible,
   isPageVisible,
 } from "@/lib/auth/roles";
@@ -35,6 +37,16 @@ import { toDateInputValue } from "@/lib/utils";
 export const metadata = { title: "Marketing — SEMTOP Marketing CRM" };
 export const dynamic = "force-dynamic";
 
+function getInitialMarketingWindow() {
+  const now = new Date();
+  const from = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10);
+  const to = now.toISOString().slice(0, 10);
+  return {
+    range: { from, to },
+    today: toDateInputValue(now.toISOString()),
+  };
+}
+
 export default async function Page() {
   const viewer = await getScopedViewer();
   if (!viewer) redirect("/login?next=%2Fmarketing");
@@ -53,7 +65,8 @@ export default async function Page() {
   }
 
   const viewerScopedPageIds =
-    viewer.role !== "SUPER_ADMIN" ? [...viewer.pageIds] : null;
+    dataScope(viewer) !== "all" ? [...viewer.pageIds] : null;
+  const { range, today } = getInitialMarketingWindow();
 
   const [
     campaignRows,
@@ -68,10 +81,10 @@ export default async function Page() {
     crmRows,
     reference,
   ] = await Promise.all([
-    listCampaignInsights({ from: new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) }, viewerScopedPageIds),
-    listAdInsights({ from: new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) }, viewerScopedPageIds),
+    listCampaignInsights(range, viewerScopedPageIds),
+    listAdInsights(range, viewerScopedPageIds),
     listFacebookPages().catch(() => []),
-    viewer.role === "SUPER_ADMIN"
+    canManageProjects(viewer.role)
       ? listProjects({ activeOnly: true }).catch(() => [])
       : listProjectsForSwitcher(toProjectViewer(viewer)).catch(() => []),
     canManageAudiences(viewer.role) ? listAudienceSegments().catch(() => []) : Promise.resolve([]),
@@ -122,9 +135,8 @@ export default async function Page() {
       configured={Boolean(config?.adAccountId) || Boolean(config?.token)}
       adAccountId={config?.adAccountId ?? null}
       syncedAt={syncedAt}
-      today={toDateInputValue(new Date().toISOString())}
+      today={today}
       canSync={canManageSettings(viewer.role)}
     />
   );
 }
-

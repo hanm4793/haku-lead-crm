@@ -97,20 +97,20 @@ export function ConversionFunnel({ steps }: { steps: FunnelStep[] }) {
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-3 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-        <div className="w-48 shrink-0">Bậc chuyển đổi</div>
-        <div className="flex-1 text-center">Số lượng · % tổng lead</div>
-        <div className="w-16 shrink-0 text-right">Vs bậc trước</div>
+      <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-slate-400 sm:gap-3">
+        <div className="w-28 shrink-0 sm:w-44">Bậc chuyển đổi</div>
+        <div className="flex-1 text-center">Số lượng · % tổng</div>
+        <div className="w-12 shrink-0 text-right sm:w-16">Vs trước</div>
       </div>
       {steps.map((step, index) => {
-        const width = Math.max(14, (step.value / max) * 100);
+        const width = Math.max(18, (step.value / max) * 100);
         const nextWidth =
-          index < steps.length - 1 ? Math.max(14, (steps[index + 1].value / max) * 100) : width * 0.9;
+          index < steps.length - 1 ? Math.max(18, (steps[index + 1].value / max) * 100) : width * 0.9;
 
         return (
-          <div key={step.label} className="flex items-center gap-3">
-            <div className="flex w-48 shrink-0 items-center gap-2 text-[12px] text-slate-600">
-              <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500">
+          <div key={step.label} className="flex items-center gap-2 sm:gap-3">
+            <div className="flex w-28 shrink-0 items-center gap-1.5 text-[11.5px] text-slate-600 sm:w-44 sm:gap-2 sm:text-[12px]">
+              <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold tabular-nums text-slate-500">
                 {index + 1}
               </span>
               <span className="truncate" title={step.label}>
@@ -118,7 +118,7 @@ export function ConversionFunnel({ steps }: { steps: FunnelStep[] }) {
               </span>
             </div>
 
-            <div className="relative h-11 flex-1">
+            <div className="relative h-10 flex-1 sm:h-11">
               <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="h-full w-full">
                 <polygon
                   points={`${(100 - width) / 2},0 ${(100 + width) / 2},0 ${(100 + nextWidth) / 2},40 ${(100 - nextWidth) / 2},40`}
@@ -126,12 +126,12 @@ export function ConversionFunnel({ steps }: { steps: FunnelStep[] }) {
                 />
               </svg>
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center leading-none text-white">
-                <span className="text-sm font-bold tabular-nums">{formatNumber(step.value)}</span>
-                <span className="text-[10px] opacity-90">{formatPercent(step.shareOfTotal)}</span>
+                <span className="text-xs font-bold tabular-nums sm:text-sm">{formatNumber(step.value)}</span>
+                <span className="text-[10px] tabular-nums opacity-90">{formatPercent(step.shareOfTotal)}</span>
               </div>
             </div>
 
-            <div className="w-16 shrink-0 text-right text-[12px] font-medium tabular-nums text-slate-500">
+            <div className="w-12 shrink-0 text-right text-[11.5px] font-medium tabular-nums text-slate-500 sm:w-16 sm:text-[12px]">
               {index === 0 ? "—" : formatPercent(step.stepConversion)}
             </div>
           </div>
@@ -150,15 +150,15 @@ export function CategoryDonut({ data }: { data: CategoryShare[] }) {
 
   return (
     <div className="grid items-center gap-4 sm:grid-cols-[190px_1fr]">
-      <div className="relative mx-auto h-[190px] w-[190px]">
+      <div className="relative mx-auto h-[180px] w-[180px] sm:h-[190px] sm:w-[190px]">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={data}
               dataKey="value"
               nameKey="label"
-              innerRadius={56}
-              outerRadius={84}
+              innerRadius={54}
+              outerRadius={82}
               paddingAngle={2}
               strokeWidth={0}
             >
@@ -186,7 +186,7 @@ export function CategoryDonut({ data }: { data: CategoryShare[] }) {
           const pct = ratio(entry.value, total);
           return (
             <div key={entry.category} className="flex items-center justify-between gap-2 text-[12px]">
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
                 <span
                   className="size-2.5 shrink-0 rounded-full"
                   style={{ backgroundColor: CATEGORY_COLOR[entry.category] }}
@@ -227,7 +227,7 @@ export function FailReasonChart({ data }: { data: FailReasonBar[] }) {
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-rose-50">
             <div
-              className="h-full rounded-full bg-rose-500 transition-all"
+              className="h-full rounded-full bg-rose-500 transition-[width] duration-300"
               style={{ width: `${Math.max(4, (item.count / maxCount) * 100)}%` }}
             />
           </div>
@@ -244,9 +244,9 @@ export function SourceComparisonChart({ data }: { data: SourceBar[] }) {
 
   return (
     <ResponsiveContainer width="100%" height={Math.max(180, data.length * 54)}>
-      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 8 }} barGap={3}>
+      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 4 }} barGap={3}>
         <XAxis type="number" tick={AXIS_STYLE} tickLine={false} axisLine={{ stroke: GRID_COLOR }} allowDecimals={false} />
-        <YAxis type="category" dataKey="source" tick={AXIS_STYLE} tickLine={false} axisLine={false} width={72} />
+        <YAxis type="category" dataKey="source" tick={AXIS_STYLE} tickLine={false} axisLine={false} width={68} />
         <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "#f1f5f9" }} />
         <Legend iconType="square" iconSize={9} formatter={(v) => <span className="text-[11px] text-slate-600">{v}</span>} />
         <Bar dataKey="leads" name="Lead" fill="#12479e" radius={[0, 3, 3, 0]} barSize={12} />
@@ -263,9 +263,9 @@ export function CarModelChart({ data }: { data: ModelBar[] }) {
 
   return (
     <ResponsiveContainer width="100%" height={Math.max(220, data.length * 42)}>
-      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 8 }} barGap={3}>
+      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 4 }} barGap={3}>
         <XAxis type="number" tick={AXIS_STYLE} tickLine={false} axisLine={{ stroke: GRID_COLOR }} allowDecimals={false} />
-        <YAxis type="category" dataKey="model" tick={AXIS_STYLE} tickLine={false} axisLine={false} width={110} />
+        <YAxis type="category" dataKey="model" tick={AXIS_STYLE} tickLine={false} axisLine={false} width={96} />
         <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "#f1f5f9" }} />
         <Legend iconType="square" iconSize={9} formatter={(v) => <span className="text-[11px] text-slate-600">{v}</span>} />
         <Bar dataKey="leads" name="Lead" fill="#12479e" radius={[0, 3, 3, 0]} barSize={10} />

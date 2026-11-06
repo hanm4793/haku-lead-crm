@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { PhoneCall } from "lucide-react";
+import { MessageSquare, Phone, PhoneCall } from "lucide-react";
 
 import { Pagination } from "@/components/common/pagination";
 import {
@@ -69,13 +69,19 @@ export function OverviewTab({
     setCallPage(1);
   }
 
-  const safeAssigneePage = Math.min(Math.max(1, assigneePage), Math.max(1, Math.ceil(byAssignee.length / assigneePageSize)));
+  const safeAssigneePage = Math.min(
+    Math.max(1, assigneePage),
+    Math.max(1, Math.ceil(byAssignee.length / assigneePageSize)),
+  );
   const pagedAssignees = byAssignee.slice(
     (safeAssigneePage - 1) * assigneePageSize,
     safeAssigneePage * assigneePageSize,
   );
 
-  const safeFanpagePage = Math.min(Math.max(1, fanpagePage), Math.max(1, Math.ceil(byFanpage.length / fanpagePageSize)));
+  const safeFanpagePage = Math.min(
+    Math.max(1, fanpagePage),
+    Math.max(1, Math.ceil(byFanpage.length / fanpagePageSize)),
+  );
   const pagedFanpages = byFanpage.slice(
     (safeFanpagePage - 1) * fanpagePageSize,
     safeFanpagePage * fanpagePageSize,
@@ -179,10 +185,12 @@ export function OverviewTab({
             ) : (
               <div className="overflow-hidden rounded-lg border border-border">
                 <div className="thin-scrollbar overflow-x-auto">
-                  <table className="w-full min-w-[520px] text-[12px]">
+                  <table className="w-full min-w-[500px] text-[12px]">
                     <thead>
                       <tr className="bg-[#f8fafc] text-[10px] uppercase tracking-wide text-slate-500">
-                        <th className="px-3 py-2 text-left font-semibold">Phụ trách</th>
+                        <th className="sticky left-0 z-10 bg-[#f8fafc] px-3 py-2 text-left font-semibold shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)]">
+                          Phụ trách
+                        </th>
                         <th className="px-2.5 py-2 text-right font-semibold">Lead</th>
                         <th className="px-2.5 py-2 text-right font-semibold">Chưa LH</th>
                         <th className="px-2.5 py-2 text-right font-semibold">Tỷ lệ LH</th>
@@ -193,8 +201,10 @@ export function OverviewTab({
                     </thead>
                     <tbody>
                       {pagedAssignees.map((row) => (
-                        <tr key={row.key} className="border-t border-border/70 hover:bg-[#f6f9ff]">
-                          <td className="px-3 py-2 font-medium text-slate-800">{row.key}</td>
+                        <tr key={row.key} className="group border-t border-border/70 hover:bg-[#f6f9ff]">
+                          <td className="sticky left-0 z-10 max-w-[140px] truncate bg-white px-3 py-2 font-medium text-slate-800 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)] group-hover:bg-[#f6f9ff]">
+                            {row.key}
+                          </td>
                           <td className="px-2.5 py-2 text-right font-semibold tabular-nums">{formatNumber(row.leads)}</td>
                           <td
                             className={cn(
@@ -207,7 +217,7 @@ export function OverviewTab({
                           <td className="px-2.5 py-2 text-right tabular-nums text-slate-600">
                             {formatPercent(row.contactRate)}
                           </td>
-                          <td className="px-2.5 py-2 text-right tabular-nums text-slate-700">
+                          <td className="px-2.5 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
                             <span className="font-semibold text-emerald-700">{formatNumber(row.khqt)}</span>{" "}
                             <span className="text-[10px] text-slate-400">({formatPercent(row.khqtRate)})</span>
                           </td>
@@ -259,10 +269,12 @@ export function OverviewTab({
             ) : (
               <div className="overflow-hidden rounded-lg border border-border">
                 <div className="thin-scrollbar overflow-x-auto">
-                  <table className="w-full min-w-[520px] text-[12px]">
+                  <table className="w-full min-w-[500px] text-[12px]">
                     <thead>
                       <tr className="bg-[#f8fafc] text-[10px] uppercase tracking-wide text-slate-500">
-                        <th className="px-3 py-2 text-left font-semibold">Fanpage</th>
+                        <th className="sticky left-0 z-10 bg-[#f8fafc] px-3 py-2 text-left font-semibold shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)]">
+                          Fanpage
+                        </th>
                         <th className="px-2.5 py-2 text-right font-semibold">Lead</th>
                         <th className="px-2.5 py-2 text-right font-semibold">Tỷ trọng</th>
                         <th className="px-2.5 py-2 text-right font-semibold">KHQT+</th>
@@ -273,8 +285,11 @@ export function OverviewTab({
                     </thead>
                     <tbody>
                       {pagedFanpages.map((row) => (
-                        <tr key={row.key} className="border-t border-border/70 hover:bg-[#f6f9ff]">
-                          <td className="max-w-[200px] truncate px-3 py-2 font-medium text-slate-800" title={row.key}>
+                        <tr key={row.key} className="group border-t border-border/70 hover:bg-[#f6f9ff]">
+                          <td
+                            className="sticky left-0 z-10 max-w-[160px] truncate bg-white px-3 py-2 font-medium text-slate-800 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)] group-hover:bg-[#f6f9ff] sm:max-w-[200px]"
+                            title={row.key}
+                          >
                             {row.key}
                           </td>
                           <td className="px-2.5 py-2 text-right font-semibold tabular-nums">{formatNumber(row.leads)}</td>
@@ -332,8 +347,81 @@ export function OverviewTab({
               Không có lead quá hạn hoặc hẹn gọi trong hôm nay.
             </p>
           ) : (
-            <div className="overflow-hidden rounded-lg border border-border">
-              <div className="overflow-x-auto">
+            <div className="overflow-hidden rounded-xl border border-border">
+              {/* Mobile Card List */}
+              <div className="divide-y divide-border md:hidden">
+                {pagedCallList.map((lead) => {
+                  const overdue = isOverdue(lead, now);
+                  return (
+                    <div
+                      key={lead.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onSelectLead(lead)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onSelectLead(lead);
+                        }
+                      }}
+                      className="flex items-center justify-between gap-3 bg-white p-3 transition-colors active:bg-slate-50"
+                    >
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-semibold text-slate-900">
+                            {lead.name ?? "Khách chưa có tên"}
+                          </span>
+                          <span
+                            className={cn(
+                              "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                              overdue ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-700",
+                            )}
+                          >
+                            {overdue ? "Quá hạn" : "Hôm nay"}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                          <span className="font-medium tabular-nums text-slate-700">{lead.phone}</span>
+                          <span>·</span>
+                          <span>{CATEGORY_SHORT_LABEL[lead.category]}</span>
+                          <span>·</span>
+                          <span>{lead.assignee ?? "Chưa giao"}</span>
+                        </div>
+                        <div className={cn("text-[11px] tabular-nums", overdue ? "font-medium text-rose-600" : "text-slate-500")}>
+                          Hẹn gọi: {formatDateTime(lead.callbackAt)}
+                        </div>
+                      </div>
+
+                      {lead.phone && (
+                        <div
+                          className="flex shrink-0 items-center gap-1.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <a
+                            href={`https://zalo.me/${lead.phone}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label="Nhắn Zalo"
+                            className="flex size-8.5 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-600 active:bg-blue-100"
+                          >
+                            <MessageSquare className="size-4" />
+                          </a>
+                          <a
+                            href={`tel:${lead.phone}`}
+                            aria-label="Gọi ngay"
+                            className="flex size-8.5 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-600 active:bg-emerald-100"
+                          >
+                            <Phone className="size-4" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Desktop Table */}
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[640px] text-[13px]">
                   <thead>
                     <tr className="bg-[#f8fafc] text-[11px] uppercase tracking-wide text-slate-500">
@@ -362,7 +450,7 @@ export function OverviewTab({
                           <td className="px-3 py-2 text-slate-600">{lead.assignee ?? "Chưa giao"}</td>
                           <td className="px-3 py-2">
                             <span className="inline-flex items-center gap-1.5">
-                              <span className={overdue ? "font-medium text-rose-600" : "text-slate-700"}>
+                              <span className={cn("tabular-nums", overdue ? "font-medium text-rose-600" : "text-slate-700")}>
                                 {formatDateTime(lead.callbackAt)}
                               </span>
                               <span
@@ -384,6 +472,7 @@ export function OverviewTab({
                   </tbody>
                 </table>
               </div>
+
               <Pagination
                 page={safeCallPage}
                 pageSize={callPageSize}

@@ -71,24 +71,22 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     canManageProject ? listFacebookPages().catch(() => []) : Promise.resolve([]),
     listPartnersInProject(id).catch(() => []),
     canManageProject ? listPartnersNotInProject(id).catch(() => []) : Promise.resolve([]),
-    viewer.role === "SUPER_ADMIN" ? listAdAccounts(id).catch(() => []) : Promise.resolve([]),
+    canManageProject ? listAdAccounts(id).catch(() => []) : Promise.resolve([]),
     canManageProject ? loadLastProjectSync("leads", id).catch(() => null) : Promise.resolve(null),
   ]);
 
   const unassignedPages = allPages.filter((p) => !p.projectId);
-  const pagesForPanel =
-    viewer.role === "SUPER_ADMIN"
-      ? [...rawPages, ...unassignedPages]
-      : rawPages.filter((p) => isPageVisible(viewer, p.facebookPageId));
-  const partners =
-    viewer.role === "SUPER_ADMIN"
-      ? rawPartners
-      : rawPartners.filter((p) => p.id === viewer.appUserId);
+  const pagesForPanel = canManageProject
+    ? [...rawPages, ...unassignedPages]
+    : rawPages.filter((p) => isPageVisible(viewer, p.facebookPageId));
+  const partners = canManageProject
+    ? rawPartners
+    : rawPartners.filter((p) => p.id === viewer.appUserId);
   const canEditLabels = canManageProject || canManageCatalogsInProject(viewer, id);
   const canManageCatalog = canManageCatalogsInProject(viewer, id) || canManageAttrFieldsInProject(viewer, id);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-3.5 p-3 sm:space-y-4 sm:p-4">
       <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
         <Link href="/projects" className="hover:text-primary hover:underline">
           Dự án

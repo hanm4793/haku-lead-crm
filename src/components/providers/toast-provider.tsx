@@ -24,13 +24,17 @@ const ToastContext = React.createContext<ToastApi | null>(null);
 
 const ICONS = { success: CheckCircle2, error: CircleAlert, warning: TriangleAlert, info: Info } as const;
 const STYLES: Record<ToastKind, string> = {
-  success: "border-emerald-200 bg-emerald-50 text-emerald-900",
-  error: "border-rose-200 bg-rose-50 text-rose-900",
-  warning: "border-amber-200 bg-amber-50 text-amber-900",
-  info: "border-blue-200 bg-blue-50 text-blue-900",
+  success: "border-emerald-200 bg-emerald-50/95 text-emerald-950",
+  error: "border-rose-200 bg-rose-50/95 text-rose-950",
+  warning: "border-amber-200 bg-amber-50/95 text-amber-950",
+  info: "border-blue-200 bg-blue-50/95 text-blue-950",
 };
 
-/** Toast nhẹ không cần thư viện. Lỗi ở lại lâu hơn để người dùng kịp đọc. */
+/**
+ * Toast nhẹ không cần thư viện:
+ * - Trên Mobile: Hiện dạng banner nổi phía trên (kiểu thông báo iOS/Android) để không che thanh Tab Bar hoặc bàn phím ảo.
+ * - Trên Desktop: Hiện góc dưới bên phải quen thuộc.
+ */
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = React.useState<ToastItem[]>([]);
   const nextId = React.useRef(1);
@@ -43,7 +47,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     (kind: ToastKind, title: string, description?: string) => {
       const id = nextId.current++;
       setItems((prev) => [...prev.slice(-3), { id, kind, title, description }]);
-      setTimeout(() => dismiss(id), kind === "error" || kind === "warning" ? 8000 : 4000);
+      setTimeout(() => dismiss(id), kind === "error" || kind === "warning" ? 8000 : 3800);
     },
     [dismiss],
   );
@@ -61,7 +65,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-80 flex-col gap-2" aria-live="polite">
+      <div
+        className="pointer-events-none fixed z-[100] flex flex-col gap-2 max-md:inset-x-3 max-md:top-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:bottom-4 md:right-4 md:w-84"
+        aria-live="polite"
+      >
         {items.map((item) => {
           const Icon = ICONS[item.kind];
           return (
@@ -69,16 +76,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               key={item.id}
               role={item.kind === "error" ? "alert" : "status"}
               className={cn(
-                "pointer-events-auto flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-[13px] shadow-lg",
+                "pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13px] shadow-lg backdrop-blur-md animate-in fade-in-0 max-md:slide-in-from-top-2 md:slide-in-from-bottom-2",
                 STYLES[item.kind],
               )}
             >
               <Icon className="mt-0.5 size-4 shrink-0" />
               <div className="min-w-0 flex-1">
-                <p className="font-semibold">{item.title}</p>
-                {item.description && <p className="mt-0.5 break-words opacity-90">{item.description}</p>}
+                <p className="font-semibold leading-snug">{item.title}</p>
+                {item.description && <p className="mt-0.5 break-words text-xs opacity-90">{item.description}</p>}
               </div>
-              <button type="button" onClick={() => dismiss(item.id)} aria-label="Đóng" className="opacity-60 hover:opacity-100">
+              <button
+                type="button"
+                onClick={() => dismiss(item.id)}
+                aria-label="Đóng thông báo"
+                className="rounded-md p-1 opacity-60 transition-opacity hover:opacity-100"
+              >
                 <X className="size-3.5" />
               </button>
             </div>

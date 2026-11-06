@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { estimateCostUsd, getModelId, getProvider, isAiConfigured, PROVIDERS } from "@/lib/ai/model";
-import { canManageSettings } from "@/lib/auth/roles";
+import { canManageSettings, canManageUsers } from "@/lib/auth/roles";
 import { getScopedViewer, listUnlinkedUsers } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { getFacebookConfig, isFacebookTokenConfigured } from "@/lib/facebook/env";
@@ -44,18 +44,20 @@ export default async function Page() {
   const facebookConfig = getFacebookConfig();
   const tokenConfigured = isFacebookTokenConfigured();
   const insightsConfigured = Boolean(facebookConfig?.adAccountId);
-  const isAdmin = Boolean(viewer && canManageSettings(viewer.role));
+  const isAdmin = canManageSettings(viewer.role);
 
   return (
-    <div className="space-y-4 p-4">
-      <div>
+    <div className="space-y-3.5 p-3 sm:space-y-4 sm:p-4">
+      <div className="max-md:hidden">
         <h1 className="text-xl font-bold">Cài đặt App</h1>
         <p className="text-[13px] text-muted-foreground">Tích hợp toàn hệ thống và trợ lý AI</p>
       </div>
 
       <Card className="border-primary/20 bg-primary/5">
-        <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4 text-[13px]">
-          <p>Quản lý dự án, catalog và field phụ tại menu <strong>Dự án</strong>.</p>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3.5 text-[13px] sm:py-4">
+          <p>
+            Quản lý dự án, catalog và field phụ tại menu <strong>Dự án</strong>.
+          </p>
           <Button asChild variant="outline" size="sm">
             <Link href="/projects">Mở Dự án</Link>
           </Button>
@@ -81,14 +83,14 @@ export default async function Page() {
                 {authConfigured ? "Đã cấu hình" : "Chế độ demo"}
               </Badge>
             </div>
-            <Row label="Người đang xem" value={viewer?.fullName ?? "—"} />
-            <Row label="Vai trò" value={viewer?.role ?? "—"} />
+            <Row label="Người đang xem" value={viewer.fullName} />
+            <Row label="Vai trò" value={viewer.role} />
             {unlinked.length > 0 && (
               <p className="pt-1 text-xs text-muted-foreground">
                 {unlinked.length} nhân sự chưa gắn tài khoản đăng nhập (gán email ở mục Tài khoản).
               </p>
             )}
-            {viewer?.role === "SUPER_ADMIN" && (
+            {canManageUsers(viewer.role) && (
               <div className="pt-2">
                 <Button asChild variant="outline" size="sm">
                   <Link href="/users">Quản lý tài khoản &amp; phân quyền</Link>
@@ -175,9 +177,8 @@ export default async function Page() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <span className="text-muted-foreground">{label}</span>
+      <span className="shrink-0 text-muted-foreground">{label}</span>
       <span className="truncate font-medium text-slate-800">{value}</span>
     </div>
   );
 }
-

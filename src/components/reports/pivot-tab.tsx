@@ -157,7 +157,6 @@ export function PivotTab({
         };
       };
 
-      // File gồm bảng đang xem (có cả dòng con nếu đang tách 2 chiều) + một sheet cho mỗi chiều phân tích chính.
       const extraDims = (Object.keys(pivotByDimension) as PivotDimension[]).filter((d) => d !== groupBy);
       const sheets = [
         buildSheet(groupBy, pivot, true),
@@ -189,66 +188,68 @@ export function PivotTab({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-xs">
-        <div className="space-y-1">
-          <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Nhóm theo</Label>
-          <Select
-            value={groupBy}
-            onValueChange={(v) => {
-              setCollapsedKeys([]);
-              setPage(1);
-              onGroupByChange(v as PivotDimension);
-            }}
-          >
-            <SelectTrigger size="sm" className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(PIVOT_DIMENSIONS).map(([key, label]) => (
-                <SelectItem key={key} value={key}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Chi tiết theo (2 chiều)
-          </Label>
-          <Select
-            value={splitBy}
-            onValueChange={(v) => {
-              setCollapsedKeys([]);
-              setPage(1);
-              onSplitByChange(v as PivotDimension | "NONE");
-            }}
-          >
-            <SelectTrigger size="sm" className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="NONE">Không tách</SelectItem>
-              {Object.entries(PIVOT_DIMENSIONS)
-                .filter(([key]) => key !== groupBy)
-                .map(([key, label]) => (
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3.5 shadow-xs sm:flex-row sm:flex-wrap sm:items-end sm:px-4 sm:py-3">
+        <div className="grid grid-cols-2 gap-2.5 sm:flex sm:items-end sm:gap-3">
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Nhóm theo</Label>
+            <Select
+              value={groupBy}
+              onValueChange={(v) => {
+                setCollapsedKeys([]);
+                setPage(1);
+                onGroupByChange(v as PivotDimension);
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(PIVOT_DIMENSIONS).map(([key, label]) => (
                   <SelectItem key={key} value={key}>
                     {label}
                   </SelectItem>
                 ))}
-            </SelectContent>
-          </Select>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Chi tiết 2 chiều
+            </Label>
+            <Select
+              value={splitBy}
+              onValueChange={(v) => {
+                setCollapsedKeys([]);
+                setPage(1);
+                onSplitByChange(v as PivotDimension | "NONE");
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="NONE">Không tách</SelectItem>
+                {Object.entries(PIVOT_DIMENSIONS)
+                  .filter(([key]) => key !== groupBy)
+                  .map(([key, label]) => (
+                    <SelectItem key={key} value={key}>
+                      {label}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
           {splitBy !== "NONE" && rows.length > 0 && (
             <Button
               variant="outline"
               size="sm"
               onClick={() => setCollapsedKeys(allCollapsed ? [] : rows.map((r) => r.key))}
             >
-              {allCollapsed ? "Mở rộng tất cả" : "Thu gọn tất cả"}
+              {allCollapsed ? "Mở rộng" : "Thu gọn"}
             </Button>
           )}
           <ColumnVisibilityPopover
@@ -257,7 +258,7 @@ export function PivotTab({
             onChange={setMetrics}
             defaults={DEFAULT_METRICS}
           />
-          <Button size="sm" className="gap-2" onClick={handleExport} disabled={exporting}>
+          <Button size="sm" className="ml-auto gap-1.5 sm:ml-0" onClick={handleExport} disabled={exporting}>
             {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
             Xuất Excel
           </Button>
@@ -265,14 +266,14 @@ export function PivotTab({
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
-        <div className="px-5 pt-4">
+        <div className="px-4 pt-4 sm:px-5">
           <div className="text-[15px] font-semibold">
             Bảng chỉ số theo {PIVOT_DIMENSIONS[groupBy].toLowerCase()}
             {splitBy !== "NONE" ? ` × ${PIVOT_DIMENSIONS[splitBy].toLowerCase()}` : ""}
           </div>
           <p className="text-xs text-muted-foreground">
-            Bấm tiêu đề cột để sắp xếp. KHQT+ gồm KHQT, GDTD và KHĐ. Khi chọn “Chi tiết theo”, bấm vào từng dòng cha để
-            đóng/mở các dòng con (tỷ trọng dòng con tính trên hàng cha).
+            Bấm tiêu đề cột để sắp xếp. KHQT+ gồm KHQT, GDTD và KHĐ. Khi chọn “Chi tiết 2 chiều”, bấm vào từng dòng cha
+            để đóng/mở dòng con.
           </p>
         </div>
 
@@ -281,7 +282,7 @@ export function PivotTab({
             <thead>
               <tr className="bg-[#f8fafc] text-[10px] uppercase tracking-wide text-slate-500">
                 <th
-                  className="sticky left-0 z-10 cursor-pointer bg-[#f8fafc] px-3 py-2 text-left font-semibold"
+                  className="sticky left-0 z-10 cursor-pointer bg-[#f8fafc] px-3 py-2 text-left font-semibold shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)]"
                   onClick={() => toggleSort("key")}
                 >
                   <SortLabel label={PIVOT_DIMENSIONS[groupBy]} active={sortBy === "key"} order={sortOrder} />
@@ -319,12 +320,12 @@ export function PivotTab({
                     <React.Fragment key={row.key}>
                       <tr
                         className={cn(
-                          "border-t border-border/70 hover:bg-[#f6f9ff]",
+                          "group border-t border-border/70 hover:bg-[#f6f9ff]",
                           hasChildren && "cursor-pointer",
                         )}
                         onClick={() => hasChildren && toggleRowCollapse(row.key)}
                       >
-                        <td className="sticky left-0 z-10 bg-card px-3 py-2">
+                        <td className="sticky left-0 z-10 max-w-[180px] bg-card px-3 py-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)] group-hover:bg-[#f6f9ff] sm:max-w-[260px]">
                           <div className="flex items-center gap-1.5 font-medium text-slate-800">
                             {hasChildren &&
                               (isCollapsed ? (
@@ -332,9 +333,11 @@ export function PivotTab({
                               ) : (
                                 <ChevronDown className="size-3.5 shrink-0 text-slate-500" />
                               ))}
-                            <span>{row.key}</span>
+                            <span className="truncate" title={row.key}>
+                              {row.key}
+                            </span>
                           </div>
-                          <div className="mt-1 h-1 w-24 overflow-hidden rounded-full bg-slate-100">
+                          <div className="mt-1 h-1 w-20 overflow-hidden rounded-full bg-slate-100 sm:w-24">
                             <div
                               className="h-full rounded-full bg-primary"
                               style={{ width: `${(row.leads / maxLeads) * 100}%` }}
@@ -371,7 +374,7 @@ export function PivotTab({
                                 key={`${row.key}-${sKey}`}
                                 className="border-t border-border/40 bg-[#fbfcfe] text-[12px]"
                               >
-                                <td className="sticky left-0 z-10 bg-[#fbfcfe] py-1.5 pl-8 pr-3 text-slate-500">
+                                <td className="sticky left-0 z-10 max-w-[180px] truncate bg-[#fbfcfe] py-1.5 pr-3 pl-7 text-slate-500 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)] sm:max-w-[260px] sm:pl-8">
                                   ↳ {sKey}
                                 </td>
                                 {visibleMetrics.map((column) => (
@@ -395,7 +398,9 @@ export function PivotTab({
               )}
 
               <tr className="border-t-2 border-border bg-[#f8fafc] font-semibold">
-                <td className="sticky left-0 z-10 bg-[#f8fafc] px-3 py-2">Tổng</td>
+                <td className="sticky left-0 z-10 bg-[#f8fafc] px-3 py-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)]">
+                  Tổng
+                </td>
                 {visibleMetrics.map((column) => (
                   <td
                     key={column.id as string}
@@ -426,8 +431,8 @@ export function PivotTab({
           }}
         />
 
-        <p className="border-t border-border px-5 py-3 text-[11px] text-muted-foreground">
-          Xuất Excel gồm bảng đang xem (kèm các dòng con nếu chọn “Chi tiết theo”) + sheet cho từng chiều phân tích
+        <p className="border-t border-border px-4 py-3 text-[11px] text-muted-foreground sm:px-5">
+          Xuất Excel gồm bảng đang xem (kèm các dòng con nếu chọn “Chi tiết 2 chiều”) + sheet cho từng chiều phân tích
           chính (nguồn, fanpage, phụ trách, trạng thái, sản phẩm).
         </p>
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,17 +22,27 @@ export function ListToolbar({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2.5">
-      {tabs}
+    <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2.5 sm:px-3.5">
+      {tabs && <div className="max-sm:w-full max-sm:overflow-x-auto no-scrollbar">{tabs}</div>}
       {search && (
-        <div className="relative w-56">
+        <div className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search.value}
             onChange={(e) => search.onChange(e.target.value)}
             placeholder={search.placeholder}
-            className="h-8 pl-8 text-[13px]"
+            className="h-9 pl-8 pr-7 text-[13px] sm:h-8"
           />
+          {search.value && (
+            <button
+              type="button"
+              onClick={() => search.onChange("")}
+              aria-label="Xóa tìm kiếm"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
         </div>
       )}
       {filters}
@@ -53,7 +63,7 @@ export function CountTabs<T extends string>({
 }) {
   return (
     <Tabs value={value} onValueChange={(v) => onChange(v as T)}>
-      <TabsList className="gap-0">
+      <TabsList className="gap-0.5">
         {tabs.map((tab) => (
           <TabsTrigger
             key={tab.id}
@@ -64,8 +74,8 @@ export function CountTabs<T extends string>({
             {tab.count !== undefined && (
               <span
                 className={cn(
-                  "rounded px-1 text-[11px] tabular-nums",
-                  value === tab.id ? "bg-primary/10 text-primary" : "text-muted-foreground",
+                  "rounded px-1.5 text-[11px] font-semibold tabular-nums",
+                  value === tab.id ? "bg-primary/12 text-primary" : "text-muted-foreground",
                 )}
               >
                 {tab.count}
@@ -97,7 +107,7 @@ export function FilterSelect({
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className={cn("h-8 w-40 text-[13px]", className)}>
+      <SelectTrigger size="sm" className={cn("h-9 w-36 text-[13px] sm:h-8 sm:w-40", className)}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

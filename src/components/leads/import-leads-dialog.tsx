@@ -158,8 +158,8 @@ export function ImportLeadsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex max-h-[92vh] max-w-5xl flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
+      <DialogContent className="flex max-h-[92dvh] max-w-5xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 border-b border-border px-4 py-3.5 sm:px-6 sm:py-4">
           <div className="flex flex-wrap items-center justify-between gap-2 pr-8">
             <div>
               <DialogTitle className="text-lg font-bold">Import lead từ Excel</DialogTitle>
@@ -180,15 +180,15 @@ export function ImportLeadsDialog({
           </div>
         </DialogHeader>
 
-        <div className="thin-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
+        <div className="thin-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
           {/* Khu vực chọn file */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-3.5">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <FileUp className="size-5" />
               </div>
-              <div>
-                <div className="text-sm font-semibold text-slate-800">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-slate-800">
                   {fileName ?? "Chọn file Excel (.xlsx) để kiểm tra dữ liệu"}
                 </div>
                 <div className="text-xs text-muted-foreground">
@@ -233,12 +233,12 @@ export function ImportLeadsDialog({
           {report && !validating && (
             <>
               {/* Thống kê tổng quan */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setFilter("ALL")}
                   className={cn(
-                    "rounded-lg border p-3 text-left transition-colors",
+                    "rounded-xl border p-3 text-left transition-colors",
                     filter === "ALL"
                       ? "border-primary bg-primary/5"
                       : "border-border bg-white hover:bg-slate-50",
@@ -256,7 +256,7 @@ export function ImportLeadsDialog({
                   type="button"
                   onClick={() => setFilter("IMPORTABLE")}
                   className={cn(
-                    "rounded-lg border p-3 text-left transition-colors",
+                    "rounded-xl border p-3 text-left transition-colors",
                     filter === "IMPORTABLE"
                       ? "border-emerald-500 bg-emerald-50/70"
                       : "border-emerald-200 bg-emerald-50/30 hover:bg-emerald-50/60",
@@ -274,14 +274,14 @@ export function ImportLeadsDialog({
                   type="button"
                   onClick={() => setFilter("PARTIAL")}
                   className={cn(
-                    "rounded-lg border p-3 text-left transition-colors",
+                    "rounded-xl border p-3 text-left transition-colors",
                     filter === "PARTIAL"
                       ? "border-amber-500 bg-amber-50/70"
                       : "border-amber-200 bg-amber-50/30 hover:bg-amber-50/60",
                   )}
                 >
                   <div className="text-[11px] font-medium uppercase text-amber-700">
-                    Có field lỗi (bỏ qua field sai)
+                    Có field lỗi
                   </div>
                   <div className="mt-1 text-xl font-bold tabular-nums text-amber-700">
                     {report.partialValidCount}
@@ -292,14 +292,14 @@ export function ImportLeadsDialog({
                   type="button"
                   onClick={() => setFilter("BLOCKED")}
                   className={cn(
-                    "rounded-lg border p-3 text-left transition-colors",
+                    "rounded-xl border p-3 text-left transition-colors",
                     filter === "BLOCKED"
                       ? "border-rose-500 bg-rose-50/70"
                       : "border-rose-200 bg-rose-50/30 hover:bg-rose-50/60",
                   )}
                 >
                   <div className="text-[11px] font-medium uppercase text-rose-700">
-                    Không cho import (Trùng / Lỗi SĐT)
+                    Chặn import
                   </div>
                   <div className="mt-1 text-xl font-bold tabular-nums text-rose-700">
                     {report.blockedCount}
@@ -308,7 +308,7 @@ export function ImportLeadsDialog({
               </div>
 
               {report.unrecognizedColumns.length > 0 && (
-                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-800">
+                <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-800">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
                   <div>
                     <strong>Cột không khớp cấu hình dự án:</strong>{" "}
@@ -320,9 +320,72 @@ export function ImportLeadsDialog({
                 </div>
               )}
 
-              {/* Bảng chi tiết từng dòng */}
-              <div className="overflow-hidden rounded-lg border border-border">
-                <div className="max-h-[380px] overflow-auto">
+              {/* Mobile card list */}
+              <div className="space-y-2 md:hidden">
+                {displayedRows.length === 0 ? (
+                  <div className="rounded-xl border border-border bg-white py-8 text-center text-xs text-muted-foreground">
+                    Không có dòng nào trong nhóm lọc này.
+                  </div>
+                ) : (
+                  displayedRows.map((row) => (
+                    <div
+                      key={row.rowNumber}
+                      className={cn(
+                        "space-y-2 rounded-xl border border-border bg-white p-3 text-xs",
+                        !row.canImport && "border-rose-200 bg-rose-50/25",
+                        row.status === "partial" && "border-amber-200 bg-amber-50/20",
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-[11px] font-semibold text-slate-500">
+                              #{row.rowNumber}
+                            </span>
+                            <span className="truncate font-semibold text-slate-900">
+                              {row.name || "Chưa có tên"}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 tabular-nums text-slate-600">
+                            {row.phone || <span className="text-rose-500">Thiếu SĐT</span>}
+                          </div>
+                        </div>
+                        {row.status === "valid" && (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10.5px] font-medium text-emerald-700">
+                            <CheckCircle2 className="size-3" /> Hợp lệ
+                          </span>
+                        )}
+                        {row.status === "partial" && (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10.5px] font-medium text-amber-700">
+                            <AlertTriangle className="size-3" /> Có lỗi nhẹ
+                          </span>
+                        )}
+                        {row.status === "blocked" && (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10.5px] font-medium text-rose-700">
+                            <XCircle className="size-3" /> Chặn
+                          </span>
+                        )}
+                      </div>
+                      {row.invalidFields.length > 0 && (
+                        <div className="space-y-1">
+                          {row.invalidFields.map((inf, idx) => (
+                            <div
+                              key={idx}
+                              className="rounded-md border border-rose-200 bg-rose-50/80 px-2 py-1 text-[11px] text-rose-800"
+                            >
+                              <strong>{inf.field}:</strong> {inf.error}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden overflow-hidden rounded-xl border border-border md:block">
+                <div className="thin-scrollbar max-h-[380px] overflow-auto">
                   <table className="w-full border-collapse text-left text-xs">
                     <thead className="sticky top-0 z-10 border-b border-border bg-slate-100 text-[11px] font-semibold uppercase text-slate-600">
                       <tr>
@@ -350,7 +413,7 @@ export function ImportLeadsDialog({
                               row.status === "partial" && "bg-amber-50/20",
                             )}
                           >
-                            <td className="px-3 py-2.5 font-mono font-semibold text-slate-500">
+                            <td className="px-3 py-2.5 font-mono font-semibold tabular-nums text-slate-500">
                               #{row.rowNumber}
                             </td>
                             <td className="px-3 py-2.5">
@@ -423,35 +486,37 @@ export function ImportLeadsDialog({
                     </tbody>
                   </table>
                 </div>
-                {filteredRows.length > visibleLimit && (
-                  <div className="flex items-center justify-between border-t border-border bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
-                    <span>
-                      Đang hiển thị <strong>{displayedRows.length}</strong> /{" "}
-                      <strong>{filteredRows.length}</strong> dòng trong nhóm lọc
-                    </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => setVisibleLimit((prev) => prev + 200)}
-                    >
-                      Xem thêm 200 dòng
-                    </Button>
-                  </div>
-                )}
               </div>
+
+              {filteredRows.length > visibleLimit && (
+                <div className="flex items-center justify-between rounded-xl border border-border bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
+                  <span>
+                    Đang hiển thị <strong className="tabular-nums">{displayedRows.length}</strong> /{" "}
+                    <strong className="tabular-nums">{filteredRows.length}</strong> dòng
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setVisibleLimit((prev) => prev + 200)}
+                  >
+                    Xem thêm 200 dòng
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </div>
 
-        <DialogFooter className="shrink-0 border-t border-border bg-slate-50/70 px-6 py-3">
+        <DialogFooter className="shrink-0 border-t border-border bg-slate-50/70 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] sm:px-6 md:py-3">
           <Button
             type="button"
             variant="outline"
             size="sm"
             disabled={validating || committing}
             onClick={() => onOpenChange(false)}
+            className="max-sm:h-10"
           >
             Đóng
           </Button>
@@ -460,7 +525,7 @@ export function ImportLeadsDialog({
             size="sm"
             disabled={!report || report.importableCount === 0 || validating || committing}
             onClick={handleCommit}
-            className="gap-1.5"
+            className="gap-1.5 max-sm:h-10"
           >
             {committing ? (
               <Loader2 className="size-3.5 animate-spin" />

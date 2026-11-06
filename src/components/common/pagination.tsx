@@ -33,20 +33,23 @@ export function Pagination({
   const pages = buildPageList(safePage, pageCount);
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-4 py-2.5 text-[13px]">
-      <div className="flex items-center gap-3">
-        <span className="text-muted-foreground">
-          Hiển thị {formatNumber(first)}–{formatNumber(last)} / {formatNumber(total)} {unit}
+    <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border bg-card px-3.5 py-2.5 text-[13px] sm:px-4">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="truncate tabular-nums text-xs text-muted-foreground sm:text-[13px]">
+          <span className="hidden sm:inline">Hiển thị </span>
+          {formatNumber(first)}–{formatNumber(last)} / {formatNumber(total)}{" "}
+          <span className="hidden xs:inline">{unit}</span>
         </span>
         {onPageSizeChange && pageSizes.length > 1 && (
           <select
+            aria-label="Số dòng mỗi trang"
             value={safePageSize}
             onChange={(e) => {
               const nextSize = Number(e.target.value);
               onPageSizeChange(nextSize);
               onPageChange(1);
             }}
-            className="h-7 rounded-md border border-input bg-card px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+            className="hidden h-7 rounded-md border border-input bg-card px-2 text-xs tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:block sm:text-[13px]"
           >
             {pageSizes.map((size) => (
               <option key={size} value={size}>
@@ -57,11 +60,42 @@ export function Pagination({
         )}
       </div>
 
-      <div className="flex items-center gap-1">
+      {/* Mobile: Cụm nút Trước / Trang hiện tại / Sau kích thước chuẩn cảm ứng */}
+      <div className="flex items-center gap-1.5 sm:hidden">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label="Trang trước"
+          className="size-8.5 rounded-lg"
+          disabled={safePage <= 1}
+          onClick={() => onPageChange(Math.max(1, safePage - 1))}
+        >
+          <ChevronLeft className="size-4" />
+        </Button>
+        <span className="min-w-12 text-center text-xs font-semibold tabular-nums text-slate-700">
+          {safePage} / {pageCount}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label="Trang tiếp"
+          className="size-8.5 rounded-lg"
+          disabled={safePage >= pageCount}
+          onClick={() => onPageChange(Math.min(pageCount, safePage + 1))}
+        >
+          <ChevronRight className="size-4" />
+        </Button>
+      </div>
+
+      {/* Desktop & Tablet: Đầy đủ danh sách trang */}
+      <div className="hidden items-center gap-1 sm:flex">
         <Button
           type="button"
           variant="outline"
           size="iconSm"
+          aria-label="Trang trước"
           disabled={safePage <= 1}
           onClick={() => onPageChange(Math.max(1, safePage - 1))}
         >
@@ -80,9 +114,9 @@ export function Pagination({
                 if (p !== safePage) onPageChange(p);
               }}
               className={cn(
-                "h-7 min-w-7 rounded-md border px-2 text-[13px] transition-colors",
+                "h-7 min-w-7 rounded-md border px-2 text-[13px] font-medium tabular-nums transition-colors",
                 p === safePage
-                  ? "border-primary bg-primary text-primary-foreground"
+                  ? "border-primary bg-primary text-primary-foreground shadow-2xs"
                   : "border-input bg-card hover:bg-accent",
               )}
             >
@@ -94,6 +128,7 @@ export function Pagination({
           type="button"
           variant="outline"
           size="iconSm"
+          aria-label="Trang tiếp"
           disabled={safePage >= pageCount}
           onClick={() => onPageChange(Math.min(pageCount, safePage + 1))}
         >

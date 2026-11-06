@@ -445,16 +445,16 @@ export function AiChatPanel({
 
   return (
     <>
-      {open && <div className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-xs" onClick={() => onOpenChange(false)} />}
+      {open && <div className="fixed inset-0 z-40 bg-slate-900/25 backdrop-blur-xs" onClick={() => onOpenChange(false)} />}
 
       <aside
         className={cn(
-          "fixed right-0 top-0 z-50 flex h-screen w-[460px] max-w-[94vw] flex-col border-l border-border bg-card shadow-2xl transition-transform duration-200",
+          "fixed right-0 top-0 z-50 flex h-dvh w-full flex-col border-l border-border bg-card shadow-2xl transition-transform duration-200 sm:w-[460px] sm:max-w-[94vw]",
           open ? "translate-x-0" : "translate-x-full",
         )}
       >
         {/* Header hiện đại (hiển thị đúng Model đã cấu hình trong Cài đặt) */}
-        <header className="flex items-center justify-between gap-2 border-b border-border bg-card/80 px-4 py-3 backdrop-blur-sm">
+        <header className="flex items-center justify-between gap-2 border-b border-border bg-card/90 px-4 py-3 backdrop-blur-sm max-sm:pt-[calc(0.75rem+env(safe-area-inset-top,0px))]">
           <div className="flex items-center gap-2.5 min-w-0">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
               <Sparkles className="size-4.5" />
@@ -494,7 +494,7 @@ export function AiChatPanel({
         </header>
 
         {/* Nội dung tin nhắn */}
-        <div ref={scrollRef} className="thin-scrollbar flex-1 space-y-4 overflow-y-auto p-4">
+        <div ref={scrollRef} className="thin-scrollbar flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
           {messages.map((message) => (
             <div
               key={message.id}
@@ -527,7 +527,7 @@ export function AiChatPanel({
 
                 {/* Nút copy câu trả lời của AI */}
                 {message.role === "assistant" && message.id !== "welcome" && (
-                  <div className="flex justify-end pt-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <div className="flex justify-end pt-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                     <button
                       type="button"
                       onClick={() => copyText(message.id, message.content)}
@@ -616,7 +616,7 @@ export function AiChatPanel({
         </div>
 
         {/* Khung nhập liệu + Menu @ thông minh 2 bước */}
-        <div className="relative border-t border-border bg-card p-3">
+        <div className="relative border-t border-border bg-card p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
           {/* POPUP @ MENUS */}
           {mentionOpen && (
             <div className="absolute bottom-full left-3 right-3 z-30 mb-2 overflow-hidden rounded-xl border border-border bg-card shadow-2xl ring-1 ring-black/5">
@@ -843,7 +843,7 @@ export function AiChatPanel({
           )}
 
           {/* Ô nhập tin nhắn */}
-          <div className="rounded-xl border border-input bg-background p-2 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+          <div className="rounded-xl border border-input bg-background p-2 transition-[border-color,box-shadow] focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
             {/* Tag Pills đã gắn */}
             {mentions.length > 0 && (
               <div className="mb-1.5 flex flex-wrap gap-1">

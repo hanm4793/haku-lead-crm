@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, ChevronsUpDown } from "lucide-react";
 
 import { Pagination } from "@/components/common/pagination";
 import { cn } from "@/lib/utils";
@@ -59,7 +59,8 @@ export function DataTable<T>({
   unit = "mục",
   defaultSort,
   initialPageSize = 25,
-  maxHeightClass = "max-h-[calc(100vh-280px)]",
+  maxHeightClass = "md:max-h-[calc(100dvh-250px)]",
+  mobileCard,
 }: {
   columns: DataColumn<T>[];
   rows: T[];
@@ -71,6 +72,8 @@ export function DataTable<T>({
   defaultSort?: SortState;
   initialPageSize?: number;
   maxHeightClass?: string;
+  /** Tùy chọn render thẻ riêng trên mobile; nếu bỏ trống sẽ tự động chuyển các cột thành thẻ Native Card gọn đẹp. */
+  mobileCard?: (row: T, index: number) => React.ReactNode;
 }) {
   const [sort, setSort] = React.useState<SortState | null>(defaultSort ?? null);
   const [page, setPage] = React.useState(1);
@@ -109,9 +112,82 @@ export function DataTable<T>({
     );
   };
 
+  const primaryCol = columns[0];
+  const restCols = columns.slice(1);
+
   return (
     <>
-      <div ref={scrollRef} className={cn("thin-scrollbar relative min-h-0 overflow-auto", maxHeightClass)}>
+      {/* MOBILE CARD LIST (< 768px) — Trải nghiệm Native App không cần cuộn ngang */}
+      <div className="divide-y divide-border/70 md:hidden">
+        {visible.length === 0 ? (
+          <div className="px-4 py-12 text-center text-sm text-muted-foreground">{emptyMessage}</div>
+        ) : (
+          visible.map((row, index) => {
+            const globalIndex = (safePage - 1) * pageSize + index;
+            if (mobileCard) {
+              return <React.Fragment key={getRowKey(row)}>{mobileCard(row, globalIndex)}</React.Fragment>;
+            }
+            return (
+              <div
+                key={getRowKey(row)}
+                role={onRowClick ? "button" : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onKeyDown={
+                  onRowClick
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onRowClick(row);
+                        }
+                      }
+                    : undefined
+                }
+                className={cn(
+                  "flex flex-col gap-2.5 p-3.5 transition-colors",
+                  onRowClick && "cursor-pointer active:bg-slate-50",
+                )}
+              >
+                {primaryCol && (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1 text-sm">{primaryCol.cell(row, globalIndex)}</div>
+                    {onRowClick && <ChevronRight className="size-4 shrink-0 text-slate-400" />}
+                  </div>
+                )}
+
+                {restCols.length > 0 && (
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg bg-slate-50/75 px-3 py-2 text-xs">
+                    {restCols.map((col) => {
+                      const hasHeader = Boolean(col.header);
+                      return (
+                        <div
+                          key={col.id}
+                          className={cn(
+                            "flex min-w-0 flex-col gap-0.5",
+                            !hasHeader && "col-span-2 flex-row items-center justify-end",
+                          )}
+                        >
+                          {hasHeader && (
+                            <span className="truncate text-[10.5px] font-medium text-muted-foreground">
+                              {col.header}
+                            </span>
+                          )}
+                          <div className={cn("min-w-0 font-medium text-slate-800", col.align === "right" && "tabular-nums")}>
+                            {col.cell(row, globalIndex)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* DESKTOP & TABLET DATA TABLE (>= 768px) */}
+      <div ref={scrollRef} className={cn("thin-scrollbar relative hidden min-h-0 overflow-auto md:block", maxHeightClass)}>
         <table className="w-max min-w-full border-collapse text-[13px]">
           <thead className="sticky top-0 z-10">
             <tr>
@@ -123,7 +199,7 @@ export function DataTable<T>({
                     style={column.width ? { width: column.width, minWidth: column.width } : undefined}
                     onClick={() => toggleSort(column)}
                     className={cn(
-                      "border-b border-border bg-[#f8fafc] px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500",
+                      "border-b border-border bg-[#f8fafc]/95 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 backdrop-blur-xs",
                       column.align === "right" && "text-right",
                       column.align === "center" && "text-center",
                       column.sortValue && "cursor-pointer select-none hover:text-primary",
@@ -134,9 +210,9 @@ export function DataTable<T>({
                       {column.sortValue &&
                         (active ? (
                           sort.order === "asc" ? (
-                            <ArrowUp className="size-3" />
+                            <ArrowUp className="size-3 text-primary" />
                           ) : (
-                            <ArrowDown className="size-3" />
+                            <ArrowDown className="size-3 text-primary" />
                           )
                         ) : (
                           <ChevronsUpDown className="size-3 opacity-40" />
@@ -168,7 +244,7 @@ export function DataTable<T>({
                   <td
                     key={column.id}
                     className={cn(
-                      "px-3 py-2 align-middle",
+                      "px-3.5 py-2.5 align-middle",
                       column.align === "right" && "text-right tabular-nums",
                       column.align === "center" && "text-center",
                     )}
