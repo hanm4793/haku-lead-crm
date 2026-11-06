@@ -1,4 +1,4 @@
-import { eq, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { activityLogs, facebookPages, leads, metaSyncRuns } from "@/lib/db/schema";
@@ -592,4 +592,24 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
       .where(eq(metaSyncRuns.id, run.id));
     throw error;
   }
+}
+
+
+/**
+ * Xóa leads từ kênh Messenger/Comment mà không có SĐT.
+ * Cascade sẽ tự xóa activity_logs và lead_comments liên quan.
+ */
+export async function purgeLeadsWithoutPhone(): Promise<{ deleted: number }> {
+  const db = getDb();
+  const deleted = await db
+    .delete(leads)
+    .where(
+      and(
+        inArray(leads.channelDetail, ["TIN_NHAN", "COMMENT"]),
+        eq(leads.source, "FACEBOOK"),
+        or(isNull(leads.phone), eq(leads.phone, "")),
+      ),
+    )
+    .returning({ id: leads.id });
+  return { deleted: deleted.length };
 }

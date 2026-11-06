@@ -9,7 +9,7 @@ import { getDb, isDatabaseConfigured } from "@/lib/db/client";
 import { metaSyncRuns } from "@/lib/db/schema";
 import { getFacebookConfig, isFacebookTokenConfigured } from "@/lib/facebook/env";
 import { syncFacebookInsights, type SyncInsightsResult } from "@/lib/facebook/sync-insights";
-import { syncFacebookLeads, type SyncLeadsResult } from "@/lib/facebook/sync-leads";
+import { purgeLeadsWithoutPhone, syncFacebookLeads, type SyncLeadsResult } from "@/lib/facebook/sync-leads";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -94,6 +94,7 @@ async function handleSync(request: NextRequest) {
   const force = searchParams.get("force") === "1" || searchParams.get("force") === "true";
   const minInterval = Math.max(0, Number(searchParams.get("minInterval") ?? (force ? 0 : 10)) || 0);
 
+  const shouldRunCleanup = kindParam === "cleanup";
   const shouldRunLeads = kindParam === "all" || kindParam === "leads";
   const shouldRunInsights = kindParam === "all" || kindParam === "insights";
 
@@ -112,6 +113,24 @@ async function handleSync(request: NextRequest) {
     | { status: "synced"; result: SyncInsightsResult }
     | { status: "skipped"; reason: string }
     | { status: "error"; error: string } = { status: "skipped", reason: "not_requested" };
+
+  let cleanupResult: { deleted: number } | null = null;
+  if (shouldRunCleanup) {
+    try {
+      cleanupResult = await purgeLeadsWithoutPhone();
+    } catch (err) {
+      return NextResponse.json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Lỗi dọn dẹp lead.",
+      }, { status: 500 });
+    }
+    revalidatePath("/leads");
+    return NextResponse.json({
+      ok: true,
+      cleanup: cleanupResult,
+      message: `Đã xóa ${cleanupResult.deleted} lead Messenger/Comment không có SĐT.`,
+    });
+  }
 
   let didSyncAny = false;
 
