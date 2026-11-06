@@ -26,6 +26,7 @@ import { AiChatPanel } from "@/components/ai/ai-chat-panel";
 import { ProjectProvider, ProjectSwitcher, useProjectContext } from "@/components/layout/project-switcher";
 import { UserMenu } from "@/components/layout/user-menu";
 import { PushNotificationBell } from "@/components/pwa/push-notification-manager";
+import { PwaInstallFloatingBanner, PwaInstallMenuRow } from "@/components/pwa/pwa-install-prompt";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -610,6 +611,7 @@ export function AppShell({
                 Tài khoản cá nhân
               </div>
               <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
+                <PwaInstallMenuRow />
                 <Link
                   href="/account"
                   prefetch
@@ -669,6 +671,8 @@ export function AppShell({
             </div>
           </DialogContent>
         </Dialog>
+
+        <PwaInstallFloatingBanner />
 
         {showAi && (
           <AiChatPanel

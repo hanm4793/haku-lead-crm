@@ -1,4 +1,4 @@
-/* SEMTOP Marketing CRM — PWA Web Push Service Worker */
+/* SEMTOP Marketing CRM — PWA & Web Push Service Worker */
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -6,6 +6,15 @@ self.addEventListener("install", () => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
+});
+
+// Sự kiện fetch giúp Chrome / Edge kích hoạt điều kiện cài đặt PWA (beforeinstallprompt)
+// mà không lưu cache cứng làm cũ dữ liệu CRM thời gian thực.
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/")) return;
 });
 
 self.addEventListener("push", (event) => {
@@ -27,8 +36,8 @@ self.addEventListener("push", (event) => {
 
   const options = {
     body: payload.body,
-    icon: "/icon.png",
-    badge: "/icon.png",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
     tag: payload.tag || "semtop-crm-general",
     renotify: true,
     requireInteraction: Boolean(payload.requireInteraction),

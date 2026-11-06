@@ -4,6 +4,7 @@ import { KeyRound } from "lucide-react";
 
 import { AccountProfileForm } from "@/components/account/account-profile-form";
 import { PushNotificationCard } from "@/components/pwa/push-notification-manager";
+import { PwaInstallMenuRow } from "@/components/pwa/pwa-install-prompt";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getViewer } from "@/lib/auth/viewer";
@@ -25,6 +26,10 @@ export default async function AccountPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           Cập nhật hồ sơ hiển thị và cài đặt thông báo trên SEMTOP Marketing CRM.
         </p>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-border bg-card empty:hidden">
+        <PwaInstallMenuRow />
       </div>
 
       {showPushSettings && <PushNotificationCard />}
