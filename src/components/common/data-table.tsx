@@ -43,7 +43,7 @@ export function ListPanel({
   className?: string;
 }) {
   return (
-    <div className={cn("flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xs", className)}>
+    <div className={cn("flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xs", className)}>
       {toolbar}
       {children}
     </div>
@@ -114,6 +114,8 @@ export function DataTable<T>({
 
   const primaryCol = columns[0];
   const restCols = columns.slice(1);
+  const actionCols = restCols.filter((c) => !c.header);
+  const detailCols = restCols.filter((c) => Boolean(c.header));
 
   return (
     <>
@@ -144,40 +146,45 @@ export function DataTable<T>({
                     : undefined
                 }
                 className={cn(
-                  "flex flex-col gap-2.5 p-3.5 transition-colors",
+                  "flex min-w-0 flex-col gap-2.5 p-3.5 transition-colors",
                   onRowClick && "cursor-pointer active:bg-slate-50",
                 )}
               >
-                {primaryCol && (
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1 text-sm">{primaryCol.cell(row, globalIndex)}</div>
-                    {onRowClick && <ChevronRight className="size-4 shrink-0 text-slate-400" />}
+                {(primaryCol || actionCols.length > 0) && (
+                  <div className="flex items-start justify-between gap-2">
+                    {primaryCol && (
+                      <div className="min-w-0 flex-1 break-words text-sm font-medium">
+                        {primaryCol.cell(row, globalIndex)}
+                      </div>
+                    )}
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {actionCols.map((col) => (
+                        <React.Fragment key={col.id}>{col.cell(row, globalIndex)}</React.Fragment>
+                      ))}
+                      {onRowClick && actionCols.length === 0 && (
+                        <ChevronRight className="mt-0.5 size-4 shrink-0 text-slate-400" />
+                      )}
+                    </div>
                   </div>
                 )}
 
-                {restCols.length > 0 && (
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg bg-slate-50/75 px-3 py-2 text-xs">
-                    {restCols.map((col) => {
-                      const hasHeader = Boolean(col.header);
-                      return (
+                {detailCols.length > 0 && (
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg bg-slate-50/80 px-3 py-2 text-xs">
+                    {detailCols.map((col) => (
+                      <div key={col.id} className="flex min-w-0 flex-col gap-0.5">
+                        <span className="truncate text-[10.5px] font-medium text-muted-foreground">
+                          {col.header}
+                        </span>
                         <div
-                          key={col.id}
                           className={cn(
-                            "flex min-w-0 flex-col gap-0.5",
-                            !hasHeader && "col-span-2 flex-row items-center justify-end",
+                            "min-w-0 overflow-hidden break-words font-medium text-slate-800 [&_span]:max-w-full [&_span]:break-all",
+                            col.align === "right" && "tabular-nums",
                           )}
                         >
-                          {hasHeader && (
-                            <span className="truncate text-[10.5px] font-medium text-muted-foreground">
-                              {col.header}
-                            </span>
-                          )}
-                          <div className={cn("min-w-0 font-medium text-slate-800", col.align === "right" && "tabular-nums")}>
-                            {col.cell(row, globalIndex)}
-                          </div>
+                          {col.cell(row, globalIndex)}
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

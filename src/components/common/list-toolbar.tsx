@@ -22,10 +22,10 @@ export function ListToolbar({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2.5 sm:px-3.5">
-      {tabs && <div className="max-sm:w-full max-sm:overflow-x-auto no-scrollbar">{tabs}</div>}
+    <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2.5 sm:px-3.5">
+      {tabs && <div className="no-scrollbar max-w-full overflow-x-auto max-sm:w-full">{tabs}</div>}
       {search && (
-        <div className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
+        <div className="relative w-full min-w-0 sm:w-60 sm:flex-none">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search.value}
@@ -46,7 +46,7 @@ export function ListToolbar({
         </div>
       )}
       {filters}
-      {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
+      {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
   );
 }
@@ -63,7 +63,7 @@ export function CountTabs<T extends string>({
 }) {
   return (
     <Tabs value={value} onValueChange={(v) => onChange(v as T)}>
-      <TabsList className="gap-0.5">
+      <TabsList className="no-scrollbar max-w-full gap-0.5 overflow-x-auto">
         {tabs.map((tab) => (
           <TabsTrigger
             key={tab.id}
@@ -107,7 +107,7 @@ export function FilterSelect({
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger size="sm" className={cn("h-9 w-36 text-[13px] sm:h-8 sm:w-40", className)}>
+      <SelectTrigger size="sm" className={cn("h-9 min-w-[120px] flex-1 text-[13px] sm:h-8 sm:w-40 sm:flex-none", className)}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

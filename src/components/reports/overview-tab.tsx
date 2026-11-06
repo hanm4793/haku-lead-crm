@@ -184,7 +184,66 @@ export function OverviewTab({
               <p className="py-6 text-center text-xs text-muted-foreground">Chưa có dữ liệu phân bổ nhân sự trong kỳ.</p>
             ) : (
               <div className="overflow-hidden rounded-lg border border-border">
-                <div className="thin-scrollbar overflow-x-auto">
+                {/* MOBILE CARD LIST (< 768px) */}
+                <div className="divide-y divide-border/70 md:hidden">
+                  {pagedAssignees.map((row) => (
+                    <div key={row.key} className="space-y-2 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-[13.5px] font-semibold text-slate-900">
+                          {row.key}
+                        </span>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {row.overdue > 0 && (
+                            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-rose-600">
+                              Quá hạn {formatNumber(row.overdue)}
+                            </span>
+                          )}
+                          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold tabular-nums text-slate-800">
+                            {formatNumber(row.leads)} lead
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-1.5 rounded-lg bg-slate-50/80 px-2.5 py-2 text-center text-[11px]">
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-muted-foreground">Chưa LH</div>
+                          <div
+                            className={cn(
+                              "mt-0.5 font-semibold tabular-nums",
+                              row.uncontacted > 0 ? "text-amber-600" : "text-slate-600",
+                            )}
+                          >
+                            {formatNumber(row.uncontacted)}
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-muted-foreground">Tỷ lệ LH</div>
+                          <div className="mt-0.5 font-semibold tabular-nums text-slate-700">
+                            {formatPercent(row.contactRate)}
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-muted-foreground">KHQT+</div>
+                          <div className="mt-0.5 font-semibold tabular-nums text-emerald-700">
+                            {formatNumber(row.khqt)}{" "}
+                            <span className="text-[9.5px] font-normal text-slate-400">
+                              ({formatPercent(row.khqtRate)})
+                            </span>
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-muted-foreground">KHĐ</div>
+                          <div className="mt-0.5 font-bold tabular-nums text-primary">
+                            {formatNumber(row.khd)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* DESKTOP & TABLET TABLE (>= 768px) */}
+                <div className="thin-scrollbar hidden overflow-x-auto md:block">
                   <table className="w-full min-w-[500px] text-[12px]">
                     <thead>
                       <tr className="bg-[#f8fafc] text-[10px] uppercase tracking-wide text-slate-500">
@@ -268,7 +327,48 @@ export function OverviewTab({
               <p className="py-6 text-center text-xs text-muted-foreground">Chưa có dữ liệu Fanpage trong kỳ.</p>
             ) : (
               <div className="overflow-hidden rounded-lg border border-border">
-                <div className="thin-scrollbar overflow-x-auto">
+                {/* MOBILE CARD LIST (< 768px) */}
+                <div className="divide-y divide-border/70 md:hidden">
+                  {pagedFanpages.map((row) => (
+                    <div key={row.key} className="space-y-2 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="min-w-0 flex-1 break-words text-[13.5px] font-semibold leading-snug text-slate-900">
+                          {row.key}
+                        </span>
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold tabular-nums text-slate-800">
+                          {formatNumber(row.leads)} ({formatPercent(row.leadShare)})
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50/80 px-2.5 py-2 text-center text-[11px]">
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-muted-foreground">KHQT+</div>
+                          <div className="mt-0.5 font-semibold tabular-nums text-emerald-700">
+                            {formatNumber(row.khqt)}{" "}
+                            <span className="text-[9.5px] font-normal text-slate-400">
+                              ({formatPercent(row.khqtRate)})
+                            </span>
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-muted-foreground">Hợp đồng</div>
+                          <div className="mt-0.5 font-bold tabular-nums text-primary">
+                            {formatNumber(row.khd)}
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-muted-foreground">Tỷ lệ loại</div>
+                          <div className="mt-0.5 font-semibold tabular-nums text-rose-600">
+                            {formatPercent(row.failRate)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* DESKTOP & TABLET TABLE (>= 768px) */}
+                <div className="thin-scrollbar hidden overflow-x-auto md:block">
                   <table className="w-full min-w-[500px] text-[12px]">
                     <thead>
                       <tr className="bg-[#f8fafc] text-[10px] uppercase tracking-wide text-slate-500">

@@ -475,8 +475,8 @@ const MobileLeadCard = React.memo(function MobileLeadCard({
         </div>
       </div>
 
-      {/* Hàng 2: SĐT, Nguồn, Thời gian & Sản phẩm quan tâm */}
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-600">
+      {/* Hàng 2: SĐT, Nguồn, Thời gian & Phụ trách */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
         {lead.phone ? (
           <span className="font-semibold tabular-nums text-slate-800">{lead.phone}</span>
         ) : (
@@ -493,7 +493,7 @@ const MobileLeadCard = React.memo(function MobileLeadCard({
           {(metaParts || lead.failReason || overdue) && (
             <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
               {metaParts && (
-                <span className="truncate rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                <span className="max-w-full truncate rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
                   {metaParts}
                 </span>
               )}
@@ -519,53 +519,69 @@ const MobileLeadCard = React.memo(function MobileLeadCard({
         </div>
       )}
 
-      {/* Hàng 3: Thanh thao tác 1 chạm cho ngón cái (Trạng thái, Phụ trách, Gọi, Zalo) */}
+      {/* Hàng 3: Thanh thao tác 1 chạm chuẩn Thumb-Zone (vừa khít kể cả màn 360px) */}
       <div
-        className="mt-2.5 flex items-center justify-between gap-2 border-t border-border/60 pt-2.5"
+        className="mt-2.5 space-y-2 border-t border-border/60 pt-2.5"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <ContactStatusCell
-            value={lead.contactStatus}
-            editable={editable}
-            onChange={(next) => onStatusChange(lead, next)}
-          />
-          <AssigneeCell
-            value={lead.assignee}
-            assignees={assignees}
-            editable={canAssign}
-            onChange={(next) => onAssigneeChange?.(lead, next)}
-          />
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <ContactStatusCell
+              value={lead.contactStatus}
+              editable={editable}
+              onChange={(next) => onStatusChange(lead, next)}
+            />
+            {!lead.phone && (
+              <AssigneeCell
+                value={lead.assignee}
+                assignees={assignees}
+                editable={canAssign}
+                onChange={(next) => onAssigneeChange?.(lead, next)}
+              />
+            )}
+          </div>
+
+          {lead.phone && (
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={copyPhone}
+                aria-label="Sao chép số điện thoại"
+                className="flex size-8.5 items-center justify-center rounded-lg border border-border bg-slate-50 text-slate-600 active:bg-slate-200"
+              >
+                <Copy className="size-3.5" />
+              </button>
+              <a
+                href={`https://zalo.me/${lead.phone}`}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Nhắn Zalo"
+                className="inline-flex h-8.5 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-xs font-semibold text-blue-700 active:bg-blue-100"
+              >
+                <MessageSquare className="size-3.5" />
+                <span>Zalo</span>
+              </a>
+              <a
+                href={`tel:${lead.phone}`}
+                aria-label="Gọi điện"
+                className="inline-flex h-8.5 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-700 active:bg-emerald-100"
+              >
+                <Phone className="size-3.5" />
+                <span>Gọi</span>
+              </a>
+            </div>
+          )}
         </div>
 
         {lead.phone && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
-              onClick={copyPhone}
-              aria-label="Sao chép số điện thoại"
-              className="flex size-8.5 items-center justify-center rounded-lg border border-border bg-slate-50 text-slate-600 active:bg-slate-200"
-            >
-              <Copy className="size-3.5" />
-            </button>
-            <a
-              href={`https://zalo.me/${lead.phone}`}
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Nhắn Zalo"
-              className="inline-flex h-8.5 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-xs font-semibold text-blue-700 active:bg-blue-100"
-            >
-              <MessageSquare className="size-3.5" />
-              <span>Zalo</span>
-            </a>
-            <a
-              href={`tel:${lead.phone}`}
-              aria-label="Gọi điện"
-              className="inline-flex h-8.5 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-700 active:bg-emerald-100"
-            >
-              <Phone className="size-3.5" />
-              <span>Gọi</span>
-            </a>
+          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span className="text-[11px] font-medium">Phụ trách:</span>
+            <AssigneeCell
+              value={lead.assignee}
+              assignees={assignees}
+              editable={canAssign}
+              onChange={(next) => onAssigneeChange?.(lead, next)}
+            />
           </div>
         )}
       </div>

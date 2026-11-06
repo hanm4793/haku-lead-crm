@@ -107,12 +107,14 @@ export default async function Page() {
           </CardHeader>
           <CardContent className="space-y-2.5 text-[13px]">
             <Row label="Nhà cung cấp" value={PROVIDERS[provider].label} />
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-muted-foreground">Trạng thái</span>
               {aiConfigured ? (
                 <Badge variant="success">Đã cấu hình</Badge>
               ) : (
-                <Badge variant="warning">Chưa có key — đang chạy chế độ từ khóa</Badge>
+                <Badge variant="warning" className="whitespace-normal text-right">
+                  Chưa có key — đang chạy chế độ từ khóa
+                </Badge>
               )}
             </div>
             <Row

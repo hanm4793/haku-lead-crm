@@ -202,7 +202,7 @@ export function ReportsPage({
           <div className="max-md:hidden">
             <ProjectSwitcher />
           </div>
-          <div className="ml-auto flex items-center gap-2 md:ml-0">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto md:ml-0">
             <LeadFilterPopover
               filters={filters}
               fanpageOptions={fanpageOptions}
@@ -211,16 +211,18 @@ export function ReportsPage({
               onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
               onReset={resetAllFilters}
             />
-            <DateRangePicker
-              preset={preset}
-              range={range}
-              onChange={(nextPreset, nextRange) => {
-                setPreset(nextPreset);
-                const resolved = nextPreset === "CUSTOM" ? nextRange : resolvePreset(nextPreset, now);
-                setRange(resolved);
-                setFilters((f) => ({ ...f, dateFrom: resolved.from, dateTo: resolved.to }));
-              }}
-            />
+            <div className="min-w-0 flex-1 sm:flex-none">
+              <DateRangePicker
+                preset={preset}
+                range={range}
+                onChange={(nextPreset, nextRange) => {
+                  setPreset(nextPreset);
+                  const resolved = nextPreset === "CUSTOM" ? nextRange : resolvePreset(nextPreset, now);
+                  setRange(resolved);
+                  setFilters((f) => ({ ...f, dateFrom: resolved.from, dateTo: resolved.to }));
+                }}
+              />
+            </div>
           </div>
         </div>
       </div>

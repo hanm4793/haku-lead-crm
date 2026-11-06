@@ -537,12 +537,12 @@ function LeadDetailDialogBody({
         variant="drawer-right"
         className="flex h-[94dvh] flex-col gap-0 overflow-hidden p-0 md:h-dvh md:w-[min(920px,calc(100vw-4.25rem))]"
       >
-        {/* Header thông tin khách hàng — chừa chỗ bên phải cho nút đóng */}
-        <div className="shrink-0 border-b border-border bg-white py-3.5 pr-12 pl-4 sm:py-4 sm:pr-14 sm:pl-6">
-          <div className="space-y-2.5">
+        {/* Header thông tin khách hàng — tối ưu chiều cao gọn gàng trên Mobile */}
+        <div className="shrink-0 border-b border-border bg-white py-2.5 pr-12 pl-4 sm:py-4 sm:pr-14 sm:pl-6">
+          <div className="space-y-2">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <DialogTitle className="flex items-center gap-1.5 text-lg font-bold text-slate-900 sm:text-xl">
+                <DialogTitle className="flex items-center gap-1.5 text-base font-bold text-slate-900 sm:text-xl">
                   <span className="truncate">{lead.name ?? "Khách chưa có tên"}</span>
                   {profileEditable && !editingProfile && (
                     <button
@@ -623,21 +623,21 @@ function LeadDetailDialogBody({
                   </DialogDescription>
                 ) : (
                   <DialogDescription asChild>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                    <div className="no-scrollbar mt-1.5 flex items-center gap-2 overflow-x-auto text-sm text-muted-foreground sm:flex-wrap">
                       {lead.phone ? (
                         <a
                           href={`tel:${lead.phone}`}
-                          className="font-semibold text-slate-800 tabular-nums hover:text-primary hover:underline"
+                          className="shrink-0 font-semibold text-slate-800 tabular-nums hover:text-primary hover:underline"
                           title="Gọi trực tiếp"
                         >
                           {lead.phone}
                         </a>
                       ) : (
-                        <span className="font-medium text-slate-700">Chưa có số điện thoại</span>
+                        <span className="shrink-0 font-medium text-slate-700">Chưa có số điện thoại</span>
                       )}
 
                       {lead.phone && (
-                        <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="flex shrink-0 items-center gap-1.5 sm:flex-wrap">
                           <button
                             type="button"
                             onClick={() => {
@@ -745,8 +745,8 @@ function LeadDetailDialogBody({
               )}
             </div>
 
-            {/* Quick status badges, nằm dưới thông tin khách để không đè nút đóng */}
-            <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:gap-2">
+            {/* Quick status badges — ẩn trên mobile để tiết kiệm chiều cao khi mở bàn phím */}
+            <div className="no-scrollbar hidden items-center gap-1.5 overflow-x-auto sm:flex sm:flex-wrap sm:gap-2">
               <CategoryBadge category={draft.category} />
               <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                 {[

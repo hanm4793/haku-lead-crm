@@ -13,13 +13,13 @@ export function MarketingDataCard({ rows }: { rows: MarketingBreakdownRow[] }) {
   const maxLeads = Math.max(...displayRows.map((r) => r.leads), 1);
 
   return (
-    <div className="mt-2.5 space-y-2 rounded-xl border border-border/80 bg-card p-3 shadow-xs">
-      <div className="flex items-center justify-between border-b border-border/60 pb-2">
-        <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-900">
-          <TrendingUp className="size-4 text-primary" />
-          <span>Dữ liệu chi tiết & Liên kết quảng cáo</span>
+    <div className="mt-2.5 min-w-0 space-y-2 rounded-xl border border-border/80 bg-card p-2.5 shadow-xs sm:p-3">
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 pb-2">
+        <div className="flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold text-slate-900">
+          <TrendingUp className="size-4 shrink-0 text-primary" />
+          <span className="truncate">Dữ liệu chi tiết &amp; Liên kết quảng cáo</span>
         </div>
-        <span className="text-[11px] text-muted-foreground">{displayRows.length} mục</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">{displayRows.length} mục</span>
       </div>
 
       <div className="space-y-2.5 pt-1">
@@ -31,19 +31,19 @@ export function MarketingDataCard({ rows }: { rows: MarketingBreakdownRow[] }) {
           return (
             <div
               key={`${row.key}-${index}`}
-              className="group rounded-lg border border-border/70 bg-slate-50/60 p-2.5 transition-all hover:border-primary/40 hover:bg-white hover:shadow-xs"
+              className="group min-w-0 rounded-lg border border-border/70 bg-slate-50/60 p-2.5 transition-all hover:border-primary/40 hover:bg-white hover:shadow-xs"
             >
               {/* Tiêu đề mục & Rank badge */}
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-start gap-1.5">
                     {index === 0 && row.leads > 0 && (
-                      <span className="flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.2 text-[10px] font-semibold text-amber-800">
-                        <Flame className="size-3 text-amber-600 fill-amber-500" />
+                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                        <Flame className="size-3 fill-amber-500 text-amber-600" />
                         Top 1
                       </span>
                     )}
-                    <span className="font-semibold text-slate-800 text-[12.5px] leading-snug line-clamp-2">
+                    <span className="line-clamp-2 break-words text-[12.5px] leading-snug font-semibold text-slate-800">
                       {row.key}
                     </span>
                   </div>
@@ -59,7 +59,7 @@ export function MarketingDataCard({ rows }: { rows: MarketingBreakdownRow[] }) {
 
               {/* Progress bar so sánh lượng lead */}
               {row.leads > 0 && (
-                <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200/70 overflow-hidden">
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200/70">
                   <div
                     className="h-full rounded-full bg-emerald-500 transition-all duration-300"
                     style={{ width: `${widthPct}%` }}
@@ -68,37 +68,37 @@ export function MarketingDataCard({ rows }: { rows: MarketingBreakdownRow[] }) {
               )}
 
               {/* Lưới chỉ số (Chi tiêu, CPL, Click, CTR) */}
-              <div className="mt-2 grid grid-cols-3 gap-1.5 rounded-md bg-white p-2 text-[11px] border border-border/50">
-                <div>
-                  <div className="text-[10px] text-muted-foreground uppercase font-medium">Chi tiêu</div>
-                  <div className="font-semibold text-slate-800">{formatCurrency(row.spend)}</div>
+              <div className="mt-2 grid grid-cols-2 gap-1.5 rounded-md border border-border/50 bg-white p-2 text-[11px] sm:grid-cols-3">
+                <div className="min-w-0">
+                  <div className="truncate text-[10px] font-medium uppercase text-muted-foreground">Chi tiêu</div>
+                  <div className="truncate font-semibold tabular-nums text-slate-800">{formatCurrency(row.spend)}</div>
                 </div>
-                <div>
-                  <div className="text-[10px] text-muted-foreground uppercase font-medium">CPL (Chi phí/lead)</div>
-                  <div className="font-semibold text-emerald-600">
+                <div className="min-w-0">
+                  <div className="truncate text-[10px] font-medium uppercase text-muted-foreground">CPL</div>
+                  <div className="truncate font-semibold tabular-nums text-emerald-600">
                     {cpl !== null ? formatCurrency(cpl) : "—"}
                   </div>
                 </div>
-                <div>
-                  <div className="text-[10px] text-muted-foreground uppercase font-medium">Click / CTR</div>
-                  <div className="font-semibold text-slate-800">
+                <div className="col-span-2 min-w-0 border-t border-border/40 pt-1 sm:col-span-1 sm:border-t-0 sm:pt-0">
+                  <div className="truncate text-[10px] font-medium uppercase text-muted-foreground">Click / CTR</div>
+                  <div className="truncate font-semibold tabular-nums text-slate-800">
                     {formatNumber(row.clicks)} {ctr !== null && `(${formatPercent(ctr)})`}
                   </div>
                 </div>
               </div>
 
               {/* Nút liên kết trực tiếp (Facebook / CRM) */}
-              <div className="mt-2 flex flex-wrap items-center gap-1.5 pt-0.5 border-t border-border/40">
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/40 pt-1.5">
                 {row.adUrl && (
                   <a
                     href={row.adUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                    className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700 transition-colors hover:bg-blue-100"
                   >
-                    <Megaphone className="size-3" />
-                    <span>Xem bài quảng cáo Facebook</span>
-                    <ExternalLink className="size-2.5 opacity-70" />
+                    <Megaphone className="size-3 shrink-0" />
+                    <span>Xem quảng cáo</span>
+                    <ExternalLink className="size-2.5 shrink-0 opacity-70" />
                   </a>
                 )}
 
@@ -107,10 +107,10 @@ export function MarketingDataCard({ rows }: { rows: MarketingBreakdownRow[] }) {
                     href={row.crmUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                    className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-100"
                   >
                     <span>Xem trong CRM</span>
-                    <ExternalLink className="size-2.5 opacity-60" />
+                    <ExternalLink className="size-2.5 shrink-0 opacity-60" />
                   </a>
                 )}
               </div>

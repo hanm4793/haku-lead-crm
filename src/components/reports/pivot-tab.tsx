@@ -242,6 +242,31 @@ export function PivotTab({
           </div>
         </div>
 
+        {/* Bộ chọn sắp xếp hiển thị trên Mobile (thay cho bấm cột bảng) */}
+        <div className="space-y-1 md:hidden">
+          <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Sắp xếp theo</Label>
+          <Select
+            value={String(sortBy)}
+            onValueChange={(v) => {
+              setPage(1);
+              setSortBy(v as keyof PivotRow);
+              setSortOrder(v === "key" ? "asc" : "desc");
+            }}
+          >
+            <SelectTrigger size="sm" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="key">{PIVOT_DIMENSIONS[groupBy]} (A → Z)</SelectItem>
+              {METRIC_COLUMNS.map((col) => (
+                <SelectItem key={col.id as string} value={col.id as string}>
+                  {col.header} (Cao → Thấp)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
           {splitBy !== "NONE" && rows.length > 0 && (
             <Button
@@ -266,18 +291,161 @@ export function PivotTab({
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
-        <div className="px-4 pt-4 sm:px-5">
+        <div className="px-3.5 pt-3.5 sm:px-5 sm:pt-4">
           <div className="text-[15px] font-semibold">
             Bảng chỉ số theo {PIVOT_DIMENSIONS[groupBy].toLowerCase()}
             {splitBy !== "NONE" ? ` × ${PIVOT_DIMENSIONS[splitBy].toLowerCase()}` : ""}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Bấm tiêu đề cột để sắp xếp. KHQT+ gồm KHQT, GDTD và KHĐ. Khi chọn “Chi tiết 2 chiều”, bấm vào từng dòng cha
-            để đóng/mở dòng con.
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            KHQT+ gồm KHQT, GDTD và KHĐ.
+            {splitBy !== "NONE" ? " Bấm vào từng mục để mở/đóng chi tiết 2 chiều." : ""}
           </p>
         </div>
 
-        <div className="thin-scrollbar mt-3 overflow-x-auto">
+        {/* MOBILE CARD VIEW (< 768px) — Không bao giờ phải cuộn ngang */}
+        <div className="mt-3 divide-y divide-border/70 border-t border-border md:hidden">
+          {pagedRows.length > 0 && (
+            <div className="bg-primary/5 p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-primary">Tổng toàn bảng</span>
+                <span className="rounded-full bg-primary px-2.5 py-0.5 text-xs font-bold tabular-nums text-primary-foreground">
+                  {formatNumber(pivot.total.leads)} lead
+                </span>
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-1.5 text-xs">
+                {visibleMetrics
+                  .filter((c) => c.id !== "leads" && c.id !== "leadShare")
+                  .map((col) => {
+                    const rawVal = pivot.total[col.id] as number;
+                    return (
+                      <div key={col.id as string} className="min-w-0 rounded-lg bg-white/90 px-2 py-1.5 shadow-2xs">
+                        <div className="truncate text-[10px] text-muted-foreground">{col.header}</div>
+                        <div
+                          className={cn(
+                            "mt-0.5 font-semibold tabular-nums text-slate-800",
+                            col.tone === "danger" && rawVal > 0 && "text-rose-600",
+                            col.tone === "warning" && rawVal > 0 && "text-amber-600",
+                            col.tone === "success" && rawVal > 0 && "text-emerald-700",
+                          )}
+                        >
+                          {cellText(pivot.total, col)}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {pagedRows.length === 0 ? (
+            <div className="px-4 py-10 text-center text-xs text-muted-foreground">
+              Không có dữ liệu phù hợp bộ lọc hiện tại.
+            </div>
+          ) : (
+            pagedRows.map((row) => {
+              const isCollapsed = collapsedKeys.includes(row.key);
+              const childKeys =
+                splitBy !== "NONE"
+                  ? pivot.splitKeys.filter((sKey) => Boolean(pivot.split[row.key]?.[sKey]))
+                  : [];
+              const hasChildren = childKeys.length > 0;
+
+              return (
+                <div key={row.key} className="p-3.5">
+                  <div
+                    role={hasChildren ? "button" : undefined}
+                    tabIndex={hasChildren ? 0 : undefined}
+                    onClick={hasChildren ? () => toggleRowCollapse(row.key) : undefined}
+                    className={cn("space-y-2", hasChildren && "cursor-pointer")}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                        {hasChildren &&
+                          (isCollapsed ? (
+                            <ChevronRight className="size-4 shrink-0 text-slate-400" />
+                          ) : (
+                            <ChevronDown className="size-4 shrink-0 text-primary" />
+                          ))}
+                        <span className="min-w-0 break-words text-[14px] font-bold text-slate-900">{row.key}</span>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold tabular-nums text-slate-800">
+                        {formatNumber(row.leads)} ({formatPercent(row.leadShare)})
+                      </span>
+                    </div>
+
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${Math.max(4, (row.leads / maxLeads) * 100)}%` }}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 rounded-lg bg-slate-50/85 p-2 text-xs">
+                      {visibleMetrics
+                        .filter((c) => c.id !== "leads" && c.id !== "leadShare")
+                        .map((col) => {
+                          const rawVal = row[col.id] as number;
+                          return (
+                            <div key={col.id as string} className="min-w-0">
+                              <div className="truncate text-[10px] text-muted-foreground">{col.header}</div>
+                              <div
+                                className={cn(
+                                  "mt-0.5 font-semibold tabular-nums text-slate-800",
+                                  col.tone === "danger" && rawVal > 0 && "text-rose-600",
+                                  col.tone === "warning" && rawVal > 0 && "text-amber-600",
+                                  col.tone === "success" && rawVal > 0 && "text-emerald-700",
+                                  col.tone === "muted" && "text-slate-600",
+                                )}
+                              >
+                                {cellText(row, col)}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+
+                  {hasChildren && !isCollapsed && (
+                    <div className="mt-2.5 space-y-1.5 border-l-2 border-primary/25 pl-3">
+                      {childKeys.map((sKey) => {
+                        const child = pivot.split[row.key]![sKey]!;
+                        return (
+                          <div key={`${row.key}-${sKey}`} className="rounded-lg border border-border/60 bg-white p-2.5 text-xs">
+                            <div className="flex items-center justify-between gap-2 font-medium text-slate-700">
+                              <span className="min-w-0 truncate">↳ {sKey}</span>
+                              <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                                {formatNumber(child.leads)} lead
+                              </span>
+                            </div>
+                            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                              <span>
+                                Đã LH: <strong className="tabular-nums text-slate-800">{formatPercent(child.contactRate)}</strong>
+                              </span>
+                              <span>
+                                KHQT+: <strong className="tabular-nums text-emerald-700">{formatNumber(child.khqt)}</strong>
+                              </span>
+                              <span>
+                                KHĐ: <strong className="tabular-nums text-primary">{formatNumber(child.khd)}</strong>
+                              </span>
+                              {child.failed > 0 && (
+                                <span>
+                                  Loại: <strong className="tabular-nums text-rose-600">{formatNumber(child.failed)}</strong>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* DESKTOP & TABLET TABLE (>= 768px) */}
+        <div className="thin-scrollbar mt-3 hidden overflow-x-auto md:block">
           <table className="w-full min-w-max text-[13px]">
             <thead>
               <tr className="bg-[#f8fafc] text-[10px] uppercase tracking-wide text-slate-500">
@@ -431,7 +599,7 @@ export function PivotTab({
           }}
         />
 
-        <p className="border-t border-border px-4 py-3 text-[11px] text-muted-foreground sm:px-5">
+        <p className="border-t border-border px-3.5 py-3 text-[11px] text-muted-foreground sm:px-5">
           Xuất Excel gồm bảng đang xem (kèm các dòng con nếu chọn “Chi tiết 2 chiều”) + sheet cho từng chiều phân tích
           chính (nguồn, fanpage, phụ trách, trạng thái, sản phẩm).
         </p>

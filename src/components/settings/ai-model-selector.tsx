@@ -5,6 +5,7 @@ import { CheckCircle2, Loader2, Sparkles } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getAiModelLabel, GOOGLE_AI_MODELS } from "@/lib/ai/model";
 
 interface HealthResponse {
@@ -78,7 +79,7 @@ export function AiModelSelector({ defaultModelId }: { defaultModelId: string }) 
     <div className="space-y-2.5 rounded-lg border border-border/80 bg-slate-50/70 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-800">
-          <Sparkles className="size-3.5 text-primary" />
+          <Sparkles className="size-3.5 shrink-0 text-primary" />
           <span>Chọn Model AI trên CRM</span>
         </div>
         {activeOption?.badge && (
@@ -88,17 +89,18 @@ export function AiModelSelector({ defaultModelId }: { defaultModelId: string }) 
         )}
       </div>
 
-      <select
-        value={selectedModel}
-        onChange={(e) => handleChangeModel(e.target.value)}
-        className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-[13px] font-medium text-slate-800 shadow-2xs outline-hidden focus:border-primary focus:ring-2 focus:ring-primary/20"
-      >
-        {GOOGLE_AI_MODELS.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.label} ({m.id}){m.badge ? ` — ${m.badge}` : ""}
-          </option>
-        ))}
-      </select>
+      <Select value={selectedModel} onValueChange={handleChangeModel}>
+        <SelectTrigger className="w-full bg-background text-[13px] font-medium text-slate-800">
+          <SelectValue placeholder="Chọn model AI" />
+        </SelectTrigger>
+        <SelectContent>
+          {GOOGLE_AI_MODELS.map((m) => (
+            <SelectItem key={m.id} value={m.id}>
+              {m.label} ({m.id}){m.badge ? ` — ${m.badge}` : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {activeOption && (
         <p className="text-[11.5px] leading-relaxed text-muted-foreground">{activeOption.description}</p>
@@ -111,7 +113,7 @@ export function AiModelSelector({ defaultModelId }: { defaultModelId: string }) 
           size="sm"
           onClick={handleCheckHealth}
           disabled={checking}
-          className="h-7 text-[11.5px]"
+          className="h-8 text-[11.5px] sm:h-7"
         >
           {checking ? (
             <>
@@ -125,7 +127,7 @@ export function AiModelSelector({ defaultModelId }: { defaultModelId: string }) 
 
         {health && !health.error && health.availableModels && (
           <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-emerald-700">
-            <CheckCircle2 className="size-3.5" />
+            <CheckCircle2 className="size-3.5 shrink-0" />
             Đã nhận {health.availableModels.length} model (sẵn sàng cho {getAiModelLabel(selectedModel)})
           </span>
         )}

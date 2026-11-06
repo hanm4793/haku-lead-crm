@@ -12,7 +12,7 @@ export default async function AccountPasswordPage() {
   if (viewer.isDemo) redirect("/account");
 
   return (
-    <div className="mx-auto max-w-lg space-y-5 p-5">
+    <div className="mx-auto max-w-lg space-y-4 p-3 sm:space-y-5 sm:p-5">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Đổi mật khẩu</h1>
         <p className="mt-1 text-sm text-muted-foreground">Cập nhật mật khẩu cho tài khoản đang đăng nhập.</p>

@@ -19,8 +19,8 @@ export default async function ProjectsPage() {
       : [];
 
   return (
-    <div className="space-y-4 p-4">
-      <div>
+    <div className="space-y-3.5 p-3 sm:space-y-4 sm:p-4">
+      <div className="max-md:hidden">
         <h1 className="text-xl font-bold">Dự án</h1>
         <p className="text-[13px] text-muted-foreground">
           Quản lý không gian làm việc, catalog và field phụ theo từng project.

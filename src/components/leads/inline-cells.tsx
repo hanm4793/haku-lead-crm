@@ -47,7 +47,7 @@ export function ContactStatusCell({
       <DropdownMenuTrigger
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+          "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium touch-manipulation transition-colors",
           contacted
             ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
             : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100",
@@ -62,9 +62,9 @@ export function ContactStatusCell({
         {CONTACT_STATUS_OPTIONS.map((option) => (
           <DropdownMenuItem key={option.value} onSelect={() => onChange(option.value)}>
             {option.value === "DA_LIEN_HE" ? (
-              <Check className="size-3.5 text-emerald-600" />
+              <Check className="size-4 text-emerald-600 md:size-3.5" />
             ) : (
-              <PhoneOff className="size-3.5 text-blue-600" />
+              <PhoneOff className="size-4 text-blue-600 md:size-3.5" />
             )}
             {option.label}
           </DropdownMenuItem>
@@ -127,7 +127,7 @@ export function CategoryCell({
       <DropdownMenuTrigger
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+          "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium touch-manipulation transition-colors",
           CATEGORY_CHIP_CLASS[value],
         )}
       >
@@ -149,11 +149,11 @@ export function CategoryCell({
                     }}
                     className="gap-2"
                   >
-                    <span className="size-2 shrink-0 rounded-full" style={{ background: item.color }} />
+                    <span className="size-2.5 shrink-0 rounded-full md:size-2" style={{ background: item.color }} />
                     <span className="font-medium">{item.label}</span>
                     <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
                       {item.hint}
-                      <ChevronRight className="size-3" />
+                      <ChevronRight className="size-3.5" />
                     </span>
                   </DropdownMenuItem>
                 );
@@ -164,7 +164,7 @@ export function CategoryCell({
                   onSelect={() => onChange(item.value, null)}
                   className="gap-2"
                 >
-                  <span className="size-2 shrink-0 rounded-full" style={{ background: item.color }} />
+                  <span className="size-2.5 shrink-0 rounded-full md:size-2" style={{ background: item.color }} />
                   <span className="font-medium">{item.label}</span>
                   <span className="ml-auto text-xs text-muted-foreground">{item.hint}</span>
                 </DropdownMenuItem>
@@ -181,7 +181,7 @@ export function CategoryCell({
                   e.stopPropagation();
                   setShowFailReasons(false);
                 }}
-                className="text-[11px] font-normal text-primary hover:underline"
+                className="rounded-md px-2 py-0.5 text-xs font-semibold normal-case text-primary hover:bg-primary/10"
               >
                 ← Quay lại
               </button>
@@ -191,7 +191,7 @@ export function CategoryCell({
               <DropdownMenuItem
                 key={reason.value}
                 onSelect={() => onChange("FAIL", reason.value)}
-                className="text-xs"
+                className="text-[13.5px] md:text-xs"
               >
                 {reason.label}
               </DropdownMenuItem>
@@ -223,7 +223,7 @@ export function AssigneeCell({
       );
     }
     return (
-      <span className="block truncate text-slate-700" title={value}>
+      <span className="inline-block max-w-[140px] truncate align-bottom text-xs font-medium text-slate-700 sm:max-w-[180px]" title={value}>
         {value}
       </span>
     );
@@ -234,7 +234,7 @@ export function AssigneeCell({
       <DropdownMenuTrigger
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors",
+          "inline-flex max-w-[145px] items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium touch-manipulation transition-colors sm:max-w-[180px] sm:py-1",
           value
             ? "border-slate-200 bg-white text-slate-700 hover:border-primary/40 hover:bg-slate-50"
             : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100",
@@ -246,13 +246,14 @@ export function AssigneeCell({
       <DropdownMenuContent align="start" className="max-h-64 w-52 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuLabel>Giao người phụ trách</DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => onChange(null)} className="gap-2 text-amber-700">
-          <UserX className="size-3.5" />
+          <UserCheck className="hidden" />
+          <UserX className="size-4 md:size-3.5" />
           Chưa giao
         </DropdownMenuItem>
         {assignees.length > 0 && <DropdownMenuSeparator />}
         {assignees.map((name) => (
           <DropdownMenuItem key={name} onSelect={() => onChange(name)} className="gap-2">
-            <UserCheck className={cn("size-3.5", value === name ? "text-primary" : "text-slate-400")} />
+            <UserCheck className={cn("size-4 md:size-3.5", value === name ? "text-primary" : "text-slate-400")} />
             <span className={cn("truncate", value === name && "font-semibold text-primary")}>{name}</span>
           </DropdownMenuItem>
         ))}

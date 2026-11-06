@@ -97,10 +97,10 @@ export function ConversionFunnel({ steps }: { steps: FunnelStep[] }) {
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-slate-400 sm:gap-3">
-        <div className="w-28 shrink-0 sm:w-44">Bậc chuyển đổi</div>
+      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-400 sm:gap-3">
+        <div className="w-24 shrink-0 sm:w-44">Bậc chuyển đổi</div>
         <div className="flex-1 text-center">Số lượng · % tổng</div>
-        <div className="w-12 shrink-0 text-right sm:w-16">Vs trước</div>
+        <div className="w-11 shrink-0 text-right sm:w-16">Vs trước</div>
       </div>
       {steps.map((step, index) => {
         const width = Math.max(18, (step.value / max) * 100);
@@ -108,8 +108,8 @@ export function ConversionFunnel({ steps }: { steps: FunnelStep[] }) {
           index < steps.length - 1 ? Math.max(18, (steps[index + 1].value / max) * 100) : width * 0.9;
 
         return (
-          <div key={step.label} className="flex items-center gap-2 sm:gap-3">
-            <div className="flex w-28 shrink-0 items-center gap-1.5 text-[11.5px] text-slate-600 sm:w-44 sm:gap-2 sm:text-[12px]">
+          <div key={step.label} className="flex items-center gap-1.5 sm:gap-3">
+            <div className="flex w-24 shrink-0 items-center gap-1 text-[11px] text-slate-600 sm:w-44 sm:gap-2 sm:text-[12px]">
               <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold tabular-nums text-slate-500">
                 {index + 1}
               </span>
@@ -118,7 +118,7 @@ export function ConversionFunnel({ steps }: { steps: FunnelStep[] }) {
               </span>
             </div>
 
-            <div className="relative h-10 flex-1 sm:h-11">
+            <div className="relative h-10 min-w-0 flex-1 sm:h-11">
               <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="h-full w-full">
                 <polygon
                   points={`${(100 - width) / 2},0 ${(100 + width) / 2},0 ${(100 + nextWidth) / 2},40 ${(100 - nextWidth) / 2},40`}
@@ -131,7 +131,7 @@ export function ConversionFunnel({ steps }: { steps: FunnelStep[] }) {
               </div>
             </div>
 
-            <div className="w-12 shrink-0 text-right text-[11.5px] font-medium tabular-nums text-slate-500 sm:w-16 sm:text-[12px]">
+            <div className="w-11 shrink-0 text-right text-[11px] font-medium tabular-nums text-slate-500 sm:w-16 sm:text-[12px]">
               {index === 0 ? "—" : formatPercent(step.stepConversion)}
             </div>
           </div>
@@ -265,7 +265,7 @@ export function CarModelChart({ data }: { data: ModelBar[] }) {
     <ResponsiveContainer width="100%" height={Math.max(220, data.length * 42)}>
       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 4 }} barGap={3}>
         <XAxis type="number" tick={AXIS_STYLE} tickLine={false} axisLine={{ stroke: GRID_COLOR }} allowDecimals={false} />
-        <YAxis type="category" dataKey="model" tick={AXIS_STYLE} tickLine={false} axisLine={false} width={96} />
+        <YAxis type="category" dataKey="model" tick={AXIS_STYLE} tickLine={false} axisLine={false} width={78} />
         <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "#f1f5f9" }} />
         <Legend iconType="square" iconSize={9} formatter={(v) => <span className="text-[11px] text-slate-600">{v}</span>} />
         <Bar dataKey="leads" name="Lead" fill="#12479e" radius={[0, 3, 3, 0]} barSize={10} />

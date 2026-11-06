@@ -81,13 +81,13 @@ export function FacebookSyncPanel({
   };
 
   return (
-    <div className="space-y-3 rounded-md border border-border/60 bg-muted/20 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
         <span className="font-medium text-slate-800">Facebook (Lead Ads &amp; Marketing Insights)</span>
         {isAdmin && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <Select value={autoSyncMinutes} onValueChange={handleAutoSyncChange}>
-              <SelectTrigger className="h-8 w-[175px] gap-1.5 bg-card text-xs">
+              <SelectTrigger className="h-8 flex-1 gap-1.5 bg-card text-xs sm:w-[175px] sm:flex-none">
                 <Clock className="size-3.5 shrink-0 text-primary" />
                 <SelectValue placeholder="Tự động đồng bộ" />
               </SelectTrigger>
@@ -111,33 +111,33 @@ export function FacebookSyncPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 gap-1.5 bg-card text-xs"
+              className="h-8 flex-1 gap-1.5 bg-card text-xs max-md:h-9 sm:flex-none"
               disabled={syncing || !tokenConfigured}
               onClick={() => void handleFullSync()}
             >
-              <RefreshCw className={cn("size-3.5", syncing && "animate-spin")} />
-              {syncing ? "Đang đồng bộ…" : "Đồng bộ toàn bộ ngay"}
+              <RefreshCw className={cn("size-3.5 shrink-0", syncing && "animate-spin")} />
+              <span className="truncate">{syncing ? "Đang đồng bộ…" : "Đồng bộ toàn bộ ngay"}</span>
             </Button>
           </div>
         )}
       </div>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">Access token (FACEBOOK_ACCESS_TOKEN)</span>
+      <div className="space-y-2 text-xs sm:text-[13px]">
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          <span className="min-w-0 break-all text-muted-foreground">Access token (FACEBOOK_ACCESS_TOKEN)</span>
           <Badge variant={tokenConfigured ? "success" : "warning"}>
             {tokenConfigured ? "Đã cấu hình" : "Thiếu token"}
           </Badge>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">Ad account (FACEBOOK_AD_ACCOUNT_ID)</span>
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          <span className="min-w-0 break-all text-muted-foreground">Ad account (FACEBOOK_AD_ACCOUNT_ID)</span>
           <Badge variant={insightsConfigured ? "success" : "warning"}>
             {insightsConfigured ? "Đã cấu hình" : "Thiếu"}
           </Badge>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
           <span className="text-muted-foreground">Endpoint Cron tự động (Server)</span>
-          <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-700">
+          <code className="max-w-full break-words rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-700">
             Lead: 15 phút/lần · Insights: 30 phút/lần (24/7)
           </code>
         </div>
@@ -157,4 +157,3 @@ export function FacebookSyncPanel({
     </div>
   );
 }
-

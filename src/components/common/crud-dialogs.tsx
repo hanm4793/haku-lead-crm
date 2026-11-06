@@ -60,7 +60,7 @@ export function FormDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-md:px-4">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
@@ -108,7 +108,7 @@ export function ConfirmDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-sm max-md:px-4">
         <DialogHeader>
           <DialogTitle className="text-rose-600">{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -142,15 +142,27 @@ export function RowActions({
   deleteTitle?: string;
 }) {
   return (
-    <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+    <div className="flex items-center justify-end gap-2 md:gap-1" onClick={(e) => e.stopPropagation()}>
       {onEdit && (
-        <Button variant="ghost" size="iconSm" title={editTitle} onClick={onEdit}>
-          <Edit2 className="size-3.5 text-slate-600 hover:text-primary" />
+        <Button
+          variant="ghost"
+          size="iconSm"
+          title={editTitle}
+          onClick={onEdit}
+          className="max-md:size-9 max-md:border max-md:border-border/80 max-md:bg-white"
+        >
+          <Edit2 className="size-4 text-slate-600 hover:text-primary md:size-3.5" />
         </Button>
       )}
       {onDelete && (
-        <Button variant="ghost" size="iconSm" title={deleteTitle} onClick={onDelete}>
-          <Trash2 className="size-3.5 text-slate-400 hover:text-rose-600" />
+        <Button
+          variant="ghost"
+          size="iconSm"
+          title={deleteTitle}
+          onClick={onDelete}
+          className="max-md:size-9 max-md:border max-md:border-rose-200/80 max-md:bg-rose-50/50"
+        >
+          <Trash2 className="size-4 text-rose-500 hover:text-rose-600 md:size-3.5 md:text-slate-400" />
         </Button>
       )}
     </div>

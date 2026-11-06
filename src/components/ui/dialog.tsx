@@ -11,10 +11,18 @@ const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal = DialogPrimitive.Portal;
 const DialogClose = DialogPrimitive.Close;
 
-function DialogOverlay({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
+function DialogOverlay({
+  className,
+  onClick,
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.(e);
+      }}
       className={cn(
         "fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-[1px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         className,
@@ -41,6 +49,7 @@ function DialogContent({
   showClose = true,
   variant = "modal",
   mobileSheet = true,
+  onClick,
   ...props
 }: DialogContentProps) {
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -110,6 +119,10 @@ function DialogContent({
       <DialogPrimitive.Content
         ref={contentRef}
         data-slot="dialog-content"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick?.(e);
+        }}
         className={cn(
           "fixed z-50 border border-border bg-card shadow-2xl duration-200 outline-none",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",

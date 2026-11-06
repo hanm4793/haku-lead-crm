@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn, formatNumber } from "@/lib/utils";
 
 const DEFAULT_PAGE_SIZES = [10, 25, 50, 100, 200];
@@ -34,34 +35,43 @@ export function Pagination({
 
   return (
     <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border bg-card px-3.5 py-2.5 text-[13px] sm:px-4">
-      <div className="flex min-w-0 items-center gap-2.5">
+      <div className="flex min-w-0 items-center gap-2">
         <span className="truncate tabular-nums text-xs text-muted-foreground sm:text-[13px]">
           <span className="hidden sm:inline">Hiển thị </span>
           {formatNumber(first)}–{formatNumber(last)} / {formatNumber(total)}{" "}
           <span className="hidden xs:inline">{unit}</span>
         </span>
         {onPageSizeChange && pageSizes.length > 1 && (
-          <select
-            aria-label="Số dòng mỗi trang"
-            value={safePageSize}
-            onChange={(e) => {
-              const nextSize = Number(e.target.value);
-              onPageSizeChange(nextSize);
-              onPageChange(1);
-            }}
-            className="hidden h-7 rounded-md border border-input bg-card px-2 text-xs tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:block sm:text-[13px]"
-          >
-            {pageSizes.map((size) => (
-              <option key={size} value={size}>
-                {size}/trang
-              </option>
-            ))}
-          </select>
+          <div className="hidden sm:block">
+            <Select
+              value={String(safePageSize)}
+              onValueChange={(v) => {
+                const nextSize = Number(v);
+                onPageSizeChange(nextSize);
+                onPageChange(1);
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                aria-label="Số dòng mỗi trang"
+                className="h-7 max-md:h-8 w-auto gap-1.5 px-2.5 text-xs tabular-nums"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {pageSizes.map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size}/trang
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
       </div>
 
       {/* Mobile: Cụm nút Trước / Trang hiện tại / Sau kích thước chuẩn cảm ứng */}
-      <div className="flex items-center gap-1.5 sm:hidden">
+      <div className="flex shrink-0 items-center gap-1.5 sm:hidden">
         <Button
           type="button"
           variant="outline"

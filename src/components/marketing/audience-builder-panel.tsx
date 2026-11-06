@@ -760,9 +760,9 @@ export function AudienceBuilderPanel({
   return (
     <>
       {/* DANH SÁCH TỆP KHÁCH HÀNG */}
-      <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xs">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2.5">
-          <div className="relative w-60">
+      <div className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xs">
+        <div className="grid grid-cols-2 gap-2 border-b border-border px-3 py-2.5 sm:flex sm:flex-wrap sm:items-center sm:px-3.5">
+          <div className="relative col-span-2 sm:w-60">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={listSearch}
@@ -771,7 +771,7 @@ export function AudienceBuilderPanel({
                 setListPage(1);
               }}
               placeholder="Tìm tên tệp, ghi chú, ID..."
-              className="h-8 pl-8 text-[13px]"
+              className="h-9 pl-8 text-[13px] sm:h-8"
             />
           </div>
 
@@ -794,7 +794,7 @@ export function AudienceBuilderPanel({
               }
             }}
             placeholder="Tất cả dự án"
-            className="h-8 w-[180px] text-[13px]"
+            className="h-9 w-full text-[13px] sm:h-8 sm:w-[180px]"
             contentClassName="w-[260px]"
           />
 
@@ -806,53 +806,56 @@ export function AudienceBuilderPanel({
               setListPage(1);
             }}
             placeholder="Tất cả fanpage"
-            className="h-8 w-[190px] text-[13px]"
+            className="h-9 w-full text-[13px] sm:h-8 sm:w-[190px]"
             contentClassName="w-[280px]"
           />
 
-          <Select
-            value={listSyncStatus}
-            onValueChange={(val) => {
-              setListSyncStatus(val as SyncFilterStatus);
-              setListPage(1);
-            }}
-          >
-            <SelectTrigger className="h-8 w-[160px] text-[13px]">
-              <SelectValue placeholder="Trạng thái" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL" className="text-xs">
-                Tất cả trạng thái
-              </SelectItem>
-              <SelectItem value="SYNCED" className="text-xs">
-                Đã đồng bộ
-              </SelectItem>
-              <SelectItem value="UNSYNCED" className="text-xs">
-                Chưa đồng bộ
-              </SelectItem>
-              <SelectItem value="ERROR" className="text-xs">
-                Lỗi đồng bộ
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          {hasListFilters && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={clearListFilters}
-              className="h-8 gap-1 px-2 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+          <div className="col-span-2 sm:col-span-1 sm:w-[160px]">
+            <Select
+              value={listSyncStatus}
+              onValueChange={(val) => {
+                setListSyncStatus(val as SyncFilterStatus);
+                setListPage(1);
+              }}
             >
-              <X className="size-3.5" />
-              Xóa lọc
-            </Button>
-          )}
+              <SelectTrigger className="h-9 w-full text-[13px] sm:h-8">
+                <SelectValue placeholder="Trạng thái" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL" className="text-xs">
+                  Tất cả trạng thái
+                </SelectItem>
+                <SelectItem value="SYNCED" className="text-xs">
+                  Đã đồng bộ
+                </SelectItem>
+                <SelectItem value="UNSYNCED" className="text-xs">
+                  Chưa đồng bộ
+                </SelectItem>
+                <SelectItem value="ERROR" className="text-xs">
+                  Lỗi đồng bộ
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs text-muted-foreground tabular-nums">
-              <strong>{filteredSegments.length}</strong>/{initialSegments.length} tệp
-            </span>
+          <div className="col-span-2 flex items-center justify-between gap-2 sm:ml-auto sm:w-auto">
+            <div className="flex items-center gap-2">
+              {hasListFilters && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearListFilters}
+                  className="h-8 gap-1 px-2 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                >
+                  <X className="size-3.5" />
+                  Xóa lọc
+                </Button>
+              )}
+              <span className="text-xs text-muted-foreground tabular-nums">
+                <strong>{filteredSegments.length}</strong>/{initialSegments.length} tệp
+              </span>
+            </div>
 
             <Button
               type="button"
@@ -906,307 +909,510 @@ export function AudienceBuilderPanel({
             </Button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-border bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                <tr>
-                  <th className="px-4 py-2.5">Tên tệp & Ghi chú</th>
-                  <th className="px-3.5 py-2.5">Dự án & Fanpage</th>
-                  <th className="px-3.5 py-2.5">Bộ lọc</th>
-                  <th className="px-3.5 py-2.5 text-right">Quy mô KH</th>
-                  <th className="px-3.5 py-2.5">Đồng bộ TKQC</th>
-                  <th className="px-3.5 py-2.5">Ngày tạo</th>
-                  <th className="px-4 py-2.5 text-right">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/70">
-                {pagedSegments.map((seg) => {
-                  const pageIds = seg.filters.facebookPageIds ?? [];
-                  const filterProjIds = seg.filters.projectIds ?? [];
-                  const filterCampaigns = seg.filters.campaigns ?? [];
-                  const filterCats = seg.filters.categories ?? [];
-                  const filterStatuses = seg.filters.contactStatuses ?? [];
-                  const filterSources = seg.filters.sources ?? [];
-                  const filterChannels = seg.filters.channelDetails ?? [];
-                  const hasDateRange = Boolean(
-                    seg.filters.dateFrom || seg.filters.dateTo,
-                  );
-                  const isSyncing = syncingId === seg.id;
-                  const isExportingRow = EXPORT_FORMAT_ITEMS.some(
-                    (it) => exportingKey === `${seg.id}_${it.format}`,
-                  );
-                  const cleanActId =
-                    seg.facebookAdAccountId?.replace(/^act_/, "") ?? "";
+          <>
+            {/* MOBILE CARD LIST (< 768px) — Trải nghiệm Native không cần cuộn ngang */}
+            <div className="divide-y divide-border/70 md:hidden">
+              {pagedSegments.map((seg) => {
+                const pageIds = seg.filters.facebookPageIds ?? [];
+                const filterProjIds = seg.filters.projectIds ?? [];
+                const filterCampaigns = seg.filters.campaigns ?? [];
+                const filterCats = seg.filters.categories ?? [];
+                const isSyncing = syncingId === seg.id;
+                const isExportingRow = EXPORT_FORMAT_ITEMS.some(
+                  (it) => exportingKey === `${seg.id}_${it.format}`,
+                );
+                const cleanActId =
+                  seg.facebookAdAccountId?.replace(/^act_/, "") ?? "";
+                const projectBadgeLabel =
+                  filterProjIds.length > 1
+                    ? `${filterProjIds.length} dự án`
+                    : filterProjIds.length === 1
+                      ? (projectNameById.get(filterProjIds[0]!) ??
+                        seg.projectName ??
+                        "1 dự án")
+                      : (seg.projectName ?? "Tất cả dự án");
 
-                  const projectBadgeLabel =
-                    filterProjIds.length > 1
-                      ? `${filterProjIds.length} dự án`
-                      : filterProjIds.length === 1
-                        ? (projectNameById.get(filterProjIds[0]!) ??
-                          seg.projectName ??
-                          "1 dự án")
-                        : (seg.projectName ?? "Tất cả dự án");
-
-                  const hasAnyCriteria =
-                    filterCampaigns.length > 0 ||
-                    filterCats.length > 0 ||
-                    filterStatuses.length > 0 ||
-                    filterSources.length > 0 ||
-                    filterChannels.length > 0 ||
-                    hasDateRange;
-
-                  return (
-                    <tr key={seg.id} className="transition hover:bg-slate-50/80">
-                      <td className="max-w-[240px] px-4 py-3 align-top">
+                return (
+                  <div key={seg.id} className="space-y-2.5 p-3.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
                         <button
                           type="button"
                           onClick={() => loadSegmentIntoBuilder(seg)}
-                          className="text-left font-bold text-slate-900 hover:text-primary hover:underline"
-                          title="Mở cấu hình tệp này"
+                          className="text-left text-[14px] font-bold leading-snug text-slate-900 hover:text-primary"
                         >
                           {ensureCrmPrefix(seg.name)}
                         </button>
                         {seg.description && (
-                          <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">
+                          <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">
                             {seg.description}
                           </p>
                         )}
-                      </td>
-
-                      <td className="max-w-[220px] px-3.5 py-3 align-top">
-                        <div className="flex flex-wrap items-center gap-1">
-                          <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-                            {projectBadgeLabel}
-                          </Badge>
-                          {pageIds.length === 0 ? (
-                            <Badge variant="muted" className="text-[10px]">
-                              Tất cả Fanpage
-                            </Badge>
-                          ) : (
-                            pageIds.slice(0, 2).map((pid) => (
-                              <span
-                                key={pid}
-                                className="max-w-[160px] truncate rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-800"
-                              >
-                                {pageNameById.get(pid) ?? pid}
-                              </span>
-                            ))
-                          )}
-                          {pageIds.length > 2 && (
-                            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-800">
-                              +{pageIds.length - 2}
-                            </span>
-                          )}
+                      </div>
+                      <div className="shrink-0 text-right tabular-nums">
+                        <div className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-extrabold text-emerald-700">
+                          {formatNumber(seg.liveUniqueContacts)} SĐT
                         </div>
-                      </td>
-
-                      <td className="max-w-[260px] px-3.5 py-3 align-top">
-                        {!hasAnyCriteria ? (
-                          <span className="text-[11px] text-slate-500">
-                            Tất cả KH hợp lệ
-                          </span>
-                        ) : (
-                          <div className="flex flex-wrap gap-1">
-                            {filterCampaigns.length > 0 && (
-                              <span
-                                className="max-w-[190px] truncate rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
-                                title={filterCampaigns.join(", ")}
-                              >
-                                {filterCampaigns.length === 1
-                                  ? filterCampaigns[0]
-                                  : `${filterCampaigns.length} chiến dịch`}
-                              </span>
-                            )}
-                            {filterCats.map((cat) => (
-                              <span
-                                key={cat}
-                                className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700"
-                              >
-                                {CATEGORY_CHART_LABEL[cat] ?? cat}
-                              </span>
-                            ))}
-                            {filterStatuses.map((st) => (
-                              <span
-                                key={st}
-                                className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800"
-                              >
-                                {CONTACT_STATUS_LABEL[st] ?? st}
-                              </span>
-                            ))}
-                            {filterSources.map((src) => (
-                              <span
-                                key={src}
-                                className="rounded bg-purple-50 px-1.5 py-0.5 text-[10px] font-medium text-purple-800"
-                              >
-                                {LEAD_SOURCE_LABEL[src] ?? src}
-                              </span>
-                            ))}
-                            {filterChannels.map((ch) => (
-                              <span
-                                key={ch}
-                                className="rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-800"
-                              >
-                                {CHANNEL_LABEL[ch] ?? ch}
-                              </span>
-                            ))}
-                            {hasDateRange && (
-                              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
-                                {seg.filters.dateFrom
-                                  ? formatDate(seg.filters.dateFrom)
-                                  : "..."}{" "}
-                                →{" "}
-                                {seg.filters.dateTo
-                                  ? formatDate(seg.filters.dateTo)
-                                  : "nay"}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="px-3.5 py-3 text-right align-top tabular-nums">
-                        <span className="text-sm font-extrabold text-emerald-700">
-                          {formatNumber(seg.liveUniqueContacts)}
-                        </span>
-                        <span className="ml-1 text-[11px] text-slate-500">SĐT</span>
-                        <p className="text-[11px] text-slate-500">
+                        <div className="mt-0.5 text-[10.5px] text-muted-foreground">
                           {formatNumber(seg.liveRawLeads)} lead
-                          {seg.liveValidEmails > 0
-                            ? ` · ${formatNumber(seg.liveValidEmails)} email`
-                            : ""}
-                        </p>
-                      </td>
+                        </div>
+                      </div>
+                    </div>
 
-                      <td className="max-w-[240px] px-3.5 py-3 align-top">
-                        {seg.lastSyncStatus === "ok" && seg.facebookAudienceId ? (
-                          <div className="space-y-0.5">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                                <CheckCircle2 className="size-3" />
-                                Đã đồng bộ
-                              </span>
-                              {cleanActId && (
-                                <a
-                                  href={`https://adsmanager.facebook.com/adsmanager/audiences?act=${cleanActId}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
-                                >
-                                  Mở TKQC
-                                  <ExternalLink className="size-2.5" />
-                                </a>
-                              )}
-                            </div>
-                            <p className="font-mono text-[10px] text-slate-500">
-                              ID: {seg.facebookAudienceId}
-                            </p>
-                          </div>
-                        ) : seg.lastSyncStatus === "error" ? (
-                          <div className="space-y-0.5">
-                            <Badge variant="danger" className="text-[10px]">
-                              Lỗi đồng bộ
-                            </Badge>
-                            {seg.lastSyncMessage && (
-                              <p
-                                className="line-clamp-2 text-[11px] text-red-600"
-                                title={seg.lastSyncMessage}
-                              >
-                                {seg.lastSyncMessage}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-slate-400">
-                            Chưa đồng bộ
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                        {projectBadgeLabel}
+                      </Badge>
+                      {pageIds.length === 0 ? (
+                        <Badge variant="muted" className="text-[10px]">
+                          Tất cả Fanpage
+                        </Badge>
+                      ) : (
+                        pageIds.slice(0, 2).map((pid) => (
+                          <span
+                            key={pid}
+                            className="max-w-[160px] truncate rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-800"
+                          >
+                            {pageNameById.get(pid) ?? pid}
                           </span>
+                        ))
+                      )}
+                      {filterCats.map((cat) => (
+                        <span
+                          key={cat}
+                          className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700"
+                        >
+                          {CATEGORY_CHART_LABEL[cat] ?? cat}
+                        </span>
+                      ))}
+                      {filterCampaigns.length > 0 && (
+                        <span className="max-w-[160px] truncate rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          {filterCampaigns.length === 1
+                            ? filterCampaigns[0]
+                            : `${filterCampaigns.length} chiến dịch`}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                      <div className="min-w-0 truncate">
+                        {seg.lastSyncStatus === "ok" && seg.facebookAudienceId ? (
+                          <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                            <CheckCircle2 className="size-3.5 shrink-0" />
+                            Đã đồng bộ ({seg.facebookAudienceId})
+                          </span>
+                        ) : seg.lastSyncStatus === "error" ? (
+                          <span className="font-semibold text-rose-600">
+                            Lỗi đồng bộ
+                          </span>
+                        ) : (
+                          <span>Chưa đồng bộ TKQC</span>
                         )}
-                      </td>
-
-                      <td className="whitespace-nowrap px-3.5 py-3 align-top text-[11px] text-slate-500">
+                      </div>
+                      <span className="shrink-0 tabular-nums">
                         {formatDateTime(seg.createdAt)}
-                      </td>
+                      </span>
+                    </div>
 
-                      <td className="px-4 py-3 text-right align-top">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {tokenConfigured && (
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 border-t border-border/60 pt-2.5">
+                      <div className="flex items-center gap-1.5">
+                        {tokenConfigured && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isSyncing}
+                            onClick={() => void handleSyncSegment(seg)}
+                            className="h-8.5 gap-1 text-xs"
+                          >
+                            {isSyncing ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <CloudUpload className="size-3.5 text-primary" />
+                            )}
+                            Đồng bộ
+                          </Button>
+                        )}
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
                             <Button
                               type="button"
-                              size="xs"
+                              size="sm"
                               variant="outline"
-                              disabled={isSyncing}
-                              onClick={() => void handleSyncSegment(seg)}
-                              className="gap-1"
+                              disabled={isExportingRow}
+                              className="h-8.5 gap-1 text-xs"
                             >
-                              {isSyncing ? (
-                                <Loader2 className="size-3 animate-spin" />
+                              {isExportingRow ? (
+                                <Loader2 className="size-3.5 animate-spin" />
                               ) : (
-                                <CloudUpload className="size-3 text-primary" />
+                                <Download className="size-3.5 text-slate-600" />
                               )}
-                              Đồng bộ
+                              Xuất file
+                              <ChevronDown className="size-3 opacity-60" />
                             </Button>
-                          )}
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            {EXPORT_FORMAT_ITEMS.map((item) => (
+                              <DropdownMenuItem
+                                key={item.format}
+                                onSelect={() => void handleExport(item.format, seg)}
+                                className="gap-2 text-xs"
+                              >
+                                <Download className="size-3.5 text-slate-500" />
+                                {item.label}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
 
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
+                      <div className="flex items-center gap-1.5">
+                        {cleanActId && seg.facebookAudienceId && (
+                          <a
+                            href={`https://adsmanager.facebook.com/adsmanager/audiences?act=${cleanActId}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label="Mở TKQC"
+                            className="flex size-8.5 items-center justify-center rounded-lg border border-border bg-white text-primary"
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </a>
+                        )}
+                        <Button
+                          type="button"
+                          size="iconSm"
+                          variant="outline"
+                          onClick={() => loadSegmentIntoBuilder(seg)}
+                          title="Nhân bản cấu hình tệp"
+                          className="size-8.5"
+                        >
+                          <Copy className="size-3.5 text-slate-600" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="iconSm"
+                          variant="outline"
+                          disabled={deletingId === seg.id}
+                          onClick={() => void handleDelete(seg)}
+                          title="Xoá tệp"
+                          className="size-8.5 border-rose-200/80 bg-rose-50/50 text-rose-500"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* DESKTOP & TABLET TABLE (>= 768px) */}
+            <div className="thin-scrollbar hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[820px] text-left text-xs">
+                <thead className="border-b border-border bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  <tr>
+                    <th className="sticky left-0 z-10 bg-slate-50 px-4 py-2.5 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)]">
+                      Tên tệp &amp; Ghi chú
+                    </th>
+                    <th className="px-3.5 py-2.5">Dự án &amp; Fanpage</th>
+                    <th className="px-3.5 py-2.5">Bộ lọc</th>
+                    <th className="px-3.5 py-2.5 text-right">Quy mô KH</th>
+                    <th className="px-3.5 py-2.5">Đồng bộ TKQC</th>
+                    <th className="px-3.5 py-2.5">Ngày tạo</th>
+                    <th className="px-4 py-2.5 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/70">
+                  {pagedSegments.map((seg) => {
+                    const pageIds = seg.filters.facebookPageIds ?? [];
+                    const filterProjIds = seg.filters.projectIds ?? [];
+                    const filterCampaigns = seg.filters.campaigns ?? [];
+                    const filterCats = seg.filters.categories ?? [];
+                    const filterStatuses = seg.filters.contactStatuses ?? [];
+                    const filterSources = seg.filters.sources ?? [];
+                    const filterChannels = seg.filters.channelDetails ?? [];
+                    const hasDateRange = Boolean(
+                      seg.filters.dateFrom || seg.filters.dateTo,
+                    );
+                    const isSyncing = syncingId === seg.id;
+                    const isExportingRow = EXPORT_FORMAT_ITEMS.some(
+                      (it) => exportingKey === `${seg.id}_${it.format}`,
+                    );
+                    const cleanActId =
+                      seg.facebookAdAccountId?.replace(/^act_/, "") ?? "";
+
+                    const projectBadgeLabel =
+                      filterProjIds.length > 1
+                        ? `${filterProjIds.length} dự án`
+                        : filterProjIds.length === 1
+                          ? (projectNameById.get(filterProjIds[0]!) ??
+                            seg.projectName ??
+                            "1 dự án")
+                          : (seg.projectName ?? "Tất cả dự án");
+
+                    const hasAnyCriteria =
+                      filterCampaigns.length > 0 ||
+                      filterCats.length > 0 ||
+                      filterStatuses.length > 0 ||
+                      filterSources.length > 0 ||
+                      filterChannels.length > 0 ||
+                      hasDateRange;
+
+                    return (
+                      <tr key={seg.id} className="group transition hover:bg-slate-50/80">
+                        <td className="sticky left-0 z-10 max-w-[240px] bg-card px-4 py-3 align-top shadow-[2px_0_6px_-2px_rgba(15,23,42,0.06)] group-hover:bg-slate-50">
+                          <button
+                            type="button"
+                            onClick={() => loadSegmentIntoBuilder(seg)}
+                            className="text-left font-bold text-slate-900 hover:text-primary hover:underline"
+                            title="Mở cấu hình tệp này"
+                          >
+                            {ensureCrmPrefix(seg.name)}
+                          </button>
+                          {seg.description && (
+                            <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">
+                              {seg.description}
+                            </p>
+                          )}
+                        </td>
+
+                        <td className="max-w-[220px] px-3.5 py-3 align-top">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                              {projectBadgeLabel}
+                            </Badge>
+                            {pageIds.length === 0 ? (
+                              <Badge variant="muted" className="text-[10px]">
+                                Tất cả Fanpage
+                              </Badge>
+                            ) : (
+                              pageIds.slice(0, 2).map((pid) => (
+                                <span
+                                  key={pid}
+                                  className="max-w-[160px] truncate rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-800"
+                                >
+                                  {pageNameById.get(pid) ?? pid}
+                                </span>
+                              ))
+                            )}
+                            {pageIds.length > 2 && (
+                              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-800">
+                                +{pageIds.length - 2}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="max-w-[260px] px-3.5 py-3 align-top">
+                          {!hasAnyCriteria ? (
+                            <span className="text-[11px] text-slate-500">
+                              Tất cả KH hợp lệ
+                            </span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {filterCampaigns.length > 0 && (
+                                <span
+                                  className="max-w-[190px] truncate rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                                  title={filterCampaigns.join(", ")}
+                                >
+                                  {filterCampaigns.length === 1
+                                    ? filterCampaigns[0]
+                                    : `${filterCampaigns.length} chiến dịch`}
+                                </span>
+                              )}
+                              {filterCats.map((cat) => (
+                                <span
+                                  key={cat}
+                                  className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700"
+                                >
+                                  {CATEGORY_CHART_LABEL[cat] ?? cat}
+                                </span>
+                              ))}
+                              {filterStatuses.map((st) => (
+                                <span
+                                  key={st}
+                                  className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800"
+                                >
+                                  {CONTACT_STATUS_LABEL[st] ?? st}
+                                </span>
+                              ))}
+                              {filterSources.map((src) => (
+                                <span
+                                  key={src}
+                                  className="rounded bg-purple-50 px-1.5 py-0.5 text-[10px] font-medium text-purple-800"
+                                >
+                                  {LEAD_SOURCE_LABEL[src] ?? src}
+                                </span>
+                              ))}
+                              {filterChannels.map((ch) => (
+                                <span
+                                  key={ch}
+                                  className="rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-800"
+                                >
+                                  {CHANNEL_LABEL[ch] ?? ch}
+                                </span>
+                              ))}
+                              {hasDateRange && (
+                                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+                                  {seg.filters.dateFrom
+                                    ? formatDate(seg.filters.dateFrom)
+                                    : "..."}{" "}
+                                  →{" "}
+                                  {seg.filters.dateTo
+                                    ? formatDate(seg.filters.dateTo)
+                                    : "nay"}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-3.5 py-3 text-right align-top tabular-nums">
+                          <span className="text-sm font-extrabold text-emerald-700">
+                            {formatNumber(seg.liveUniqueContacts)}
+                          </span>
+                          <span className="ml-1 text-[11px] text-slate-500">SĐT</span>
+                          <p className="text-[11px] text-slate-500">
+                            {formatNumber(seg.liveRawLeads)} lead
+                            {seg.liveValidEmails > 0
+                              ? ` · ${formatNumber(seg.liveValidEmails)} email`
+                              : ""}
+                          </p>
+                        </td>
+
+                        <td className="max-w-[240px] px-3.5 py-3 align-top">
+                          {seg.lastSyncStatus === "ok" && seg.facebookAudienceId ? (
+                            <div className="space-y-0.5">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                                  <CheckCircle2 className="size-3" />
+                                  Đã đồng bộ
+                                </span>
+                                {cleanActId && (
+                                  <a
+                                    href={`https://adsmanager.facebook.com/adsmanager/audiences?act=${cleanActId}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
+                                  >
+                                    Mở TKQC
+                                    <ExternalLink className="size-2.5" />
+                                  </a>
+                                )}
+                              </div>
+                              <p className="font-mono text-[10px] text-slate-500">
+                                ID: {seg.facebookAudienceId}
+                              </p>
+                            </div>
+                          ) : seg.lastSyncStatus === "error" ? (
+                            <div className="space-y-0.5">
+                              <Badge variant="danger" className="text-[10px]">
+                                Lỗi đồng bộ
+                              </Badge>
+                              {seg.lastSyncMessage && (
+                                <p
+                                  className="line-clamp-2 text-[11px] text-red-600"
+                                  title={seg.lastSyncMessage}
+                                >
+                                  {seg.lastSyncMessage}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">
+                              Chưa đồng bộ
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="whitespace-nowrap px-3.5 py-3 align-top text-[11px] text-slate-500">
+                          {formatDateTime(seg.createdAt)}
+                        </td>
+
+                        <td className="px-4 py-3 text-right align-top">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {tokenConfigured && (
                               <Button
                                 type="button"
                                 size="xs"
                                 variant="outline"
-                                disabled={isExportingRow}
+                                disabled={isSyncing}
+                                onClick={() => void handleSyncSegment(seg)}
                                 className="gap-1"
                               >
-                                {isExportingRow ? (
+                                {isSyncing ? (
                                   <Loader2 className="size-3 animate-spin" />
                                 ) : (
-                                  <Download className="size-3 text-slate-600" />
+                                  <CloudUpload className="size-3 text-primary" />
                                 )}
-                                Xuất file
-                                <ChevronDown className="size-3 opacity-60" />
+                                Đồng bộ
                               </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-44">
-                              {EXPORT_FORMAT_ITEMS.map((item) => (
-                                <DropdownMenuItem
-                                  key={item.format}
-                                  onSelect={() => void handleExport(item.format, seg)}
-                                  className="gap-2 text-xs"
+                            )}
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  size="xs"
+                                  variant="outline"
+                                  disabled={isExportingRow}
+                                  className="gap-1"
                                 >
-                                  <Download className="size-3.5 text-slate-500" />
-                                  {item.label}
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                  {isExportingRow ? (
+                                    <Loader2 className="size-3 animate-spin" />
+                                  ) : (
+                                    <Download className="size-3 text-slate-600" />
+                                  )}
+                                  Xuất file
+                                  <ChevronDown className="size-3 opacity-60" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-44">
+                                {EXPORT_FORMAT_ITEMS.map((item) => (
+                                  <DropdownMenuItem
+                                    key={item.format}
+                                    onSelect={() => void handleExport(item.format, seg)}
+                                    className="gap-2 text-xs"
+                                  >
+                                    <Download className="size-3.5 text-slate-500" />
+                                    {item.label}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
 
-                          <Button
-                            type="button"
-                            size="xs"
-                            variant="ghost"
-                            onClick={() => loadSegmentIntoBuilder(seg)}
-                            title="Tạo tệp mới từ cấu hình này"
-                            className="px-1.5 text-slate-500 hover:text-slate-900"
-                          >
-                            <Copy className="size-3.5" />
-                          </Button>
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => loadSegmentIntoBuilder(seg)}
+                              title="Tạo tệp mới từ cấu hình này"
+                              className="px-1.5 text-slate-500 hover:text-slate-900"
+                            >
+                              <Copy className="size-3.5" />
+                            </Button>
 
-                          <Button
-                            type="button"
-                            size="xs"
-                            variant="ghost"
-                            disabled={deletingId === seg.id}
-                            onClick={() => void handleDelete(seg)}
-                            title="Xoá tệp"
-                            className="px-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="ghost"
+                              disabled={deletingId === seg.id}
+                              onClick={() => void handleDelete(seg)}
+                              title="Xoá tệp"
+                              className="px-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
             <Pagination
               page={safeListPage}
               pageSize={listPageSize}
@@ -1218,11 +1424,11 @@ export function AudienceBuilderPanel({
                 setListPage(1);
               }}
             />
-          </div>
+          </>
         )}
       </div>
 
-      {/* POPUP THÊM TỆP KHÁCH HÀNG MỚI (LAYOUT 1 CỘT RỘNG RÃI GIỐNG CREATE LEAD DIALOG) */}
+      {/* POPUP THÊM TỆP KHÁCH HÀNG MỚI */}
       <Dialog
         open={createOpen}
         onOpenChange={(next) => {
@@ -1230,8 +1436,8 @@ export function AudienceBuilderPanel({
           setCreateOpen(next);
         }}
       >
-        <DialogContent className="flex max-h-[90vh] w-[95vw] max-w-3xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
+        <DialogContent className="flex max-h-[92dvh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b border-border px-4 py-3.5 sm:px-6 sm:py-4">
             <DialogTitle className="text-lg font-bold">
               Thêm tệp KH mới
             </DialogTitle>
@@ -1241,9 +1447,9 @@ export function AudienceBuilderPanel({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="thin-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-6">
+          <div className="thin-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
             {/* THANH TÓM TẮT QUY MÔ KH HỢP LỆ (XEM TRƯỚC) */}
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50/60 px-3.5 py-3">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span className="text-xs font-semibold text-emerald-950">
                   Quy mô tệp:
@@ -1294,12 +1500,12 @@ export function AudienceBuilderPanel({
             </div>
 
             {/* KHỐI 1: BỘ LỌC NGUỒN & KHÁCH HÀNG */}
-            <div className="rounded-lg border border-border bg-slate-50/60 p-4">
+            <div className="rounded-lg border border-border bg-slate-50/60 p-3.5 sm:p-4">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Filter className="size-3.5 text-primary" />
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    1. Bộ lọc nguồn & KH
+                    1. Bộ lọc nguồn &amp; KH
                   </span>
                   {activeBuilderFilterCount > 0 && (
                     <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
@@ -1470,7 +1676,7 @@ export function AudienceBuilderPanel({
                     <span className="font-medium text-slate-700">
                       Đã chọn <strong>{selectedPageIds.length} Fanpage</strong>:
                     </span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => setPageMode("merge")}
@@ -1646,12 +1852,12 @@ export function AudienceBuilderPanel({
             </div>
 
             {/* KHỐI 2: TÊN TỆP & TKQC ĐÍCH */}
-            <div className="rounded-lg border border-border bg-slate-50/60 p-4">
+            <div className="rounded-lg border border-border bg-slate-50/60 p-3.5 sm:p-4">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CloudUpload className="size-3.5 text-primary" />
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    2. Tên tệp & TKQC đích
+                    2. Tên tệp &amp; TKQC đích
                   </span>
                 </div>
                 <Badge variant="outline" className="bg-white text-[10px]">
@@ -1734,27 +1940,28 @@ export function AudienceBuilderPanel({
             </div>
           </div>
 
-          <DialogFooter className="shrink-0 border-t border-border bg-slate-50/80 px-6 py-3.5 sm:justify-between">
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-700">
+          <DialogFooter className="shrink-0 border-t border-border bg-slate-50/80 px-4 py-3 sm:justify-between sm:px-6 sm:py-3.5 max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
+            <label className="flex min-w-0 cursor-pointer items-center gap-2 text-xs text-slate-700">
               <input
                 type="checkbox"
                 checked={syncImmediately}
                 disabled={!tokenConfigured}
                 onChange={(e) => setSyncImmediately(e.target.checked)}
-                className="size-4 rounded border-slate-300 text-primary focus:ring-primary"
+                className="size-4 shrink-0 rounded border-slate-300 text-primary focus:ring-primary"
               />
-              <span>
+              <span className="min-w-0 break-words">
                 Đồng bộ lên TKQC{" "}
-                <strong>({selectedAdAccountId || "Meta"})</strong> ngay khi lưu
+                <strong className="break-all">({selectedAdAccountId || "Meta"})</strong> ngay khi lưu
               </span>
             </label>
 
-            <div className="flex items-center gap-2">
+            <div className="flex w-full items-center gap-2 sm:w-auto">
               <Button
                 type="button"
                 variant="outline"
                 disabled={creating}
                 onClick={() => setCreateOpen(false)}
+                className="flex-1 sm:flex-none"
               >
                 Huỷ
               </Button>
@@ -1762,7 +1969,7 @@ export function AudienceBuilderPanel({
                 type="button"
                 onClick={() => void handleCreateAndSync()}
                 disabled={creating}
-                className="gap-1.5 shadow-xs"
+                className="flex-1 gap-1.5 shadow-xs sm:flex-none"
               >
                 {creating ? (
                   <Loader2 className="size-4 animate-spin" />

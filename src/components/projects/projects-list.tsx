@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { FolderKanban, Plus } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { createProjectAction } from "@/app/projects/actions";
@@ -31,19 +30,19 @@ const COLUMNS: DataColumn<ProjectListStats>[] = [
     header: "Tên dự án",
     sortValue: (p) => p.name,
     cell: (p) => (
-      <Link href={`/projects/${p.id}`} className="inline-flex items-center gap-2 font-semibold text-slate-800 hover:text-primary">
-        <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+      <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-slate-800 group-hover:text-primary">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
           <FolderKanban className="size-3.5" />
         </span>
-        {p.name}
-      </Link>
+        <span className="truncate">{p.name}</span>
+      </span>
     ),
   },
   {
     id: "slug",
     header: "Slug",
     sortValue: (p) => p.slug,
-    cell: (p) => <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[12px] text-slate-600">{p.slug}</span>,
+    cell: (p) => <span className="inline-block max-w-full truncate rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[12px] text-slate-600">{p.slug}</span>,
   },
   { id: "pages", header: "Fanpage", align: "center", sortValue: (p) => p.pageCount, cell: (p) => p.pageCount },
   { id: "partners", header: "Partner", align: "center", sortValue: (p) => p.partnerCount, cell: (p) => p.partnerCount },

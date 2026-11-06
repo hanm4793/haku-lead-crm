@@ -858,7 +858,81 @@ export function MarketingPage({
                   </p>
                 ) : (
                   <>
-                    <div className="thin-scrollbar overflow-x-auto">
+                    {/* MOBILE CARD LIST (< 768px) */}
+                    <div className="divide-y divide-border/70 md:hidden">
+                      {pagedFanpages.map((page) => {
+                        const active = pageIds.length === 1 && pageIds[0] === page.pageId;
+                        const label =
+                          pageOptions.find((option) => option.value === page.pageId)?.label ?? "Chưa gắn fanpage";
+                        return (
+                          <div
+                            key={page.pageId || "unknown"}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
+                              setPageIds(active ? [] : [page.pageId]);
+                              setCampaignPage(1);
+                            }}
+                            className={cn(
+                              "space-y-2.5 p-3.5 transition-colors active:bg-slate-50",
+                              active && "bg-primary/6 ring-1 ring-inset ring-primary/30",
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="min-w-0 flex-1 break-words text-[14px] font-bold leading-snug text-slate-900">
+                                {label}
+                              </span>
+                              <EfficiencyBadge value={page.efficiency} />
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50/85 p-2.5 text-xs">
+                              <div className="min-w-0">
+                                <div className="text-[10px] text-muted-foreground">Chi tiêu</div>
+                                <div className="mt-0.5 truncate font-bold tabular-nums text-slate-900">
+                                  {formatCurrency(page.spend)}
+                                </div>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[10px] text-muted-foreground">Lead Meta</div>
+                                <div className="mt-0.5 font-semibold tabular-nums text-slate-800">
+                                  {formatNumber(page.leads)}{" "}
+                                  <span className="text-[10px] font-normal text-slate-500">
+                                    ({page.ctr === null ? "—" : formatPercent(page.ctr)})
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[10px] text-muted-foreground">CPL Meta</div>
+                                <div className="mt-0.5 truncate font-semibold tabular-nums text-slate-800">
+                                  {page.cpl === null ? "—" : formatCurrency(page.cpl)}
+                                </div>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[10px] text-muted-foreground">Lead CRM</div>
+                                <div className="mt-0.5 font-semibold tabular-nums text-primary">
+                                  {formatNumber(page.crmLeads)}
+                                </div>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[10px] text-muted-foreground">KHQT / CPQL</div>
+                                <div className="mt-0.5 truncate font-semibold tabular-nums text-emerald-700">
+                                  {formatNumber(page.khqt)} · {page.cpql === null ? "—" : compactMoney(page.cpql)}
+                                </div>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[10px] text-muted-foreground">KHĐ / CPS</div>
+                                <div className="mt-0.5 truncate font-semibold tabular-nums text-slate-800">
+                                  {formatNumber(page.khd)} · {page.cps === null ? "—" : compactMoney(page.cps)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* DESKTOP & TABLET TABLE (>= 768px) */}
+                    <div className="thin-scrollbar hidden overflow-x-auto md:block">
                       <table className="w-full min-w-[860px] text-left text-[13px]">
                         <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
                           <tr>
@@ -945,17 +1019,177 @@ export function MarketingPage({
               </section>
 
               <section className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
-                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-                  <h2 className="text-sm font-semibold">Theo Chiến dịch</h2>
-                  <p className="text-[12px] text-muted-foreground tabular-nums">
-                    {campaigns.length} chiến dịch · bấm dòng để xem QC
-                  </p>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3.5 py-3 sm:px-4">
+                  <div>
+                    <h2 className="text-sm font-semibold">Theo Chiến dịch</h2>
+                    <p className="text-[11.5px] text-muted-foreground tabular-nums">
+                      {campaigns.length} chiến dịch · bấm để xem chi tiết Ads
+                    </p>
+                  </div>
+                  <div className="w-40 md:hidden">
+                    <Select
+                      value={sort.key}
+                      onValueChange={(v) => {
+                        setCampaignPage(1);
+                        setSort({ key: v as SortKey, direction: v === "name" ? "asc" : "desc" });
+                      }}
+                    >
+                      <SelectTrigger size="sm" className="h-8 text-xs">
+                        <SelectValue placeholder="Sắp xếp" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="spend">Chi tiêu cao nhất</SelectItem>
+                        <SelectItem value="leads">Nhiều Lead nhất</SelectItem>
+                        <SelectItem value="cpl">CPL</SelectItem>
+                        <SelectItem value="clicks">Lượt Click</SelectItem>
+                        <SelectItem value="impressions">Lượt Hiển thị</SelectItem>
+                        <SelectItem value="name">Tên A → Z</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 {campaigns.length === 0 ? (
                   <p className="px-4 py-10 text-center text-sm text-muted-foreground">Không có chiến dịch khớp bộ lọc.</p>
                 ) : (
                   <>
-                    <div className="thin-scrollbar overflow-x-auto">
+                    {/* MOBILE CARD LIST (< 768px) — Tích hợp danh sách Ads dạng thẻ con không cần scroll ngang */}
+                    <div className="divide-y divide-border/70 md:hidden">
+                      {pagedCampaigns.map((campaign) => {
+                        const isExpanded = campaign.objectId === activeId;
+                        return (
+                          <div
+                            key={campaign.objectId}
+                            className={cn("p-3.5 transition-colors", isExpanded && "bg-slate-50/70")}
+                          >
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setSelectedId(isExpanded ? null : campaign.objectId);
+                                setDailyPage(1);
+                              }}
+                              className="space-y-2.5"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1 break-words text-[13.5px] font-bold leading-snug text-slate-900">
+                                  <AdsManagerTitle
+                                    level="campaign"
+                                    objectId={campaign.objectId}
+                                    adAccountId={campaign.adAccountId ?? adAccountId}
+                                  >
+                                    {campaign.objectName ?? campaign.objectId}
+                                  </AdsManagerTitle>
+                                </div>
+                                <EfficiencyBadge value={campaign.efficiency} />
+                              </div>
+
+                              <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                <div
+                                  className="h-full rounded-full bg-primary"
+                                  style={{ width: `${Math.max(3, (campaign.spend / maxSpend) * 100)}%` }}
+                                />
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2 rounded-lg bg-white p-2.5 text-xs ring-1 ring-border/70">
+                                <div className="min-w-0">
+                                  <div className="text-[10px] text-muted-foreground">Chi tiêu</div>
+                                  <div className="mt-0.5 truncate font-bold tabular-nums text-slate-900">
+                                    {formatCurrency(campaign.spend)}
+                                  </div>
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-[10px] text-muted-foreground">Lead / CPL</div>
+                                  <div className="mt-0.5 truncate font-semibold tabular-nums text-primary">
+                                    {formatNumber(campaign.leads)} · {campaign.cpl === null ? "—" : compactMoney(campaign.cpl)}
+                                  </div>
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-[10px] text-muted-foreground">Click / CTR</div>
+                                  <div className="mt-0.5 truncate font-semibold tabular-nums text-slate-700">
+                                    {formatNumber(campaign.clicks)} ({campaign.ctr === null ? "—" : formatPercent(campaign.ctr)})
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-[11px] tabular-nums text-muted-foreground">
+                                  Hiển thị: {formatNumber(campaign.impressions)}
+                                </span>
+                                <span className="font-semibold text-primary">
+                                  {isExpanded ? "Ẩn danh sách Ads ▲" : "Xem danh sách Ads ▼"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {isExpanded && adsInCampaign && (
+                              <div className="mt-3 space-y-2 border-t border-border/80 pt-3">
+                                <div className="flex flex-wrap items-baseline justify-between gap-1">
+                                  <span className="text-xs font-bold text-slate-800">
+                                    Ads trong chiến dịch ({adsInCampaign.items.length})
+                                  </span>
+                                  {adsInCampaign.benchmark != null && (
+                                    <span className="text-[11px] text-muted-foreground">
+                                      CPL chuẩn: {formatCurrency(adsInCampaign.benchmark)}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {adsInCampaign.items.length === 0 ? (
+                                  <p className="text-xs text-muted-foreground">Chưa có dòng ads trong bộ lọc.</p>
+                                ) : (
+                                  <div className="max-h-[340px] space-y-2 overflow-y-auto overscroll-contain pr-0.5">
+                                    {adsInCampaign.items
+                                      .slice()
+                                      .sort((left, right) => right.spend - left.spend)
+                                      .map((ad) => (
+                                        <div
+                                          key={ad.objectId}
+                                          className="space-y-1.5 rounded-lg border border-border/80 bg-white p-2.5 text-xs shadow-2xs"
+                                        >
+                                          <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0 flex-1 break-words font-semibold text-slate-800">
+                                              <AdsManagerTitle
+                                                level="ad"
+                                                objectId={ad.objectId}
+                                                adAccountId={ad.adAccountId ?? adAccountId}
+                                              >
+                                                {ad.objectName ?? ad.objectId}
+                                              </AdsManagerTitle>
+                                              {ad.adsetName && (
+                                                <p className="mt-0.5 truncate text-[11px] font-normal text-muted-foreground">
+                                                  Nhóm: {ad.adsetName}
+                                                </p>
+                                              )}
+                                            </div>
+                                            <EfficiencyBadge value={ad.efficiency} />
+                                          </div>
+                                          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-border/50 pt-1.5 text-[11px] tabular-nums text-slate-600">
+                                            <span>
+                                              Chi: <strong className="text-slate-900">{formatCurrency(ad.spend)}</strong>
+                                            </span>
+                                            <span>
+                                              Lead: <strong className="text-primary">{formatNumber(ad.leads)}</strong>
+                                            </span>
+                                            <span>
+                                              CPL: <strong>{ad.cpl === null ? "—" : compactMoney(ad.cpl)}</strong>
+                                            </span>
+                                            <span>
+                                              CTR: <strong>{ad.ctr === null ? "—" : formatPercent(ad.ctr)}</strong>
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* DESKTOP & TABLET TABLE (>= 768px) */}
+                    <div className="thin-scrollbar hidden overflow-x-auto md:block">
                       <table className="w-full min-w-[820px] text-left text-[13px]">
                         <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
                           <tr>
@@ -1124,7 +1358,28 @@ export function MarketingPage({
                       Bỏ chọn
                     </Button>
                   </div>
-                  <div className="thin-scrollbar overflow-x-auto">
+                  {/* MOBILE DAILY LIST (< 768px) */}
+                  <div className="divide-y divide-border/70 md:hidden">
+                    {pagedDailyRows.map((row) => (
+                      <div key={row.date} className="flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs">
+                        <div>
+                          <div className="font-semibold tabular-nums text-slate-900">{formatDate(row.date)}</div>
+                          <div className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
+                            {formatNumber(row.impressions ?? 0)} hiển thị · {formatNumber(row.clicks ?? 0)} click
+                          </div>
+                        </div>
+                        <div className="text-right tabular-nums">
+                          <div className="font-bold text-slate-900">{formatCurrency(row.spend ?? 0)}</div>
+                          <div className="mt-0.5 text-[11px] font-semibold text-primary">
+                            {formatNumber(row.leads ?? 0)} lead
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* DESKTOP & TABLET DAILY TABLE (>= 768px) */}
+                  <div className="thin-scrollbar hidden overflow-x-auto md:block">
                     <table className="w-full min-w-[520px] text-left text-[13px]">
                       <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
                         <tr>

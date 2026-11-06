@@ -808,9 +808,9 @@ export function LeadsPage({
           </div>
         </div>
 
-        {/* Thanh thao tác hàng loạt khi chọn nhiều lead */}
+        {/* Thanh thao tác hàng loạt khi chọn nhiều lead (Desktop: bar trên đầu bảng · Mobile: nổi ngay vùng ngón cái) */}
         {selectedIds.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/20 bg-primary/6 px-3 py-2 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/20 bg-primary/6 px-3 py-2 text-xs max-md:fixed max-md:inset-x-3 max-md:bottom-[calc(4.4rem+env(safe-area-inset-bottom,0px))] max-md:z-30 max-md:rounded-2xl max-md:border max-md:border-primary/30 max-md:bg-white/95 max-md:p-2.5 max-md:shadow-xl max-md:backdrop-blur-md">
             <div className="flex items-center gap-2 font-semibold text-primary">
               <span className="tabular-nums">Đã chọn {selectedIds.length} lead</span>
               <Button

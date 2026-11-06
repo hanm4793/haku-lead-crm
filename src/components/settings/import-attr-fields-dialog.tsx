@@ -234,15 +234,15 @@ export function ImportAttrFieldsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex max-h-[92vh] max-w-5xl flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
+      <DialogContent className="flex max-h-[92dvh] max-w-5xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 border-b border-border px-4 py-3.5 sm:px-6 sm:py-4">
           <div className="flex flex-wrap items-center justify-between gap-2 pr-8">
-            <div>
-              <DialogTitle className="flex items-center gap-2 text-lg font-bold">
-                <Sparkles className="size-4 text-primary" />
-                Tự động tạo Field phụ từ file dữ liệu mẫu (AI)
+            <div className="min-w-0">
+              <DialogTitle className="flex items-center gap-2 text-base font-bold sm:text-lg">
+                <Sparkles className="size-4 shrink-0 text-primary" />
+                <span>Tự động tạo Field phụ từ file dữ liệu mẫu (AI)</span>
               </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground">
+              <DialogDescription className="mt-0.5 text-xs text-muted-foreground">
                 Tải lên file Excel dữ liệu khách hàng có sẵn. Hệ thống và AI sẽ tự nhận diện dòng tiêu đề, lọc bỏ trường cố định, gợi ý nhãn, mã key và kiểu dữ liệu phù hợp.
               </DialogDescription>
             </div>
@@ -257,15 +257,15 @@ export function ImportAttrFieldsDialog({
           </div>
         </DialogHeader>
 
-        <div className="thin-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
+        <div className="thin-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
           {/* Khu vực chọn file */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-3.5">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-3.5 py-3 sm:px-4 sm:py-3.5">
+            <div className="flex min-w-0 items-start gap-3 sm:items-center">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <FileUp className="size-5" />
               </div>
-              <div>
-                <div className="text-sm font-semibold text-slate-800">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-slate-800">
                   {fileName ?? "Chọn file Excel dữ liệu mẫu (.xlsx)"}
                 </div>
                 <div className="text-xs text-muted-foreground">
@@ -274,7 +274,7 @@ export function ImportAttrFieldsDialog({
               </div>
             </div>
 
-            <div>
+            <div className="w-full sm:w-auto">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -288,7 +288,7 @@ export function ImportAttrFieldsDialog({
                 size="sm"
                 disabled={analyzing || saving}
                 onClick={() => fileInputRef.current?.click()}
-                className="gap-1.5 bg-white"
+                className="w-full gap-1.5 bg-white sm:w-auto"
               >
                 {analyzing ? (
                   <Loader2 className="size-3.5 animate-spin" />
@@ -301,7 +301,7 @@ export function ImportAttrFieldsDialog({
           </div>
 
           {analyzing && (
-            <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-sm text-muted-foreground">
               <Loader2 className="size-5 animate-spin text-primary" />
               <span>Đang đọc cấu trúc cột, mẫu dữ liệu và phân tích kiểu trường bằng AI...</span>
             </div>
@@ -310,7 +310,7 @@ export function ImportAttrFieldsDialog({
           {report && !analyzing && (
             <>
               {/* Bộ lọc nhóm cột */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setTabFilter("SUGGESTED")}
@@ -381,8 +381,202 @@ export function ImportAttrFieldsDialog({
                 </button>
               </div>
 
-              {/* Bảng cấu hình chi tiết */}
-              <div className="overflow-hidden rounded-lg border border-border">
+              {/* ========================================================= */}
+              {/* MOBILE CARD LIST (< 768px)                                */}
+              {/* ========================================================= */}
+              <div className="space-y-2.5 md:hidden">
+                {suggestedDrafts.length > 0 && (
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-slate-50/80 px-3.5 py-2.5 text-xs font-medium text-slate-700">
+                    <span>Chọn tất cả cột đề xuất ({suggestedDrafts.length})</span>
+                    <Checkbox
+                      checked={allSuggestedSelected}
+                      onCheckedChange={(c) => toggleAllSuggested(Boolean(c))}
+                      aria-label="Chọn tất cả cột đề xuất"
+                    />
+                  </label>
+                )}
+
+                {visibleDrafts.length === 0 ? (
+                  <div className="rounded-xl border border-border bg-white px-4 py-8 text-center text-xs text-muted-foreground">
+                    Không có cột nào trong nhóm này.
+                  </div>
+                ) : (
+                  visibleDrafts.map((col) => {
+                    const isDisabledStatus = col.status !== "suggested";
+                    return (
+                      <div
+                        key={col.columnIndex}
+                        className={cn(
+                          "space-y-3 rounded-xl border p-3.5 transition-colors",
+                          col.selected
+                            ? "border-border bg-white shadow-2xs"
+                            : "border-border/70 bg-slate-50/70 text-slate-600",
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5 font-semibold text-slate-900">
+                              <span className="font-mono text-[11px] text-slate-400">
+                                #{col.columnIndex}
+                              </span>
+                              <span className="break-words text-sm">{col.rawHeader}</span>
+                            </div>
+                            {col.sampleValues.length > 0 ? (
+                              <div className="mt-1 line-clamp-2 text-[11px] text-slate-500">
+                                Mẫu:{" "}
+                                <span className="italic text-slate-700">
+                                  {col.sampleValues.slice(0, 3).join(" · ")}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="mt-1 text-[11px] italic text-slate-400">
+                                (Cột trống trong các dòng đầu)
+                              </div>
+                            )}
+                            <div className="mt-1.5">
+                              {col.status === "core" && (
+                                <span className="inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10.5px] font-medium text-blue-700">
+                                  <Layers className="size-2.5" />
+                                  {col.statusNote}
+                                </span>
+                              )}
+                              {col.status === "existing" && (
+                                <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-medium text-emerald-700">
+                                  <CheckCircle2 className="size-2.5" />
+                                  {col.statusNote}
+                                </span>
+                              )}
+                              {col.status === "suggested" && (
+                                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                                  {col.statusNote}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <Checkbox
+                            checked={col.selected}
+                            disabled={isDisabledStatus}
+                            onCheckedChange={(c) =>
+                              updateDraft(col.columnIndex, {
+                                selected: Boolean(c),
+                              })
+                            }
+                            aria-label={`Chọn cột ${col.rawHeader}`}
+                            className="mt-0.5 size-5"
+                          />
+                        </div>
+
+                        {!isDisabledStatus && (
+                          <div className="space-y-2.5 border-t border-border/60 pt-2.5">
+                            <div className="grid grid-cols-1 gap-2">
+                              <div>
+                                <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                                  Nhãn hiển thị
+                                </div>
+                                <Input
+                                  value={col.label}
+                                  onChange={(e) =>
+                                    updateDraft(col.columnIndex, {
+                                      label: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Nhãn hiển thị"
+                                  className="h-9 font-medium"
+                                />
+                              </div>
+
+                              <div>
+                                <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                                  Mã key (tự sinh nếu để trống)
+                                </div>
+                                <Input
+                                  value={col.key}
+                                  onChange={(e) =>
+                                    updateDraft(col.columnIndex, {
+                                      key: e.target.value,
+                                    })
+                                  }
+                                  placeholder="ma_key"
+                                  className="h-9 font-mono text-slate-600"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <div>
+                                <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                                  Kiểu dữ liệu
+                                </div>
+                                <Select
+                                  value={col.fieldType}
+                                  onValueChange={(v) =>
+                                    updateDraft(col.columnIndex, {
+                                      fieldType: v as AttrFieldType,
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger className="h-9 w-full">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {(
+                                      Object.entries(TYPE_LABELS) as [
+                                        AttrFieldType,
+                                        string,
+                                      ][]
+                                    ).map(([value, label]) => (
+                                      <SelectItem key={value} value={value}>
+                                        {label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              {(col.fieldType === "select" ||
+                                col.fieldType === "multiselect") && (
+                                <div>
+                                  <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                                    Các lựa chọn (phân tách bằng dấu phẩy)
+                                  </div>
+                                  <Input
+                                    value={col.optionsText}
+                                    onChange={(e) =>
+                                      updateDraft(col.columnIndex, {
+                                        optionsText: e.target.value,
+                                      })
+                                    }
+                                    placeholder="Lựa chọn 1, Lựa chọn 2..."
+                                    className="h-9"
+                                  />
+                                </div>
+                              )}
+                            </div>
+
+                            <label className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
+                              <span>Bắt buộc nhập khi tạo lead</span>
+                              <Checkbox
+                                checked={col.required}
+                                onCheckedChange={(c) =>
+                                  updateDraft(col.columnIndex, {
+                                    required: Boolean(c),
+                                  })
+                                }
+                              />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* ========================================================= */}
+              {/* DESKTOP TABLE (>= 768px)                                  */}
+              {/* ========================================================= */}
+              <div className="hidden overflow-hidden rounded-lg border border-border md:block">
                 <div className="max-h-[420px] overflow-auto">
                   <table className="w-full border-collapse text-left text-xs">
                     <thead className="sticky top-0 z-10 border-b border-border bg-slate-100 text-[11px] font-semibold uppercase text-slate-600">
@@ -394,9 +588,9 @@ export function ImportAttrFieldsDialog({
                             aria-label="Chọn tất cả cột đề xuất"
                           />
                         </th>
-                        <th className="w-56 px-3 py-2.5">Cột gốc & Dữ liệu mẫu</th>
-                        <th className="w-56 px-3 py-2.5">Nhãn hiển thị & Key</th>
-                        <th className="w-64 px-3 py-2.5">Kiểu dữ liệu & Tùy chọn</th>
+                        <th className="w-56 px-3 py-2.5">Cột gốc &amp; Dữ liệu mẫu</th>
+                        <th className="w-56 px-3 py-2.5">Nhãn hiển thị &amp; Key</th>
+                        <th className="w-64 px-3 py-2.5">Kiểu dữ liệu &amp; Tùy chọn</th>
                         <th className="w-24 px-3 py-2.5 text-center">Bắt buộc</th>
                       </tr>
                     </thead>
@@ -561,7 +755,7 @@ export function ImportAttrFieldsDialog({
           )}
         </div>
 
-        <DialogFooter className="shrink-0 border-t border-border bg-slate-50/70 px-6 py-3">
+        <DialogFooter className="shrink-0 border-t border-border bg-slate-50/70 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] sm:px-6">
           <Button
             type="button"
             variant="outline"
