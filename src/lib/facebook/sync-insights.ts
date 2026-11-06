@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { inArray, and, eq, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { ensureDiscoveredFacebookPages } from "@/lib/db/facebook-pages-repo";
@@ -272,9 +272,57 @@ async function syncInsightsForAccount(
   try {
     const activeAdIds = adRows.map((r) => optionalText(r.ad_id)).filter((id): id is string => id !== null);
     pageByAd = await loadPageByAdId(adAccountId, activeAdIds);
+
+    // Fallback: nếu có ads chưa resolve được pageId, dùng pageId đã lưu từ lần sync trước
+    const missingIds = activeAdIds.filter((id) => !pageByAd.has(id));
+    if (missingIds.length > 0) {
+      try {
+        const existingRows = await db
+          .select({ objectId: metaAdInsights.objectId, pageId: metaAdInsights.pageId })
+          .from(metaAdInsights)
+          .where(
+            and(
+              eq(metaAdInsights.adAccountId, adAccountId),
+              eq(metaAdInsights.level, "ad"),
+              inArray(metaAdInsights.objectId, missingIds),
+              sql`${metaAdInsights.pageId} is not null`,
+            ),
+          );
+        for (const row of existingRows) {
+          if (row.pageId && !pageByAd.has(row.objectId)) {
+            pageByAd.set(row.objectId, row.pageId);
+          }
+        }
+      } catch {
+        // Không chặn sync nếu fallback DB query fail
+      }
+    }
   } catch (error) {
     counts.errors += 1;
     errorMessages.push(errorMessage(error));
+
+    // Fallback toàn bộ: nếu loadPageByAdId fail hoàn toàn, lấy pageId từ DB
+    try {
+      const activeAdIds = adRows.map((r) => optionalText(r.ad_id)).filter((id): id is string => id !== null);
+      if (activeAdIds.length > 0) {
+        const existingRows = await db
+          .select({ objectId: metaAdInsights.objectId, pageId: metaAdInsights.pageId })
+          .from(metaAdInsights)
+          .where(
+            and(
+              eq(metaAdInsights.adAccountId, adAccountId),
+              eq(metaAdInsights.level, "ad"),
+              inArray(metaAdInsights.objectId, activeAdIds),
+              sql`${metaAdInsights.pageId} is not null`,
+            ),
+          );
+        for (const row of existingRows) {
+          if (row.pageId) pageByAd.set(row.objectId, row.pageId);
+        }
+      }
+    } catch {
+      // Best-effort fallback
+    }
   }
   try {
     const campsByPage = new Map<string, Array<string | null>>();

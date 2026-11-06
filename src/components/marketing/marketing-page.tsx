@@ -326,8 +326,12 @@ export function MarketingPage({
       ),
     [rows, range.from, range.to, selectedAdAccountIds, campaignIds, brands, query, campaignBrands],
   );
+  // Chỉ dùng ad-level khi user chọn fanpage cụ thể.
+  // Project scope (projectAllowedPageIds) vẫn dùng campaign-level để tránh mất data
+  // từ ads thiếu pageId (creative lookup fail).
+  const hasExplicitPageFilter = pageIds.length > 0;
   const campaignSummaries = (
-    activePageIdSet
+    hasExplicitPageFilter
       ? summarizeCampaignsFromAds(visibleAds, campaignBrands)
       : summarizeCampaigns(filteredCampaigns, campaignBrands)
   ).filter((campaign) => !pageCampaignIds || pageCampaignIds.has(campaign.objectId));
@@ -338,9 +342,11 @@ export function MarketingPage({
   const selectionVisible = selectedId !== null && campaignSummaries.some((campaign) => campaign.objectId === selectedId);
   if (selectedId && !selectionVisible) setSelectedId(null);
   const activeId = selectionVisible ? selectedId : null;
-  const chartRows = activePageIdSet
+  const chartRows = hasExplicitPageFilter
     ? visibleAds.filter((row) => (activeId ? row.campaignId === activeId : true))
-    : filteredCampaigns.filter((row) => (activeId ? row.objectId === activeId : true));
+    : filteredCampaigns
+        .filter((row) => !pageCampaignIds || pageCampaignIds.has(row.objectId))
+        .filter((row) => (activeId ? row.objectId === activeId : true));
   const totals = dashboardTotals(chartRows);
   const crmScopedRows = React.useMemo(
     () =>
