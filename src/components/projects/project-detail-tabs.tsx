@@ -66,53 +66,53 @@ export function ProjectDetailTabs({
 
   return (
     <Tabs defaultValue="catalog" className="space-y-4">
-      <div className="no-scrollbar -mx-3 overflow-x-auto border-b border-border/80 px-3 pb-1 sm:mx-0 sm:px-0">
-        <TabsList className="flex h-auto w-max justify-start gap-1 bg-slate-100/90 p-1 sm:w-auto sm:flex-wrap">
-          <TabsTrigger value="catalog" className="shrink-0 gap-1.5 text-[13px] font-medium">
-            <Layers className="size-3.5 text-primary" />
-            <span>Catalog danh mục</span>
-            <Badge variant="muted" className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums">
+      <div className="border-b border-border/80 pb-1.5">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-slate-100/90 p-1 sm:flex sm:w-auto sm:flex-wrap sm:justify-start">
+          <TabsTrigger value="catalog" className="min-w-0 justify-start gap-1.5 rounded-lg border-b-0 px-2.5 py-2 text-xs font-medium data-[state=active]:bg-white data-[state=active]:shadow-2xs sm:py-1.5 sm:text-[13px]">
+            <Layers className="size-3.5 shrink-0 text-primary" />
+            <span className="truncate">Catalog</span>
+            <Badge variant="muted" className="ml-auto px-1.5 py-0 text-[10px] tabular-nums sm:ml-0.5">
               {totalCatalogItems}
             </Badge>
           </TabsTrigger>
 
-          <TabsTrigger value="attrs" className="shrink-0 gap-1.5 text-[13px] font-medium">
-            <SlidersHorizontal className="size-3.5 text-slate-600" />
-            <span>Field phụ</span>
-            <Badge variant="muted" className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums">
+          <TabsTrigger value="attrs" className="min-w-0 justify-start gap-1.5 rounded-lg border-b-0 px-2.5 py-2 text-xs font-medium data-[state=active]:bg-white data-[state=active]:shadow-2xs sm:py-1.5 sm:text-[13px]">
+            <SlidersHorizontal className="size-3.5 shrink-0 text-slate-600" />
+            <span className="truncate">Field phụ</span>
+            <Badge variant="muted" className="ml-auto px-1.5 py-0 text-[10px] tabular-nums sm:ml-0.5">
               {attrFields.length}
             </Badge>
           </TabsTrigger>
 
-          <TabsTrigger value="fanpages" className="shrink-0 gap-1.5 text-[13px] font-medium">
-            <Building2 className="size-3.5 text-blue-600" />
-            <span>Fanpage</span>
-            <Badge variant="muted" className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums">
+          <TabsTrigger value="fanpages" className="min-w-0 justify-start gap-1.5 rounded-lg border-b-0 px-2.5 py-2 text-xs font-medium data-[state=active]:bg-white data-[state=active]:shadow-2xs sm:py-1.5 sm:text-[13px]">
+            <Building2 className="size-3.5 shrink-0 text-blue-600" />
+            <span className="truncate">Fanpage</span>
+            <Badge variant="muted" className="ml-auto px-1.5 py-0 text-[10px] tabular-nums sm:ml-0.5">
               {projectPages.length}
             </Badge>
           </TabsTrigger>
 
           {canManageProject && (
-            <TabsTrigger value="ads" className="shrink-0 gap-1.5 text-[13px] font-medium">
-              <Megaphone className="size-3.5 text-amber-600" />
-              <span>Tài khoản Ads</span>
-              <Badge variant="muted" className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums">
+            <TabsTrigger value="ads" className="min-w-0 justify-start gap-1.5 rounded-lg border-b-0 px-2.5 py-2 text-xs font-medium data-[state=active]:bg-white data-[state=active]:shadow-2xs sm:py-1.5 sm:text-[13px]">
+              <Megaphone className="size-3.5 shrink-0 text-amber-600" />
+              <span className="truncate">TK Ads</span>
+              <Badge variant="muted" className="ml-auto px-1.5 py-0 text-[10px] tabular-nums sm:ml-0.5">
                 {adAccounts.length}
               </Badge>
             </TabsTrigger>
           )}
 
-          <TabsTrigger value="partners" className="shrink-0 gap-1.5 text-[13px] font-medium">
-            <Users className="size-3.5 text-emerald-600" />
-            <span>Đối tác / Partner</span>
-            <Badge variant="muted" className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums">
+          <TabsTrigger value="partners" className="min-w-0 justify-start gap-1.5 rounded-lg border-b-0 px-2.5 py-2 text-xs font-medium data-[state=active]:bg-white data-[state=active]:shadow-2xs sm:py-1.5 sm:text-[13px]">
+            <Users className="size-3.5 shrink-0 text-emerald-600" />
+            <span className="truncate">Đối tác</span>
+            <Badge variant="muted" className="ml-auto px-1.5 py-0 text-[10px] tabular-nums sm:ml-0.5">
               {partners.length}
             </Badge>
           </TabsTrigger>
 
-          <TabsTrigger value="overview" className="shrink-0 gap-1.5 text-[13px] font-medium">
-            <FolderKanban className="size-3.5 text-slate-600" />
-            <span>Cài đặt &amp; Nhãn</span>
+          <TabsTrigger value="overview" className="min-w-0 justify-start gap-1.5 rounded-lg border-b-0 px-2.5 py-2 text-xs font-medium data-[state=active]:bg-white data-[state=active]:shadow-2xs sm:py-1.5 sm:text-[13px]">
+            <FolderKanban className="size-3.5 shrink-0 text-slate-600" />
+            <span className="truncate">Cài đặt &amp; Nhãn</span>
           </TabsTrigger>
         </TabsList>
       </div>

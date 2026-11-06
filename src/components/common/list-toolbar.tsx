@@ -23,7 +23,7 @@ export function ListToolbar({
 }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2.5 sm:px-3.5">
-      {tabs && <div className="no-scrollbar max-w-full overflow-x-auto max-sm:w-full">{tabs}</div>}
+      {tabs && <div className="min-w-0 max-sm:w-full">{tabs}</div>}
       {search && (
         <div className="relative w-full min-w-0 sm:w-60 sm:flex-none">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -63,12 +63,12 @@ export function CountTabs<T extends string>({
 }) {
   return (
     <Tabs value={value} onValueChange={(v) => onChange(v as T)}>
-      <TabsList className="no-scrollbar max-w-full gap-0.5 overflow-x-auto">
+      <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 rounded-lg bg-slate-100/90 p-1 sm:inline-flex sm:w-auto">
         {tabs.map((tab) => (
           <TabsTrigger
             key={tab.id}
             value={tab.id}
-            className="border-b-0 data-[state=active]:rounded-md data-[state=active]:bg-accent"
+            className="flex-1 rounded-md border-b-0 px-2.5 py-1.5 text-xs data-[state=active]:bg-white data-[state=active]:shadow-2xs sm:flex-none sm:text-[13px]"
           >
             {tab.label}
             {tab.count !== undefined && (

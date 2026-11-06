@@ -84,7 +84,7 @@ export function ReportKpiCards({ current, previous }: { current: LeadKpis; previ
   ];
 
   return (
-    <div className="no-scrollbar -mx-3 flex gap-2.5 overflow-x-auto px-3 pb-0.5 md:mx-0 md:grid md:grid-cols-4 md:gap-3 md:overflow-visible md:px-0 md:pb-0 xl:grid-cols-8">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 xl:grid-cols-8">
       {cards.map((card) => {
         const Icon = card.icon;
         const rawPositive = (card.delta ?? 0) > 0;
@@ -94,13 +94,13 @@ export function ReportKpiCards({ current, previous }: { current: LeadKpis; previ
         return (
           <div
             key={card.label}
-            className="min-w-[144px] shrink-0 rounded-xl border border-border bg-card px-3.5 py-2.5 shadow-xs md:min-w-0 md:py-3"
+            className="min-w-0 rounded-xl border border-border bg-card px-3 py-2.5 shadow-xs sm:px-3.5 md:py-3"
           >
             <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
               <Icon className="size-3.5 shrink-0" />
               <span className="truncate">{card.label}</span>
             </div>
-            <div className="mt-1 text-xl font-bold tabular-nums sm:mt-1.5 sm:text-2xl">{card.value}</div>
+            <div className="mt-1 truncate text-lg font-bold tabular-nums sm:mt-1.5 sm:text-2xl">{card.value}</div>
             <div className="mt-0.5 flex h-4 items-center gap-1.5 text-[11px] font-medium tabular-nums">
               {card.delta !== null && card.delta !== 0 && (
                 <span className={cn(good && "text-emerald-600", bad && "text-rose-600")}>
@@ -119,9 +119,7 @@ export function ReportKpiCards({ current, previous }: { current: LeadKpis; previ
                 >
                   {card.subtext}
                 </span>
-              ) : (
-                card.delta === null && <span className="text-muted-foreground">—</span>
-              )}
+              ) : null}
             </div>
           </div>
         );

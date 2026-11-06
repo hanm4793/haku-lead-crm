@@ -619,12 +619,12 @@ export function MarketingPage({
           value={activeTab}
           onValueChange={(val) => setActiveTab(val as "campaigns" | "audiences")}
         >
-          <TabsList className="w-full justify-start border-b border-border sm:w-auto">
-            <TabsTrigger value="campaigns" className="gap-1.5 max-sm:flex-1">
+          <TabsList className="grid w-full grid-cols-2 border-b border-border sm:inline-flex sm:w-auto sm:justify-start">
+            <TabsTrigger value="campaigns" className="gap-1.5">
               <Megaphone className="size-3.5" />
               <span className="truncate">Chiến dịch &amp; QC</span>
             </TabsTrigger>
-            <TabsTrigger value="audiences" className="gap-1.5 max-sm:flex-1">
+            <TabsTrigger value="audiences" className="gap-1.5">
               <Users className="size-3.5" />
               <span>Tệp KH</span>
               <Badge
@@ -727,7 +727,7 @@ export function MarketingPage({
           </div>
 
           {campaignBrands.length > 0 && (
-            <div className="no-scrollbar -mx-3 flex gap-1.5 overflow-x-auto px-3 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+            <div className="flex flex-wrap gap-1.5">
               {campaignBrands.map((brand) => {
                 const active = brands.includes(brand.id);
                 return (
@@ -737,7 +737,7 @@ export function MarketingPage({
                     aria-pressed={active}
                     onClick={() => toggleBrand(brand.id)}
                     className={cn(
-                      "shrink-0 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors",
+                      "rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors",
                       active
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -760,7 +760,7 @@ export function MarketingPage({
             </div>
           ) : (
             <>
-              <div className="no-scrollbar -mx-3 flex gap-2.5 overflow-x-auto px-3 pb-0.5 md:mx-0 md:grid md:grid-cols-3 md:gap-3 md:overflow-visible md:px-0 md:pb-0 xl:grid-cols-6">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:gap-3 xl:grid-cols-6">
                 <Kpi label="Chi tiêu" value={totals.spend === null ? "—" : formatCurrency(totals.spend)} icon={Wallet} />
                 <Kpi label="Hiển thị" value={totals.impressions === null ? "—" : formatNumber(totals.impressions)} />
                 <Kpi label="Lượt click" value={totals.clicks === null ? "—" : formatNumber(totals.clicks)} icon={MousePointerClick} />
@@ -769,12 +769,16 @@ export function MarketingPage({
                 <Kpi label="CPL (Meta)" value={totals.cpl === null ? "—" : formatCurrency(totals.cpl)} />
               </div>
 
-              <div className="no-scrollbar -mx-3 flex gap-2.5 overflow-x-auto px-3 pb-0.5 md:mx-0 md:grid md:grid-cols-5 md:gap-3 md:overflow-visible md:px-0 md:pb-0">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5 md:gap-3">
                 <Kpi label="Lead thực (CRM)" value={formatNumber(crmTotals.crmLeads)} />
                 <Kpi label="KHQT" value={formatNumber(crmTotals.khqt)} />
                 <Kpi label="KHD (Chốt)" value={formatNumber(crmTotals.khd)} />
                 <Kpi label="CPQL (Chi / KHQT)" value={crmTotals.cpql === null ? "—" : formatCurrency(crmTotals.cpql)} />
-                <Kpi label="CPS (Chi / KHD)" value={crmTotals.cps === null ? "—" : formatCurrency(crmTotals.cps)} />
+                <Kpi
+                  label="CPS (Chi / KHD)"
+                  value={crmTotals.cps === null ? "—" : formatCurrency(crmTotals.cps)}
+                  className="col-span-2 sm:col-span-1"
+                />
               </div>
 
               <section className="rounded-xl border border-border bg-card p-3.5 shadow-xs sm:p-4">
@@ -1471,18 +1475,20 @@ function Kpi({
   label,
   value,
   icon: Icon,
+  className,
 }: {
   label: string;
   value: string;
   icon?: React.ComponentType<{ className?: string }>;
+  className?: string;
 }) {
   return (
-    <div className="min-w-[144px] shrink-0 rounded-xl border border-border bg-card px-3.5 py-2.5 shadow-xs md:min-w-0 md:px-4 md:py-3">
+    <div className={cn("min-w-0 rounded-xl border border-border bg-card px-3 py-2.5 shadow-xs sm:px-3.5 md:px-4 md:py-3", className)}>
       <div className="flex items-center justify-between gap-2">
         <div className="truncate text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">{label}</div>
         {Icon ? <Icon className="size-3.5 shrink-0 text-muted-foreground" /> : null}
       </div>
-      <div className="mt-1 truncate text-xl font-bold tabular-nums sm:text-2xl">{value}</div>
+      <div className="mt-1 truncate text-lg font-bold tabular-nums sm:text-2xl">{value}</div>
     </div>
   );
 }

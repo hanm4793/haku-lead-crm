@@ -100,6 +100,9 @@ export function LeadTable({
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
     mobileListRef.current?.scrollTo({ top: 0 });
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }, [page, pageSize]);
 
   const handleScroll = React.useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -162,7 +165,7 @@ export function LeadTable({
   const nameStickyOffset = selectable ? 88 : 48;
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="relative flex flex-col md:min-h-0 md:flex-1 md:overflow-hidden">
       {/* Thanh tiến trình mỏng mượt phía trên khi làm mới — không đóng băng hay che mờ dữ liệu */}
       {loading && (
         <div
@@ -176,12 +179,12 @@ export function LeadTable({
       )}
 
       {/* ===================================================================== */}
-      {/* MOBILE STACKED LEAD CARDS (< 768px) — Trải nghiệm chuẩn Native CRM App */}
+      {/* MOBILE STACKED LEAD CARDS (< 768px) — Cuộn trang tự nhiên chuẩn App   */}
       {/* ===================================================================== */}
       <div
         ref={mobileListRef}
         className={cn(
-          "min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain bg-background/50 p-2.5 md:hidden",
+          "space-y-2.5 bg-background/50 p-2.5 md:hidden",
           loading && leads.length > 0 && "opacity-75 transition-opacity",
         )}
       >

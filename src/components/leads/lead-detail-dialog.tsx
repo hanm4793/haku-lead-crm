@@ -163,7 +163,7 @@ function CategoryBadge({ category }: { category: LeadCategory }) {
 }
 
 const TAB_TRIGGER_CLASS =
-  "relative flex h-11 shrink-0 items-center gap-1.5 rounded-none border-b-2 border-transparent px-3 text-xs font-semibold text-slate-600 shadow-none transition-colors data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary";
+  "relative flex h-10 sm:h-11 min-w-0 items-center justify-center gap-1 sm:gap-1.5 rounded-none border-b-2 border-transparent px-1.5 sm:px-3 text-[11.5px] sm:text-xs font-semibold text-slate-600 shadow-none transition-colors data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary";
 
 const UNSAVED_CONFIRM = "Bạn có thay đổi chưa lưu. Đóng và bỏ các thay đổi này?";
 
@@ -623,7 +623,7 @@ function LeadDetailDialogBody({
                   </DialogDescription>
                 ) : (
                   <DialogDescription asChild>
-                    <div className="no-scrollbar mt-1.5 flex items-center gap-2 overflow-x-auto text-sm text-muted-foreground sm:flex-wrap">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground sm:gap-2">
                       {lead.phone ? (
                         <a
                           href={`tel:${lead.phone}`}
@@ -637,7 +637,7 @@ function LeadDetailDialogBody({
                       )}
 
                       {lead.phone && (
-                        <div className="flex shrink-0 items-center gap-1.5 sm:flex-wrap">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => {
@@ -770,29 +770,31 @@ function LeadDetailDialogBody({
           onValueChange={(v) => setActiveTab(v as DetailTab)}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
-          <div className="no-scrollbar shrink-0 overflow-x-auto overflow-y-hidden border-b border-border bg-slate-50/80 px-4 sm:px-6">
-            <TabsList className="flex h-11 w-max justify-start gap-2 rounded-none bg-transparent p-0 sm:gap-4">
+          <div className="shrink-0 border-b border-border bg-slate-50/80 px-2 sm:px-6">
+            <TabsList className="grid h-10 w-full grid-cols-4 gap-0 rounded-none bg-transparent p-0 sm:flex sm:h-11 sm:w-auto sm:justify-start sm:gap-4">
               <TabsTrigger value="care" className={TAB_TRIGGER_CLASS}>
-                <PhoneCall className="size-4" />
-                Xử lý & Chăm sóc
+                <PhoneCall className="size-3.5 shrink-0 max-[380px]:hidden sm:size-4" />
+                <span className="sm:hidden">Chăm sóc</span>
+                <span className="hidden sm:inline">Xử lý &amp; Chăm sóc</span>
               </TabsTrigger>
               <TabsTrigger value="comments" className={TAB_TRIGGER_CLASS}>
-                <MessageSquare className="size-4" />
-                Bình luận
+                <MessageSquare className="size-3.5 shrink-0 max-[380px]:hidden sm:size-4" />
+                <span className="truncate">Bình luận</span>
                 {commentCount > 0 && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold tabular-nums text-primary">
+                  <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-primary sm:px-2 sm:text-[11px]">
                     {commentCount}
                   </span>
                 )}
               </TabsTrigger>
               <TabsTrigger value="details" className={TAB_TRIGGER_CLASS}>
-                <FileText className="size-4" />
-                Form & Marketing
+                <FileText className="size-3.5 shrink-0 max-[380px]:hidden sm:size-4" />
+                <span className="sm:hidden">Thông tin</span>
+                <span className="hidden sm:inline">Form &amp; Marketing</span>
               </TabsTrigger>
               <TabsTrigger value="logs" className={TAB_TRIGGER_CLASS}>
-                <History className="size-4" />
-                Nhật ký
-                <span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-[11px] font-bold tabular-nums text-slate-600">
+                <History className="size-3.5 shrink-0 max-[380px]:hidden sm:size-4" />
+                <span className="truncate">Nhật ký</span>
+                <span className="rounded-full bg-slate-200/70 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-slate-600 sm:px-2 sm:text-[11px]">
                   {logs.length}
                 </span>
               </TabsTrigger>

@@ -461,14 +461,20 @@ export function LeadsPage({
   };
 
   return (
-    <div className="flex h-[calc(100dvh-3.25rem-3.65rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] flex-col gap-2.5 p-3 md:h-dvh md:gap-3 md:p-4">
+    <div
+      className={cn(
+        "flex flex-col gap-2.5 p-3 md:h-dvh md:gap-3 md:p-4",
+        selectedIds.length > 0 && "max-md:pb-20",
+      )}
+    >
       <LeadKpiHeader kpis={data.kpis} />
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xs">
+      <div className="flex flex-col rounded-xl border border-border bg-card shadow-xs md:min-h-0 md:flex-1 md:overflow-hidden">
         {/* ================================================================= */}
-        {/* MOBILE STICKY COMMAND HEADER (< 768px) — Tối ưu thao tác 1 ngón cái */}
+        {/* MOBILE STICKY COMMAND HEADER (< 768px) — Không scroll ngang, 1 chạm */}
         {/* ================================================================= */}
-        <div className="space-y-2 border-b border-border bg-card px-2.5 py-2.5 md:hidden">
+        <div className="sticky top-[calc(3.25rem+env(safe-area-inset-top,0px))] z-20 space-y-2 rounded-t-xl border-b border-border bg-card/95 px-2.5 py-2.5 backdrop-blur-md md:hidden">
+          {/* Hàng 1: Ô tìm kiếm + Nút Tạo Lead mới + Menu phụ (Excel / Làm mới) */}
           <div className="flex items-center gap-1.5">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -493,14 +499,17 @@ export function LeadsPage({
               )}
             </div>
 
-            <LeadFilterPopover
-              filters={filters}
-              fanpageOptions={fanpageOptions}
-              assigneeOptions={assignees}
-              catalog={catalog}
-              onChange={setFilters}
-              onReset={handleResetAllFilters}
-            />
+            {allowCreate && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setCreateOpen(true)}
+                className="h-9 shrink-0 gap-1 rounded-lg px-3 text-xs font-semibold shadow-2xs"
+              >
+                <Plus className="size-4" />
+                <span>Tạo</span>
+              </Button>
+            )}
 
             {/* Menu thao tác phụ trên Mobile (Làm mới, Xuất/Nhập Excel) */}
             <DropdownMenu>
@@ -549,8 +558,8 @@ export function LeadsPage({
             </DropdownMenu>
           </div>
 
-          {/* Hàng Chip trạng thái vuốt ngang 1 chạm + Lọc ngày trên Mobile */}
-          <div className="no-scrollbar -mx-2.5 flex items-center gap-1.5 overflow-x-auto px-2.5">
+          {/* Hàng 2: Segmented Control 3 trạng thái đều nhau — hiển thị trọn vẹn không cần vuốt ngang */}
+          <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1">
             {STATUS_TABS.map((tab) => {
               const active = filters.tab === tab.id;
               return (
@@ -559,18 +568,17 @@ export function LeadsPage({
                   type="button"
                   onClick={() => setFilters({ tab: tab.id })}
                   className={cn(
-                    "inline-flex h-7.5 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors active:scale-96",
+                    "inline-flex h-8 min-w-0 items-center justify-center gap-1 rounded-md px-1.5 text-xs transition-all active:scale-98",
                     active
-                      ? "border-primary bg-primary text-primary-foreground shadow-2xs"
-                      : "border-border bg-slate-50/90 text-slate-700",
+                      ? "bg-white font-semibold text-primary shadow-2xs"
+                      : "font-medium text-slate-600 hover:text-slate-900",
                   )}
                 >
-                  <span className={cn("size-1.5 rounded-full", active ? "bg-white" : tab.dotClass)} />
-                  <span>{tab.shortLabel}</span>
+                  <span className="truncate">{tab.shortLabel}</span>
                   <span
                     className={cn(
-                      "rounded-full px-1.5 text-[10.5px] font-semibold tabular-nums",
-                      active ? "bg-white/20 text-white" : "bg-slate-200/75 text-slate-600",
+                      "shrink-0 rounded-full px-1.5 py-0.2 text-[10px] font-semibold tabular-nums",
+                      active ? "bg-primary/12 text-primary" : "bg-slate-200/80 text-slate-600",
                     )}
                   >
                     {data.tabCounts[tab.id]}
@@ -578,23 +586,40 @@ export function LeadsPage({
                 </button>
               );
             })}
+          </div>
 
-            <DateRangePicker
-              preset={datePreset}
-              range={{ from: filters.dateFrom, to: filters.dateTo }}
-              onChange={handleDateChange}
-              className="max-md:h-7.5 max-md:rounded-full max-md:text-xs"
+          {/* Hàng 3: Lọc thời gian + Bộ lọc nâng cao + Xóa lọc */}
+          <div className="flex items-center gap-1.5">
+            <div className="min-w-0 flex-1">
+              <DateRangePicker
+                preset={datePreset}
+                range={{ from: filters.dateFrom, to: filters.dateTo }}
+                onChange={handleDateChange}
+                className="w-full justify-start max-md:h-8.5 max-md:text-xs"
+              />
+            </div>
+
+            <LeadFilterPopover
+              filters={filters}
+              fanpageOptions={fanpageOptions}
+              assigneeOptions={assignees}
+              catalog={catalog}
+              onChange={setFilters}
+              onReset={handleResetAllFilters}
             />
 
             {hasActiveFilters && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={handleResetAllFilters}
-                className="inline-flex h-7.5 shrink-0 items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2.5 text-xs font-semibold text-rose-600"
+                aria-label="Xóa lọc"
+                className="h-8.5 shrink-0 gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 hover:text-rose-700"
               >
-                <X className="size-3" />
-                Xóa lọc
-              </button>
+                <X className="size-3.5" />
+                <span className="max-[370px]:sr-only">Xóa</span>
+              </Button>
             )}
           </div>
         </div>
@@ -926,19 +951,6 @@ export function LeadsPage({
           />
         </div>
       </div>
-
-      {/* Nút Floating Action Button (FAB) tạo lead nhanh bằng 1 ngón cái trên Mobile */}
-      {allowCreate && selectedIds.length === 0 && (
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          aria-label="Tạo lead mới"
-          className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-4 z-30 inline-flex h-12 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/30 ring-1 ring-white/20 transition-transform active:scale-94 md:hidden"
-        >
-          <Plus className="size-5" />
-          <span>Tạo lead</span>
-        </button>
-      )}
 
       <LeadDetailDialog
         lead={selected}

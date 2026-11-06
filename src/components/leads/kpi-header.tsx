@@ -21,11 +21,11 @@ export function LeadKpiHeader({ kpis }: { kpis: LeadKpis }) {
   ];
 
   return (
-    <div className="no-scrollbar -mx-3 flex gap-2 overflow-x-auto px-3 md:mx-0 md:grid md:grid-cols-3 md:gap-2.5 md:overflow-visible md:px-0 xl:grid-cols-6">
+    <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 xl:grid-cols-6">
       {cards.map((card) => (
         <div
           key={card.label}
-          className="min-w-[112px] shrink-0 rounded-xl border border-border bg-card px-3 py-2 shadow-2xs md:min-w-0 md:px-3.5 md:py-2.5"
+          className="min-w-0 rounded-xl border border-border bg-card px-2.5 py-2 shadow-2xs sm:px-3.5 sm:py-2.5"
         >
           <div className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             <span className="md:hidden">{card.shortLabel}</span>
@@ -33,7 +33,7 @@ export function LeadKpiHeader({ kpis }: { kpis: LeadKpis }) {
           </div>
           <div
             className={cn(
-              "mt-0.5 text-lg font-bold tabular-nums leading-tight md:mt-1 md:text-2xl",
+              "mt-0.5 truncate text-base font-bold tabular-nums leading-tight sm:text-lg md:mt-1 md:text-2xl",
               card.tone === "positive"
                 ? "text-primary"
                 : card.tone === "accent"

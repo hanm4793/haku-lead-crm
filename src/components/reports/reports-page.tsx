@@ -244,12 +244,12 @@ export function ReportsPage({
           <ReportKpiCards current={summary.kpis} previous={summary.previousKpis} />
 
           <Tabs defaultValue="overview">
-            <TabsList className="w-full justify-start border-b border-border sm:w-auto">
-              <TabsTrigger value="overview" className="gap-1.5 max-sm:flex-1">
+            <TabsList className="grid w-full grid-cols-2 border-b border-border sm:inline-flex sm:w-auto sm:justify-start">
+              <TabsTrigger value="overview" className="gap-1.5">
                 <BarChart3 className="size-3.5" />
                 Tổng quan
               </TabsTrigger>
-              <TabsTrigger value="pivot" className="gap-1.5 max-sm:flex-1">
+              <TabsTrigger value="pivot" className="gap-1.5">
                 <Table2 className="size-3.5" />
                 Bảng chi tiết
               </TabsTrigger>
