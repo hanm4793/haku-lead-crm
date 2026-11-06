@@ -31,6 +31,15 @@ export function formatDateTime(iso: string | null | undefined) {
   return `${pad(hours)}:${pad(minutes)} ${pad(day)}/${pad(month + 1)}/${year}`;
 }
 
+/** 16:06 — định dạng giờ rút gọn trên thanh công cụ mobile (giờ VN UTC+7). */
+export function formatShortTime(iso: string | null | undefined) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const { hours, minutes } = toVnParts(d);
+  return `${pad(hours)}:${pad(minutes)}`;
+}
+
 export function formatDate(iso: string | null | undefined) {
   if (!iso) return "—";
   const d = new Date(iso);

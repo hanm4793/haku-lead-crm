@@ -184,8 +184,10 @@ function SelectTrigger({
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & { size?: "default" | "sm" }) {
   const ctx = React.useContext(MobileSelectContext);
   const triggerClass = cn(
-    "flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm shadow-xs touch-manipulation outline-none transition-[color,border-color,box-shadow]",
-    "data-[size=default]:h-9 data-[size=sm]:h-8 max-md:data-[size=default]:h-10 max-md:data-[size=sm]:h-9 data-[placeholder]:text-muted-foreground",
+    "flex w-full items-center justify-between gap-1.5 border border-input bg-card font-medium shadow-xs touch-manipulation outline-none transition-[color,border-color,box-shadow] data-[placeholder]:text-muted-foreground",
+    size === "sm"
+      ? "h-8 rounded-md px-2.5 py-1 text-xs max-md:h-9 max-md:rounded-lg"
+      : "h-9 rounded-md px-3 py-2 text-sm max-md:h-10 max-md:rounded-lg",
     "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50",
     "[&>span]:truncate [&>span]:text-left",
     className,

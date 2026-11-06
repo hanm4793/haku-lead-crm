@@ -613,7 +613,7 @@ export function LeadsPage({
                 preset={datePreset}
                 range={{ from: filters.dateFrom, to: filters.dateTo }}
                 onChange={handleDateChange}
-                className="w-full justify-start max-md:h-8.5 max-md:text-xs"
+                className="w-full justify-start max-md:h-9 max-md:px-2.5 max-md:text-xs"
               />
             </div>
 
@@ -633,7 +633,7 @@ export function LeadsPage({
                 size="sm"
                 onClick={handleResetAllFilters}
                 aria-label="Xóa lọc"
-                className="h-8.5 shrink-0 gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 hover:text-rose-700"
+                className="h-9 shrink-0 gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 hover:text-rose-700"
               >
                 <X className="size-3.5" />
                 <span className="max-[370px]:sr-only">Xóa</span>

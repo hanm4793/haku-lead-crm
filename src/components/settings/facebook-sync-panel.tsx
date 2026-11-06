@@ -44,7 +44,7 @@ export function FacebookSyncPanel({
     toast.info(
       value === "0"
         ? "Đã tắt tự động đồng bộ"
-        : `Đã bật tự động đồng bộ mỗi ${value} phút`,
+        : `Đã bật tự động đồng bộ: ${value === "60" ? "1h" : `${value}p`}`,
     );
   };
 
@@ -85,24 +85,24 @@ export function FacebookSyncPanel({
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <span className="font-medium text-slate-800">Facebook (Lead Ads &amp; Marketing Insights)</span>
         {isAdmin && (
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <div className="flex w-full flex-nowrap items-center gap-1.5 sm:w-auto sm:gap-2">
             <Select value={autoSyncMinutes} onValueChange={handleAutoSyncChange}>
-              <SelectTrigger className="h-8 flex-1 gap-1.5 bg-card text-xs sm:w-[175px] sm:flex-none">
+              <SelectTrigger size="sm" className="min-w-0 flex-1 gap-1.5 bg-card px-2.5 text-xs sm:w-[138px] sm:flex-none">
                 <Clock className="size-3.5 shrink-0 text-primary" />
-                <SelectValue placeholder="Tự động đồng bộ" />
+                <SelectValue placeholder="Tự động" />
               </SelectTrigger>
               <SelectContent align="end">
                 <SelectItem value="0" className="text-xs">
                   Tự động: Tắt
                 </SelectItem>
                 <SelectItem value="15" className="text-xs">
-                  Tự động: Mỗi 15 phút
+                  Tự động: 15p
                 </SelectItem>
                 <SelectItem value="30" className="text-xs">
-                  Tự động: Mỗi 30 phút
+                  Tự động: 30p
                 </SelectItem>
                 <SelectItem value="60" className="text-xs">
-                  Tự động: Mỗi 1 giờ
+                  Tự động: 1h
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -111,12 +111,13 @@ export function FacebookSyncPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 flex-1 gap-1.5 bg-card text-xs max-md:h-9 sm:flex-none"
+              className="h-8 shrink-0 gap-1.5 bg-card px-2.5 text-xs max-md:h-9 max-md:rounded-lg sm:px-3"
               disabled={syncing || !tokenConfigured}
               onClick={() => void handleFullSync()}
             >
               <RefreshCw className={cn("size-3.5 shrink-0", syncing && "animate-spin")} />
-              <span className="truncate">{syncing ? "Đang đồng bộ…" : "Đồng bộ toàn bộ ngay"}</span>
+              <span className="max-sm:hidden">{syncing ? "Đang đồng bộ…" : "Đồng bộ toàn bộ ngay"}</span>
+              <span className="sm:hidden">{syncing ? "Đang tải…" : "Đồng bộ ngay"}</span>
             </Button>
           </div>
         )}

@@ -73,7 +73,7 @@ import {
   type CampaignSummary,
   type Efficiency,
 } from "@/lib/marketing/insights-view";
-import { cn, formatCurrency, formatDate, formatDateTime, formatNumber, formatPercent } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, formatDateTime, formatNumber, formatPercent, formatShortTime } from "@/lib/utils";
 import { useToast } from "@/components/providers/toast-provider";
 
 const AXIS_STYLE = { fontSize: 11, fill: "#94a3b8" } as const;
@@ -475,7 +475,7 @@ export function MarketingPage({
     toast.info(
       value === "0"
         ? "Đã tắt tự động đồng bộ"
-        : `Đã bật tự động đồng bộ định kỳ mỗi ${value} phút`,
+        : `Đã bật tự động đồng bộ: ${value === "60" ? "1h" : `${value}p`}`,
     );
   };
 
@@ -567,47 +567,54 @@ export function MarketingPage({
             {span.from && span.to ? ` · ${formatDate(span.from)} – ${formatDate(span.to)}` : ""}
           </p>
         </div>
-        <div className="flex w-full flex-wrap items-center gap-2 md:w-auto">
+        <div className="flex w-full flex-nowrap items-center gap-1.5 md:w-auto md:flex-wrap md:gap-2">
           {syncedAt && (
             <button
               type="button"
               onClick={() => startRefreshTransition(() => router.refresh())}
-              title="Nhấn để làm mới dữ liệu trang Marketing"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15"
+              title={`Cập nhật lúc ${formatDateTime(syncedAt)} — Nhấn để làm mới`}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2 text-[11.5px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15 max-md:h-9 max-md:rounded-lg sm:px-2.5 sm:text-[11px]"
             >
-              <span className="size-1.5 rounded-full bg-emerald-500" />
+              <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
               <span className="max-sm:hidden">Cập nhật:</span>
-              <span className="tabular-nums">{formatDateTime(syncedAt)}</span>
-              <RefreshCw className={cn("size-3 opacity-70", (pending || isRefreshing) && "animate-spin")} />
+              <span className="tabular-nums sm:hidden">{formatShortTime(syncedAt)}</span>
+              <span className="hidden tabular-nums sm:inline">{formatDateTime(syncedAt)}</span>
+              <RefreshCw className={cn("size-3.5 opacity-75 sm:size-3", (pending || isRefreshing) && "animate-spin")} />
             </button>
           )}
           {canSync && activeTab === "campaigns" ? (
-            <div className="ml-auto flex items-center gap-2 md:ml-0">
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5 sm:flex-none sm:gap-2">
               <Select value={autoSyncMinutes} onValueChange={handleAutoSyncChange}>
-                <SelectTrigger className="h-8 w-[148px] gap-1.5 text-xs sm:w-[175px]">
+                <SelectTrigger size="sm" className="min-w-0 flex-1 gap-1.5 px-2.5 text-xs sm:w-[138px] sm:flex-none">
                   <Clock className="size-3.5 shrink-0 text-primary" />
-                  <SelectValue placeholder="Tự động đồng bộ" />
+                  <SelectValue placeholder="Tự động" />
                 </SelectTrigger>
                 <SelectContent align="end">
                   <SelectItem value="0" className="text-xs">
                     Tự động: Tắt
                   </SelectItem>
                   <SelectItem value="15" className="text-xs">
-                    Tự động: Mỗi 15 phút
+                    Tự động: 15p
                   </SelectItem>
                   <SelectItem value="30" className="text-xs">
-                    Tự động: Mỗi 30 phút
+                    Tự động: 30p
                   </SelectItem>
                   <SelectItem value="60" className="text-xs">
-                    Tự động: Mỗi 1 giờ
+                    Tự động: 1h
                   </SelectItem>
                 </SelectContent>
               </Select>
 
-              <Button type="button" size="sm" className="h-8" disabled={pending || !configured} onClick={() => void sync()}>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 shrink-0 gap-1.5 px-2.5 text-xs max-md:h-9 max-md:rounded-lg sm:px-3"
+                disabled={pending || !configured}
+                onClick={() => void sync()}
+              >
                 <RefreshCw className={cn("size-3.5", pending && "animate-spin")} />
                 <span className="max-sm:hidden">{pending ? "Đang đồng bộ…" : "Đồng bộ ngay"}</span>
-                <span className="sm:hidden">Đồng bộ</span>
+                <span className="sm:hidden">{pending ? "Đang tải…" : "Đồng bộ"}</span>
               </Button>
             </div>
           ) : null}

@@ -23,7 +23,7 @@ import { countActiveFilters, EMPTY_FILTERS } from "@/lib/filters";
 import type { PivotDimension } from "@/lib/metrics";
 import type { ReportSummary } from "@/lib/reports/summary";
 import type { ActivityKind, Lead, LeadFilters } from "@/lib/types";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime, formatShortTime } from "@/lib/utils";
 
 interface LogEntry {
   kind: ActivityKind;
@@ -178,52 +178,63 @@ export function ReportsPage({
             Phân tích hiệu quả lead theo kênh, lý do loại, hiệu suất đội ngũ Sale &amp; tỷ lệ ký HĐ
           </p>
         </div>
-        <div className="flex w-full flex-wrap items-center gap-2 md:w-auto">
+        <div className="flex w-full flex-nowrap items-center gap-1.5 md:w-auto md:flex-wrap md:gap-2">
+          <div className="max-md:hidden">
+            <ProjectSwitcher />
+          </div>
+
+          <LeadFilterPopover
+            filters={filters}
+            fanpageOptions={fanpageOptions}
+            assigneeOptions={assignees}
+            catalog={catalog}
+            onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
+            onReset={resetAllFilters}
+          />
+
+          <div className="min-w-0 flex-1 sm:flex-none">
+            <DateRangePicker
+              preset={preset}
+              range={range}
+              className="w-full justify-start max-md:px-2.5 max-md:text-xs"
+              onChange={(nextPreset, nextRange) => {
+                setPreset(nextPreset);
+                const resolved = nextPreset === "CUSTOM" ? nextRange : resolvePreset(nextPreset, now);
+                setRange(resolved);
+                setFilters((f) => ({ ...f, dateFrom: resolved.from, dateTo: resolved.to }));
+              }}
+            />
+          </div>
+
+          {filterCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Xóa lọc"
+              title={`Xóa lọc (${filterCount})`}
+              className="h-8 shrink-0 gap-1 border border-rose-200 bg-rose-50 px-2 text-xs font-semibold text-rose-600 hover:bg-rose-100 hover:text-rose-700 max-md:h-9 max-md:rounded-lg sm:border-transparent sm:bg-transparent sm:px-2.5 sm:font-medium sm:text-muted-foreground"
+              onClick={resetAllFilters}
+            >
+              <RotateCcw className="size-3.5" />
+              <span className="max-sm:hidden">Xóa lọc ({filterCount})</span>
+            </Button>
+          )}
+
           {summary.lastUpdatedAt && (
             <button
               type="button"
               onClick={() => setRefreshTick((t) => t + 1)}
-              title="Nhấn để làm mới số liệu báo cáo"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15"
+              title={`Cập nhật lúc ${formatDateTime(summary.lastUpdatedAt)} — Nhấn để làm mới`}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2 text-[11.5px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15 max-md:h-9 max-md:rounded-lg sm:px-2.5 sm:text-[11px]"
             >
-              <span className="size-1.5 rounded-full bg-emerald-500" />
+              <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
               <span className="max-sm:hidden">Cập nhật:</span>
-              <span className="tabular-nums">{formatDateTime(summary.lastUpdatedAt)}</span>
-              <RefreshCw className={cn("size-3 opacity-70", loading && "animate-spin")} />
+              <span className="tabular-nums sm:hidden">{formatShortTime(summary.lastUpdatedAt)}</span>
+              <span className="hidden tabular-nums sm:inline">{formatDateTime(summary.lastUpdatedAt)}</span>
+              <RefreshCw className={cn("size-3.5 opacity-75 sm:size-3", loading && "animate-spin")} />
             </button>
           )}
-          {!summary.lastUpdatedAt && loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
-          {filterCount > 0 && (
-            <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground" onClick={resetAllFilters}>
-              <RotateCcw className="size-3.5" />
-              Xóa lọc ({filterCount})
-            </Button>
-          )}
-          <div className="max-md:hidden">
-            <ProjectSwitcher />
-          </div>
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto md:ml-0">
-            <LeadFilterPopover
-              filters={filters}
-              fanpageOptions={fanpageOptions}
-              assigneeOptions={assignees}
-              catalog={catalog}
-              onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
-              onReset={resetAllFilters}
-            />
-            <div className="min-w-0 flex-1 sm:flex-none">
-              <DateRangePicker
-                preset={preset}
-                range={range}
-                onChange={(nextPreset, nextRange) => {
-                  setPreset(nextPreset);
-                  const resolved = nextPreset === "CUSTOM" ? nextRange : resolvePreset(nextPreset, now);
-                  setRange(resolved);
-                  setFilters((f) => ({ ...f, dateFrom: resolved.from, dateTo: resolved.to }));
-                }}
-              />
-            </div>
-          </div>
+          {!summary.lastUpdatedAt && loading && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
         </div>
       </div>
 
