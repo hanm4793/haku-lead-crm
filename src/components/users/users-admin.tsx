@@ -240,7 +240,16 @@ export function UsersAdmin({
   const openEdit = (user: ManagedUser) => {
     setCreating(false);
     setEditing(user);
-    setForm(toForm(user, isSuper));
+    const nextForm = toForm(user, isSuper);
+    if (nextForm.role === "PARTNER_ADMIN" && nextForm.projectIds.length > 0) {
+      const allowedPageSet = new Set(
+        pages
+          .filter((p) => Boolean(p.projectId && nextForm.projectIds.includes(p.projectId)))
+          .map((p) => p.value),
+      );
+      nextForm.pageIds = nextForm.pageIds.filter((id) => allowedPageSet.has(id));
+    }
+    setForm(nextForm);
   };
 
   const close = () => {
@@ -311,20 +320,17 @@ export function UsersAdmin({
   }, [isSuper, projectMultiOptions, getPartnerProjectIds, form.partnerId]);
 
   const availablePageOptions = React.useMemo(() => {
+    if (form.projectIds.length === 0) return [];
     return pages
-      .filter((p) => {
-        if (form.pageIds.includes(p.value)) return true;
-        if (form.projectIds.length === 0 || !p.projectId) return true;
-        return form.projectIds.includes(p.projectId);
-      })
+      .filter((p) => Boolean(p.projectId && form.projectIds.includes(p.projectId)))
       .map((p) => {
         const projName = p.projectId ? projectNameById.get(p.projectId) : null;
         return {
           value: p.value,
-          label: projName && form.projectIds.length !== 1 ? `${p.label} (${projName})` : p.label,
+          label: projName && form.projectIds.length > 1 ? `${p.label} (${projName})` : p.label,
         };
       });
-  }, [pages, form.projectIds, form.pageIds, projectNameById]);
+  }, [pages, form.projectIds, projectNameById]);
 
   return (
     <div className="space-y-3.5 p-3 sm:space-y-4 sm:p-4">
@@ -548,20 +554,44 @@ export function UsersAdmin({
                   <MultiSelect
                     options={projectMultiOptions}
                     selected={form.projectIds}
-                    onChange={(projectIds) => setForm((f) => ({ ...f, projectIds }))}
+                    onChange={(projectIds) => {
+                      const allowedPageSet = new Set(
+                        pages
+                          .filter((p) => Boolean(p.projectId && projectIds.includes(p.projectId)))
+                          .map((p) => p.value),
+                      );
+                      setForm((f) => ({
+                        ...f,
+                        projectIds,
+                        pageIds: f.pageIds.filter((id) => allowedPageSet.has(id)),
+                      }));
+                    }}
                     placeholder="Chọn dự án…"
                     searchable={projects.length > 5}
                   />
                 </Field>
               )}
               {form.role === "PARTNER_ADMIN" && (
-                <Field label="Fanpage">
-                  <MultiSelect
-                    options={availablePageOptions}
-                    selected={form.pageIds}
-                    onChange={(pageIds) => setForm((f) => ({ ...f, pageIds }))}
-                    searchable={availablePageOptions.length > 6}
-                  />
+                <Field label="Fanpage (thuộc dự án đã chọn)">
+                  {form.projectIds.length === 0 ? (
+                    <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                      Hãy chọn Dự án quản trị trước để hiển thị danh sách Fanpage của dự án đó.
+                    </div>
+                  ) : availablePageOptions.length === 0 ? (
+                    <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                      Dự án đã chọn chưa có Fanpage nào (vào menu Dự án → chi tiết → Fanpage để gán).
+                    </div>
+                  ) : (
+                    <MultiSelect
+                      options={availablePageOptions}
+                      selected={form.pageIds.filter((id) =>
+                        availablePageOptions.some((opt) => opt.value === id),
+                      )}
+                      onChange={(pageIds) => setForm((f) => ({ ...f, pageIds }))}
+                      placeholder="Chọn fanpage thuộc dự án…"
+                      searchable={availablePageOptions.length > 6}
+                    />
+                  )}
                 </Field>
               )}
               {form.role === "PARTNER_ADMIN" && isSuper && (

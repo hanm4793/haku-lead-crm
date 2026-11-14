@@ -16,7 +16,7 @@ import {
   removePartnerAndStaffFromProject,
   removeProjectMember,
 } from "@/lib/db/project-repo";
-import { appUsers, projectMembers, userFacebookPages } from "@/lib/db/schema";
+import { appUsers, facebookPages, projectMembers, userFacebookPages } from "@/lib/db/schema";
 
 const partnerUser = alias(appUsers, "partner_user");
 
@@ -238,9 +238,22 @@ async function assertPartner(partnerId: string) {
   }
 }
 
-async function replacePageGrants(userId: string, pageIds: string[]) {
+async function replacePageGrants(userId: string, pageIds: string[], allowedProjectIds?: string[]) {
   const db = getDb();
-  const unique = [...new Set(pageIds.map((id) => id.trim()).filter(Boolean))];
+  let unique = [...new Set(pageIds.map((id) => id.trim()).filter(Boolean))];
+  if (allowedProjectIds && allowedProjectIds.length > 0 && unique.length > 0) {
+    const validPages = await db
+      .select({ facebookPageId: facebookPages.facebookPageId })
+      .from(facebookPages)
+      .where(
+        and(
+          inArray(facebookPages.facebookPageId, unique),
+          inArray(facebookPages.projectId, allowedProjectIds),
+        ),
+      );
+    const validSet = new Set(validPages.map((p) => p.facebookPageId));
+    unique = unique.filter((id) => validSet.has(id));
+  }
   await db.delete(userFacebookPages).where(eq(userFacebookPages.userId, userId));
   if (unique.length === 0) return;
   await db.insert(userFacebookPages).values(unique.map((facebookPageId) => ({ userId, facebookPageId })));
@@ -316,8 +329,8 @@ export async function createManagedUser(input: CreateUserInput, actor: ViewerSco
     .returning({ id: appUsers.id });
 
   if (role === "PARTNER_ADMIN") {
-    await replacePageGrants(row.id, pageIds);
     const partnerProjectIds = [...new Set([...(projectId ? [projectId] : []), ...requestedProjectIds])];
+    await replacePageGrants(row.id, pageIds, partnerProjectIds);
     for (const pid of partnerProjectIds) {
       await addProjectMember(pid, row.id);
     }
@@ -453,7 +466,13 @@ export async function updateManagedUser(
     .where(eq(appUsers.id, row.id));
 
   if (actor.role === "SUPER_ADMIN" && nextRole === "PARTNER_ADMIN" && input.pageIds) {
-    await replacePageGrants(row.id, input.pageIds);
+    const allowedProjIds =
+      requestedProjectIds !== undefined && requestedProjectIds.length > 0
+        ? [...new Set([...(nextProjectId ? [nextProjectId] : []), ...requestedProjectIds])]
+        : nextProjectId
+          ? [nextProjectId]
+          : [];
+    await replacePageGrants(row.id, input.pageIds, allowedProjIds);
   }
   if (nextRole !== "PARTNER_ADMIN") {
     await db.delete(userFacebookPages).where(eq(userFacebookPages.userId, row.id));
