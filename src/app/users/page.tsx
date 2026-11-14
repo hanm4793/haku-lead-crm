@@ -46,7 +46,7 @@ export default async function Page() {
     }));
   const partners = users
     .filter((user) => user.role === "PARTNER_ADMIN")
-    .map((user) => ({ id: user.id, name: user.fullName }));
+    .map((user) => ({ id: user.id, name: user.fullName, projectIds: user.projectIds }));
 
   return (
     <UsersAdmin

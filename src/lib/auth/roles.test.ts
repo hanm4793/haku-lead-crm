@@ -299,6 +299,16 @@ describe("accounts", () => {
       pageIds: [],
     });
 
+    expect(
+      prepareCreateAccount(partner, { role: "STAFF", projectIds: ["proj-a", "proj-b"], aiEnabled: true }),
+    ).toEqual({
+      role: "STAFF",
+      partnerId: "partner-1",
+      projectId: "proj-a",
+      aiEnabled: false,
+      pageIds: [],
+    });
+
     expect(() => prepareCreateAccount(partner, { role: "PARTNER_ADMIN" })).toThrow(/chỉ tạo được nhân viên/);
     expect(() => prepareCreateAccount({ role: "SUPER_ADMIN" }, { role: "SUPER_ADMIN" })).toThrow(/super admin/);
     expect(() => prepareCreateAccount({ role: "SUPER_ADMIN" }, { role: "STAFF" })).toThrow(/partner admin/);

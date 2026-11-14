@@ -167,13 +167,22 @@ export async function listManagedUsers(actor: ViewerScope): Promise<ManagedUser[
     const memberProjectIds = projectsByUser.get(row.id) ?? [];
     const partnerProjectIds =
       row.role === "STAFF" && row.partnerId ? (projectsByUser.get(row.partnerId) ?? []) : [];
-    const projectIds = [
-      ...new Set([
-        ...(row.projectId ? [row.projectId] : []),
-        ...memberProjectIds,
-        ...partnerProjectIds,
-      ]),
-    ];
+    const projectIds =
+      row.role === "STAFF"
+        ? memberProjectIds.length > 0
+          ? memberProjectIds
+          : [
+              ...new Set([
+                ...(row.projectId ? [row.projectId] : []),
+                ...partnerProjectIds,
+              ]),
+            ]
+        : [
+            ...new Set([
+              ...(row.projectId ? [row.projectId] : []),
+              ...memberProjectIds,
+            ]),
+          ];
     return {
       id: row.id,
       fullName: row.fullName,
@@ -268,14 +277,23 @@ export async function createManagedUser(input: CreateUserInput, actor: ViewerSco
       db.select({ projectId: projectMembers.projectId }).from(projectMembers).where(eq(projectMembers.userId, partnerId)),
     ]);
     const partnerPrimary = partnerRows[0]?.projectId ?? null;
-    if (!projectId) projectId = partnerPrimary;
-    staffProjectIds = [
+    const partnerProjectIds = [
       ...new Set([
-        ...(projectId ? [projectId] : []),
         ...(partnerPrimary ? [partnerPrimary] : []),
         ...partnerMemberships.map((m) => m.projectId),
       ]),
     ];
+    if (requestedProjectIds.length > 0) {
+      const allowed =
+        actor.role === "PARTNER_ADMIN" && partnerProjectIds.length > 0
+          ? requestedProjectIds.filter((id) => partnerProjectIds.includes(id))
+          : requestedProjectIds;
+      staffProjectIds = allowed.length > 0 ? allowed : partnerProjectIds;
+      projectId = staffProjectIds[0] ?? partnerPrimary;
+    } else {
+      if (!projectId) projectId = partnerPrimary ?? partnerProjectIds[0] ?? null;
+      staffProjectIds = partnerProjectIds.length > 0 ? partnerProjectIds : projectId ? [projectId] : [];
+    }
   }
 
   const [row] = await db
@@ -341,19 +359,37 @@ export async function updateManagedUser(
     if (nextRole !== "STAFF") throw new Error("Chỉ quản lý được nhân viên của bạn.");
   }
 
-  if (actor.role === "SUPER_ADMIN") {
+  let desiredStaffProjectIds: string[] | undefined;
+  if (nextRole === "STAFF" && nextPartnerId) {
+    if (actor.role === "SUPER_ADMIN") {
+      rejectNewSuperAdmin(row.role, nextRole);
+      await assertPartner(nextPartnerId);
+    }
+    const [partnerRows, partnerMemberships] = await Promise.all([
+      db.select({ projectId: appUsers.projectId }).from(appUsers).where(eq(appUsers.id, nextPartnerId)).limit(1),
+      db.select({ projectId: projectMembers.projectId }).from(projectMembers).where(eq(projectMembers.userId, nextPartnerId)),
+    ]);
+    const partnerPrimary = partnerRows[0]?.projectId ?? null;
+    const partnerProjectIds = [
+      ...new Set([
+        ...(partnerPrimary ? [partnerPrimary] : []),
+        ...partnerMemberships.map((m) => m.projectId),
+      ]),
+    ];
+    if (requestedProjectIds !== undefined) {
+      const allowed =
+        actor.role === "PARTNER_ADMIN" && partnerProjectIds.length > 0
+          ? requestedProjectIds.filter((id) => partnerProjectIds.includes(id))
+          : requestedProjectIds;
+      desiredStaffProjectIds = allowed.length > 0 ? allowed : partnerProjectIds;
+      nextProjectId = desiredStaffProjectIds[0] ?? partnerPrimary ?? null;
+    } else if (!nextProjectId || nextPartnerId !== row.partnerId) {
+      nextProjectId = partnerPrimary ?? partnerProjectIds[0] ?? null;
+    }
+  } else if (actor.role === "SUPER_ADMIN") {
     rejectNewSuperAdmin(row.role, nextRole);
     if (nextRole === "STAFF") {
-      if (!nextPartnerId) throw new Error("Nhân viên phải thuộc một partner admin.");
-      await assertPartner(nextPartnerId);
-      if ((!nextProjectId || nextPartnerId !== row.partnerId) && nextPartnerId) {
-        const [partner] = await db
-          .select({ projectId: appUsers.projectId })
-          .from(appUsers)
-          .where(eq(appUsers.id, nextPartnerId))
-          .limit(1);
-        nextProjectId = partner?.projectId ?? null;
-      }
+      throw new Error("Nhân viên phải thuộc một partner admin.");
     }
     if (nextRole === "PARTNER_ADMIN") {
       nextPartnerId = null;
@@ -435,7 +471,12 @@ export async function updateManagedUser(
       await assignPartnerAndStaffToProject(row.id, nextProjectId);
     }
   } else if (nextRole === "STAFF") {
-    if (row.partnerId !== nextPartnerId || row.role !== "STAFF") {
+    if (desiredStaffProjectIds !== undefined) {
+      await db.delete(projectMembers).where(eq(projectMembers.userId, row.id));
+      for (const pid of desiredStaffProjectIds) {
+        await addProjectMember(pid, row.id);
+      }
+    } else if (row.partnerId !== nextPartnerId || row.role !== "STAFF") {
       await db.delete(projectMembers).where(eq(projectMembers.userId, row.id));
       if (nextPartnerId) {
         const partnerMemberships = await db

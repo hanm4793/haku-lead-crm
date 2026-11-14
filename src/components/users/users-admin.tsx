@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { createUserAction, resendPasswordEmailAction, updateUserAction } from "@/app/users/actions";
 import { DataTable, ListPanel, type DataColumn } from "@/components/common/data-table";
 import { CountTabs, FilterSelect, ListToolbar } from "@/components/common/list-toolbar";
-import { ProjectSwitcher } from "@/components/layout/project-switcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +33,7 @@ import type { ManagedUser } from "@/lib/db/users-repo";
 import { useToast } from "@/components/providers/toast-provider";
 
 type PageOption = { value: string; label: string; projectId?: string | null };
-type PartnerOption = { id: string; name: string };
+type PartnerOption = { id: string; name: string; projectIds?: string[] };
 type ProjectOption = { id: string; name: string };
 
 type FormState = {
@@ -209,15 +208,32 @@ export function UsersAdmin({
     },
   ];
 
+  const getPartnerProjectIds = React.useCallback(
+    (partnerId: string | null) => {
+      if (!partnerId) return [];
+      const found = partners.find((p) => p.id === partnerId);
+      return found?.projectIds ?? [];
+    },
+    [partners],
+  );
+
   const openCreate = (targetRole?: "PARTNER_ADMIN" | "STAFF") => {
     const nextRole = isSuper ? (targetRole ?? tab) : "STAFF";
+    const defaultPartnerId = nextRole === "STAFF" ? (partners[0]?.id ?? null) : null;
+    const defaultPartnerProjs = nextRole === "STAFF" && isSuper ? getPartnerProjectIds(defaultPartnerId) : [];
+    const defaultProjectIds =
+      defaultPartnerProjs.length > 0
+        ? defaultPartnerProjs
+        : projects[0]?.id
+          ? [projects[0].id]
+          : [];
     setEditing(null);
     setCreating(true);
     setForm({
       ...EMPTY_FORM,
       role: nextRole,
-      partnerId: nextRole === "STAFF" ? (partners[0]?.id ?? null) : null,
-      projectIds: projects[0]?.id ? [projects[0].id] : [],
+      partnerId: defaultPartnerId,
+      projectIds: defaultProjectIds,
     });
   };
 
@@ -248,8 +264,8 @@ export function UsersAdmin({
       active: form.active,
       aiEnabled: form.role === "PARTNER_ADMIN" ? form.aiEnabled : false,
       partnerId: form.role === "STAFF" ? form.partnerId : null,
-      projectId: form.role === "PARTNER_ADMIN" ? (form.projectIds[0] ?? null) : null,
-      projectIds: form.role === "PARTNER_ADMIN" ? form.projectIds : undefined,
+      projectId: form.projectIds[0] ?? null,
+      projectIds: form.projectIds,
       pageIds: form.role === "PARTNER_ADMIN" ? form.pageIds : [],
     };
     const result = editing
@@ -287,6 +303,15 @@ export function UsersAdmin({
     () => projects.map((p) => ({ value: p.id, label: p.name })),
     [projects],
   );
+
+  const staffProjectOptions = React.useMemo(() => {
+    if (!isSuper) return projectMultiOptions;
+    const allowedIds = getPartnerProjectIds(form.partnerId);
+    if (allowedIds.length === 0) return projectMultiOptions;
+    return projectMultiOptions.filter(
+      (opt) => allowedIds.includes(opt.value) || form.projectIds.includes(opt.value),
+    );
+  }, [isSuper, projectMultiOptions, getPartnerProjectIds, form.partnerId, form.projectIds]);
 
   const availablePageOptions = React.useMemo(() => {
     return pages
@@ -336,10 +361,7 @@ export function UsersAdmin({
             search={{ value: query, onChange: setQuery, placeholder: "Tìm tên / email / dự án" }}
             filters={
               <>
-                <div className="max-md:hidden">
-                  <ProjectSwitcher />
-                </div>
-                {isSuper && projects.length > 0 && (
+                {projects.length > 0 && (
                   <FilterSelect
                     value={projectFilter}
                     onChange={setProjectFilter}
@@ -436,14 +458,18 @@ export function UsersAdmin({
                     value={form.role}
                     onValueChange={(value) => {
                       const nextRole = value as "PARTNER_ADMIN" | "STAFF";
+                      const nextPartnerId = nextRole === "STAFF" ? (form.partnerId ?? partners[0]?.id ?? null) : null;
+                      const partnerProjs = nextRole === "STAFF" ? getPartnerProjectIds(nextPartnerId) : [];
                       setForm((f) => ({
                         ...f,
                         role: nextRole,
-                        partnerId: nextRole === "STAFF" ? (f.partnerId ?? partners[0]?.id ?? null) : null,
+                        partnerId: nextPartnerId,
                         projectIds:
-                          nextRole === "PARTNER_ADMIN" && f.projectIds.length === 0 && projects[0]?.id
-                            ? [projects[0].id]
-                            : f.projectIds,
+                          nextRole === "STAFF" && partnerProjs.length > 0
+                            ? partnerProjs
+                            : f.projectIds.length === 0 && projects[0]?.id
+                              ? [projects[0].id]
+                              : f.projectIds,
                       }));
                     }}
                   >
@@ -475,7 +501,14 @@ export function UsersAdmin({
                 <Field label="Thuộc partner">
                   <Select
                     value={form.partnerId ?? ""}
-                    onValueChange={(value) => setForm((f) => ({ ...f, partnerId: value }))}
+                    onValueChange={(value) => {
+                      const partnerProjs = getPartnerProjectIds(value);
+                      setForm((f) => ({
+                        ...f,
+                        partnerId: value,
+                        projectIds: partnerProjs.length > 0 ? partnerProjs : f.projectIds,
+                      }));
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Chọn partner admin" />
@@ -488,6 +521,17 @@ export function UsersAdmin({
                       ))}
                     </SelectContent>
                   </Select>
+                </Field>
+              )}
+              {form.role === "STAFF" && staffProjectOptions.length > 0 && (
+                <Field label="Dự án phụ trách">
+                  <MultiSelect
+                    options={staffProjectOptions}
+                    selected={form.projectIds}
+                    onChange={(projectIds) => setForm((f) => ({ ...f, projectIds }))}
+                    placeholder="Chọn dự án nhân viên tham gia…"
+                    searchable={staffProjectOptions.length > 5}
+                  />
                 </Field>
               )}
               {form.role === "PARTNER_ADMIN" && isSuper && (

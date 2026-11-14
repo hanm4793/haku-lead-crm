@@ -136,9 +136,9 @@ export async function listProjectIdsForViewer(viewer: ProjectViewer): Promise<st
   }
 
   let ids = await listProjectIdsForUser(userId);
-  if (viewer.role === "STAFF" && viewer.partnerId) {
+  if (viewer.role === "STAFF" && ids.length === 0 && viewer.partnerId) {
     const partnerIds = await listProjectIdsForUser(viewer.partnerId);
-    ids = [...new Set([...ids, ...partnerIds])];
+    ids = [...new Set([...(viewer.projectId ? [viewer.projectId] : []), ...partnerIds])];
   }
   if (ids.length === 0 && viewer.projectId) {
     ids = [viewer.projectId];

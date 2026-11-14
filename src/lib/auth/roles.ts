@@ -216,10 +216,11 @@ export function prepareCreateAccount(
   }
   if (actor.role === "PARTNER_ADMIN") {
     if (input.role !== "STAFF") throw new Error("Partner admin chỉ tạo được nhân viên.");
+    const primaryProjectId = input.projectId ?? input.projectIds?.[0] ?? actor.projectId ?? null;
     return {
       role: "STAFF",
       partnerId: actor.appUserId ?? null,
-      projectId: actor.projectId ?? null,
+      projectId: primaryProjectId,
       aiEnabled: false,
       pageIds: [],
     };

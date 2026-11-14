@@ -220,7 +220,12 @@ async function provisionViewer(
     row.role === "STAFF" && row.partnerId ? listProjectIdsForUser(row.partnerId) : Promise.resolve([]),
   ]);
 
-  let rawIds = [...new Set([...userProjIds, ...partnerProjIds])];
+  let rawIds =
+    row.role === "STAFF"
+      ? userProjIds.length > 0
+        ? userProjIds
+        : [...new Set([...(projectId ? [projectId] : []), ...partnerProjIds])]
+      : userProjIds;
   if (rawIds.length === 0 && projectId) {
     rawIds = [projectId];
   }
