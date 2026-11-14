@@ -141,6 +141,14 @@ export function ProjectSwitcher({
     projects[0] ??
     null;
 
+  const sortedProjects = React.useMemo(() => {
+    if (!active) return projects;
+    return [
+      ...projects.filter((p) => p.id === active.id),
+      ...projects.filter((p) => p.id !== active.id),
+    ];
+  }, [projects, active]);
+
   if (shouldHideSingle && projects.length <= 1) return null;
   if (projects.length === 0) return null;
 
@@ -169,7 +177,7 @@ export function ProjectSwitcher({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[220px]">
-        {projects.map((project) => {
+        {sortedProjects.map((project) => {
           const isCurrent = project.id === active?.id;
           return (
             <DropdownMenuItem

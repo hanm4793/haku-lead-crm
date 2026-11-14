@@ -28,11 +28,20 @@ function MultiSelectBody({
   const [query, setQuery] = React.useState("");
   const popover = usePopoverControls();
 
+  const selectedSet = React.useMemo(() => new Set(selected), [selected]);
+
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(q));
-  }, [options, query]);
+    const base = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+    if (selectedSet.size === 0) return base;
+    const chosen: MultiSelectOption[] = [];
+    const rest: MultiSelectOption[] = [];
+    for (const opt of base) {
+      if (selectedSet.has(opt.value)) chosen.push(opt);
+      else rest.push(opt);
+    }
+    return [...chosen, ...rest];
+  }, [options, query, selectedSet]);
 
   const toggle = (value: string) => {
     onChange(selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value]);

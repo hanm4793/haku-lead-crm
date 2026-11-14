@@ -307,11 +307,8 @@ export function UsersAdmin({
   const staffProjectOptions = React.useMemo(() => {
     if (!isSuper) return projectMultiOptions;
     const allowedIds = getPartnerProjectIds(form.partnerId);
-    if (allowedIds.length === 0) return projectMultiOptions;
-    return projectMultiOptions.filter(
-      (opt) => allowedIds.includes(opt.value) || form.projectIds.includes(opt.value),
-    );
-  }, [isSuper, projectMultiOptions, getPartnerProjectIds, form.partnerId, form.projectIds]);
+    return projectMultiOptions.filter((opt) => allowedIds.includes(opt.value));
+  }, [isSuper, projectMultiOptions, getPartnerProjectIds, form.partnerId]);
 
   const availablePageOptions = React.useMemo(() => {
     return pages
@@ -452,7 +449,7 @@ export function UsersAdmin({
             }}
           >
             <div className="space-y-3">
-              {isSuper && (
+              {isSuper && !editing && (
                 <Field label="Vai trò">
                   <Select
                     value={form.role}
@@ -465,7 +462,7 @@ export function UsersAdmin({
                         role: nextRole,
                         partnerId: nextPartnerId,
                         projectIds:
-                          nextRole === "STAFF" && partnerProjs.length > 0
+                          nextRole === "STAFF"
                             ? partnerProjs
                             : f.projectIds.length === 0 && projects[0]?.id
                               ? [projects[0].id]
@@ -499,39 +496,51 @@ export function UsersAdmin({
               </Field>
               {form.role === "STAFF" && isSuper && (
                 <Field label="Thuộc partner">
-                  <Select
-                    value={form.partnerId ?? ""}
-                    onValueChange={(value) => {
-                      const partnerProjs = getPartnerProjectIds(value);
-                      setForm((f) => ({
-                        ...f,
-                        partnerId: value,
-                        projectIds: partnerProjs.length > 0 ? partnerProjs : f.projectIds,
-                      }));
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Chọn partner admin" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {partners.map((partner) => (
-                        <SelectItem key={partner.id} value={partner.id}>
-                          {partner.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {partners.length === 0 ? (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      Cần tạo tài khoản Partner admin và gán dự án trước khi tạo nhân viên.
+                    </div>
+                  ) : (
+                    <Select
+                      value={form.partnerId ?? ""}
+                      onValueChange={(value) => {
+                        const partnerProjs = getPartnerProjectIds(value);
+                        setForm((f) => ({
+                          ...f,
+                          partnerId: value,
+                          projectIds: partnerProjs,
+                        }));
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Chọn partner admin" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {partners.map((partner) => (
+                          <SelectItem key={partner.id} value={partner.id}>
+                            {partner.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </Field>
               )}
-              {form.role === "STAFF" && staffProjectOptions.length > 0 && (
-                <Field label="Dự án phụ trách">
-                  <MultiSelect
-                    options={staffProjectOptions}
-                    selected={form.projectIds}
-                    onChange={(projectIds) => setForm((f) => ({ ...f, projectIds }))}
-                    placeholder="Chọn dự án nhân viên tham gia…"
-                    searchable={staffProjectOptions.length > 5}
-                  />
+              {form.role === "STAFF" && (
+                <Field label="Dự án phụ trách (thuộc Partner)">
+                  {staffProjectOptions.length === 0 ? (
+                    <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                      Partner admin này chưa được gán dự án nào. Hãy gán dự án cho Partner admin trước.
+                    </div>
+                  ) : (
+                    <MultiSelect
+                      options={staffProjectOptions}
+                      selected={form.projectIds}
+                      onChange={(projectIds) => setForm((f) => ({ ...f, projectIds }))}
+                      placeholder="Chọn dự án thuộc Partner…"
+                      searchable={staffProjectOptions.length > 5}
+                    />
+                  )}
                 </Field>
               )}
               {form.role === "PARTNER_ADMIN" && isSuper && (
@@ -586,7 +595,15 @@ export function UsersAdmin({
               <Button type="button" variant="outline" onClick={close} disabled={pending}>
                 Hủy
               </Button>
-              <Button type="submit" disabled={pending || !form.fullName.trim()}>
+              <Button
+                type="submit"
+                disabled={
+                  pending ||
+                  !form.fullName.trim() ||
+                  (form.role === "STAFF" && isSuper && !form.partnerId) ||
+                  form.projectIds.length === 0
+                }
+              >
                 {pending ? "Đang lưu…" : "Lưu"}
               </Button>
             </DialogFooter>

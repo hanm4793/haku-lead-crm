@@ -167,13 +167,19 @@ export async function listManagedUsers(actor: ViewerScope): Promise<ManagedUser[
     const memberProjectIds = projectsByUser.get(row.id) ?? [];
     const partnerProjectIds =
       row.role === "STAFF" && row.partnerId ? (projectsByUser.get(row.partnerId) ?? []) : [];
+    const validStaffMemberProjectIds =
+      partnerProjectIds.length > 0
+        ? memberProjectIds.filter((id) => partnerProjectIds.includes(id))
+        : memberProjectIds;
     const projectIds =
       row.role === "STAFF"
-        ? memberProjectIds.length > 0
-          ? memberProjectIds
+        ? validStaffMemberProjectIds.length > 0
+          ? validStaffMemberProjectIds
           : [
               ...new Set([
-                ...(row.projectId ? [row.projectId] : []),
+                ...(row.projectId && (partnerProjectIds.length === 0 || partnerProjectIds.includes(row.projectId))
+                  ? [row.projectId]
+                  : []),
                 ...partnerProjectIds,
               ]),
             ]
@@ -285,7 +291,7 @@ export async function createManagedUser(input: CreateUserInput, actor: ViewerSco
     ];
     if (requestedProjectIds.length > 0) {
       const allowed =
-        actor.role === "PARTNER_ADMIN" && partnerProjectIds.length > 0
+        partnerProjectIds.length > 0
           ? requestedProjectIds.filter((id) => partnerProjectIds.includes(id))
           : requestedProjectIds;
       staffProjectIds = allowed.length > 0 ? allowed : partnerProjectIds;
@@ -360,6 +366,15 @@ export async function updateManagedUser(
   }
 
   let desiredStaffProjectIds: string[] | undefined;
+  if (row.role === "PARTNER_ADMIN" && nextRole !== "PARTNER_ADMIN") {
+    const [staffCountRow] = await db
+      .select({ n: count() })
+      .from(appUsers)
+      .where(and(eq(appUsers.partnerId, row.id), eq(appUsers.role, "STAFF")));
+    if (Number(staffCountRow?.n ?? 0) > 0) {
+      throw new Error("Không thể đổi vai trò sang nhân viên khi tài khoản này đang quản lý nhân viên cấp dưới.");
+    }
+  }
   if (nextRole === "STAFF" && nextPartnerId) {
     if (actor.role === "SUPER_ADMIN") {
       rejectNewSuperAdmin(row.role, nextRole);
@@ -378,7 +393,7 @@ export async function updateManagedUser(
     ];
     if (requestedProjectIds !== undefined) {
       const allowed =
-        actor.role === "PARTNER_ADMIN" && partnerProjectIds.length > 0
+        partnerProjectIds.length > 0
           ? requestedProjectIds.filter((id) => partnerProjectIds.includes(id))
           : requestedProjectIds;
       desiredStaffProjectIds = allowed.length > 0 ? allowed : partnerProjectIds;
@@ -461,9 +476,37 @@ export async function updateManagedUser(
         }
       }
       for (const pid of desired) {
-        await assignPartnerAndStaffToProject(row.id, pid);
+        await addProjectMember(pid, row.id);
       }
       await db.update(appUsers).set({ projectId: nextProjectId }).where(eq(appUsers.id, row.id));
+
+      // Đảm bảo nhân viên cấp dưới của partner này nếu bị gỡ hết dự án cũ thì tự động gán về dự án còn lại của partner
+      const staffRows = await db
+        .select({ id: appUsers.id })
+        .from(appUsers)
+        .where(and(eq(appUsers.partnerId, row.id), eq(appUsers.role, "STAFF")));
+      if (staffRows.length > 0) {
+        const staffIds = staffRows.map((s) => s.id);
+        const remainingStaffMemberships = await db
+          .select({ userId: projectMembers.userId, projectId: projectMembers.projectId })
+          .from(projectMembers)
+          .where(inArray(projectMembers.userId, staffIds));
+        const validByStaff = new Map<string, string[]>();
+        for (const m of remainingStaffMemberships) {
+          if (desired.includes(m.projectId)) {
+            const list = validByStaff.get(m.userId) ?? [];
+            list.push(m.projectId);
+            validByStaff.set(m.userId, list);
+          }
+        }
+        for (const sId of staffIds) {
+          const valid = validByStaff.get(sId) ?? [];
+          if (valid.length === 0) {
+            await addProjectMember(nextProjectId, sId);
+            await db.update(appUsers).set({ projectId: nextProjectId }).where(eq(appUsers.id, sId));
+          }
+        }
+      }
     } else {
       if (row.projectId && row.projectId !== nextProjectId) {
         await removePartnerAndStaffFromProject(row.id, row.projectId);

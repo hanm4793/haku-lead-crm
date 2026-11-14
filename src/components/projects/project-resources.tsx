@@ -239,10 +239,18 @@ export function ProjectPagesTable({
     }
   };
 
-  const visibleAccessible = accessible.filter((p) => {
+  const visibleAccessible = React.useMemo(() => {
     const q = listQuery.trim().toLowerCase();
-    return !q || (p.name ?? "").toLowerCase().includes(q) || p.facebookPageId.includes(q);
-  });
+    const base = accessible.filter(
+      (p) => !q || (p.name ?? "").toLowerCase().includes(q) || p.facebookPageId.includes(q),
+    );
+    const selectedSet = new Set(selected);
+    return [...base].sort((a, b) => {
+      const aChecked = selectedSet.has(a.facebookPageId) || a.state === "in_project" ? 0 : 1;
+      const bChecked = selectedSet.has(b.facebookPageId) || b.state === "in_project" ? 0 : 1;
+      return aChecked - bChecked;
+    });
+  }, [accessible, listQuery, selected]);
 
   return (
     <div className="space-y-3">

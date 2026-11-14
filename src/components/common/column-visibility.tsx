@@ -45,7 +45,10 @@ export function ColumnVisibilityPopover({
           </Button>
         </div>
         <div className="thin-scrollbar max-h-80 space-y-0.5 overflow-y-auto pr-1">
-          {columns.map((column) => (
+          {[
+            ...columns.filter((c) => visible.includes(c.id)),
+            ...columns.filter((c) => !visible.includes(c.id)),
+          ].map((column) => (
             <label
               key={column.id}
               className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13px] transition-colors hover:bg-accent"

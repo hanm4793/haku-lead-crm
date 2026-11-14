@@ -24,8 +24,25 @@ interface MobileSelectContextValue {
 }
 
 const MobileSelectContext = React.createContext<MobileSelectContextValue | null>(null);
+const SelectCurrentValueContext = React.createContext<string>("");
 
 const SELECT_ITEM_MARKER = Symbol("SelectItem");
+
+function reorderSelectChildrenWithSelectedFirst(
+  children: React.ReactNode,
+  selectedValue: string,
+): React.ReactNode {
+  if (!selectedValue) return children;
+  const arr = React.Children.toArray(children);
+  const idx = arr.findIndex(
+    (child) =>
+      React.isValidElement<{ value?: unknown }>(child) &&
+      child.props?.value === selectedValue,
+  );
+  if (idx <= 0) return children;
+  const picked = arr[idx]!;
+  return [picked, ...arr.slice(0, idx), ...arr.slice(idx + 1)];
+}
 
 function collectSelectItems(
   children: React.ReactNode,
@@ -105,27 +122,31 @@ function Select({
 
   if (isMobile && mobileCtx) {
     return (
-      <MobileSelectContext.Provider value={mobileCtx}>
-        <Dialog open={currentOpen} onOpenChange={handleOpenChange}>
-          {children}
-        </Dialog>
-      </MobileSelectContext.Provider>
+      <SelectCurrentValueContext.Provider value={currentValue}>
+        <MobileSelectContext.Provider value={mobileCtx}>
+          <Dialog open={currentOpen} onOpenChange={handleOpenChange}>
+            {children}
+          </Dialog>
+        </MobileSelectContext.Provider>
+      </SelectCurrentValueContext.Provider>
     );
   }
 
   return (
-    <SelectPrimitive.Root
-      value={value}
-      defaultValue={defaultValue}
-      onValueChange={onValueChange}
-      open={open}
-      defaultOpen={defaultOpen}
-      onOpenChange={onOpenChange}
-      disabled={disabled}
-      {...rest}
-    >
-      {children}
-    </SelectPrimitive.Root>
+    <SelectCurrentValueContext.Provider value={currentValue}>
+      <SelectPrimitive.Root
+        value={value}
+        defaultValue={defaultValue}
+        onValueChange={handleValueChange}
+        open={open}
+        defaultOpen={defaultOpen}
+        onOpenChange={onOpenChange}
+        disabled={disabled}
+        {...rest}
+      >
+        {children}
+      </SelectPrimitive.Root>
+    </SelectCurrentValueContext.Provider>
   );
 }
 
@@ -240,6 +261,11 @@ function SelectContent({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   const ctx = React.useContext(MobileSelectContext);
+  const currentValue = React.useContext(SelectCurrentValueContext);
+  const orderedChildren = React.useMemo(
+    () => reorderSelectChildrenWithSelectedFirst(children, ctx?.value ?? currentValue),
+    [children, ctx?.value, currentValue],
+  );
   if (ctx?.isMobile) {
     return (
       <DialogContent
@@ -251,7 +277,7 @@ function SelectContent({
           Chọn một mục
         </div>
         <div className="thin-scrollbar flex max-h-[68dvh] flex-col gap-1 overflow-y-auto overscroll-contain pb-1">
-          {children}
+          {orderedChildren}
         </div>
       </DialogContent>
     );
@@ -280,7 +306,7 @@ function SelectContent({
               "h-[var(--radix-select-trigger-height)] min-w-[var(--radix-select-trigger-width)]",
           )}
         >
-          {children}
+          {orderedChildren}
         </SelectPrimitive.Viewport>
         <SelectPrimitive.ScrollDownButton className="flex h-6 items-center justify-center">
           <ChevronDownIcon className="size-4" />

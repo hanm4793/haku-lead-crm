@@ -203,30 +203,46 @@ async function provisionViewer(
   }
 
   let projectId = row.projectId;
-  if (row.role === "STAFF" && !projectId && row.partnerId) {
+  let partnerActive = true;
+  if (row.role === "STAFF" && row.partnerId) {
     const [partner] = await db
-      .select({ projectId: appUsers.projectId })
+      .select({ projectId: appUsers.projectId, active: appUsers.active })
       .from(appUsers)
       .where(eq(appUsers.id, row.partnerId))
       .limit(1);
-    projectId = partner?.projectId ?? null;
+    partnerActive = Boolean(partner?.active);
+    if (!projectId) {
+      projectId = partner?.projectId ?? null;
+    }
   }
 
-  const pageOwnerId = pageGrantUserId({ role: row.role, id: row.id, partnerId: row.partnerId });
+  const pageOwnerId =
+    row.role === "STAFF" && !partnerActive
+      ? null
+      : pageGrantUserId({ role: row.role, id: row.id, partnerId: row.partnerId });
 
   const [pageIds, userProjIds, partnerProjIds] = await Promise.all([
     pageOwnerId ? listGrantedPageIds(pageOwnerId) : Promise.resolve([]),
     listProjectIdsForUser(row.id),
-    row.role === "STAFF" && row.partnerId ? listProjectIdsForUser(row.partnerId) : Promise.resolve([]),
+    row.role === "STAFF" && row.partnerId && partnerActive
+      ? listProjectIdsForUser(row.partnerId)
+      : Promise.resolve([]),
   ]);
+
+  const validStaffProjIds =
+    partnerProjIds.length > 0
+      ? userProjIds.filter((id) => partnerProjIds.includes(id))
+      : userProjIds;
 
   let rawIds =
     row.role === "STAFF"
-      ? userProjIds.length > 0
-        ? userProjIds
-        : [...new Set([...(projectId ? [projectId] : []), ...partnerProjIds])]
+      ? !partnerActive
+        ? []
+        : validStaffProjIds.length > 0
+          ? validStaffProjIds
+          : [...new Set([...(projectId && (partnerProjIds.length === 0 || partnerProjIds.includes(projectId)) ? [projectId] : []), ...partnerProjIds])]
       : userProjIds;
-  if (rawIds.length === 0 && projectId) {
+  if (rawIds.length === 0 && projectId && (row.role !== "STAFF" || partnerActive)) {
     rawIds = [projectId];
   }
   const projectIds = rawIds.filter((id) => activeProjectIdSet.has(id));
