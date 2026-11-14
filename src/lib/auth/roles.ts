@@ -206,6 +206,7 @@ export function prepareCreateAccount(
     role: UserRole;
     partnerId?: string | null;
     projectId?: string | null;
+    projectIds?: string[];
     aiEnabled?: boolean;
     pageIds?: string[];
   },
@@ -225,21 +226,22 @@ export function prepareCreateAccount(
   }
   if (actor.role === "SUPER_ADMIN") {
     if (input.role === "SUPER_ADMIN") throw new Error("Không tạo super admin từ màn này.");
+    const primaryProjectId = input.projectId ?? input.projectIds?.[0] ?? null;
     if (input.role === "STAFF") {
       if (!input.partnerId) throw new Error("Nhân viên phải thuộc một partner admin.");
       return {
         role: "STAFF",
         partnerId: input.partnerId,
-        projectId: input.projectId ?? null,
+        projectId: primaryProjectId,
         aiEnabled: false,
         pageIds: [],
       };
     }
-    if (!input.projectId) throw new Error("Partner admin phải thuộc một project.");
+    if (!primaryProjectId) throw new Error("Partner admin phải thuộc một project.");
     return {
       role: "PARTNER_ADMIN",
       partnerId: null,
-      projectId: input.projectId,
+      projectId: primaryProjectId,
       aiEnabled: Boolean(input.aiEnabled),
       pageIds: input.pageIds ?? [],
     };

@@ -49,8 +49,8 @@ Super admin bỏ qua danh sách fanpage. Partner admin dùng fanpage được g�
 
 | Hạng mục | Super admin | Partner admin | Nhân viên |
 | --- | --- | --- | --- |
-| Tạo partner admin | Có. Bắt buộc chọn project, gán fanpage và cờ AI | Không | Không |
-| Tạo nhân viên | Có. Bắt buộc chọn partner. Không grant riêng | Có. Gắn vào mình. Tắt AI. Không grant riêng | Không |
+| Tạo partner admin | Có. Bắt buộc chọn ít nhất 1 project (`projectIds`), gán fanpage và cờ AI | Không | Không |
+| Tạo nhân viên | Có. Bắt buộc chọn partner (tự kế thừa các project của partner). Không grant riêng | Có. Gắn vào mình. Tắt AI. Không grant riêng | Không |
 | Tạo super admin từ màn Tài khoản | Không | Không | Không |
 | Sửa tài khoản | Mọi tài khoản | Chỉ nhân viên của mình. Không đổi role, AI, grant | Không |
 | Gửi email đặt mật khẩu | Mọi tài khoản có email | Chỉ nhân viên của mình | Không |

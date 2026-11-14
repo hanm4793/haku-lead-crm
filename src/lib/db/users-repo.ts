@@ -44,6 +44,7 @@ export interface CreateUserInput {
   aiEnabled?: boolean;
   partnerId?: string | null;
   projectId?: string | null;
+  projectIds?: string[];
   pageIds?: string[];
 }
 
@@ -56,6 +57,7 @@ export interface UpdateUserInput {
   aiEnabled?: boolean;
   partnerId?: string | null;
   projectId?: string | null;
+  projectIds?: string[];
   pageIds?: string[];
 }
 
@@ -125,6 +127,8 @@ export async function listManagedUsers(actor: ViewerScope): Promise<ManagedUser[
     .orderBy(asc(appUsers.fullName));
 
   const ids = rows.map((row) => row.id);
+  const partnerIds = rows.map((row) => row.partnerId).filter((id): id is string => Boolean(id));
+  const memberLookupIds = [...new Set([...ids, ...partnerIds])];
   const [grants, memberships] =
     ids.length === 0
       ? [[], []]
@@ -142,7 +146,7 @@ export async function listManagedUsers(actor: ViewerScope): Promise<ManagedUser[
               projectId: projectMembers.projectId,
             })
             .from(projectMembers)
-            .where(inArray(projectMembers.userId, ids)),
+            .where(inArray(projectMembers.userId, memberLookupIds)),
         ]);
 
   const pagesByUser = new Map<string, string[]>();
@@ -161,9 +165,15 @@ export async function listManagedUsers(actor: ViewerScope): Promise<ManagedUser[
 
   return rows.map((row) => {
     const memberProjectIds = projectsByUser.get(row.id) ?? [];
-    const projectIds = row.projectId
-      ? [row.projectId, ...memberProjectIds.filter((id) => id !== row.projectId)]
-      : memberProjectIds;
+    const partnerProjectIds =
+      row.role === "STAFF" && row.partnerId ? (projectsByUser.get(row.partnerId) ?? []) : [];
+    const projectIds = [
+      ...new Set([
+        ...(row.projectId ? [row.projectId] : []),
+        ...memberProjectIds,
+        ...partnerProjectIds,
+      ]),
+    ];
     return {
       id: row.id,
       fullName: row.fullName,
@@ -232,12 +242,14 @@ export async function createManagedUser(input: CreateUserInput, actor: ViewerSco
   const email = normalizeEmail(input.email);
   await assertEmailAvailable(email);
 
+  const requestedProjectIds = [...new Set((input.projectIds ?? []).map((id) => id.trim()).filter(Boolean))];
   const prepared = prepareCreateAccount(
     { role: actor.role, appUserId: actor.appUserId, projectId: actor.projectId ?? null },
     {
       role: input.role,
       partnerId: input.partnerId ?? null,
-      projectId: input.projectId ?? null,
+      projectId: input.projectId ?? requestedProjectIds[0] ?? null,
+      projectIds: requestedProjectIds,
       aiEnabled: input.aiEnabled,
       pageIds: input.pageIds,
     },
@@ -249,13 +261,21 @@ export async function createManagedUser(input: CreateUserInput, actor: ViewerSco
   }
 
   const db = getDb();
-  if (role === "STAFF" && partnerId && !projectId) {
-    const [partner] = await db
-      .select({ projectId: appUsers.projectId })
-      .from(appUsers)
-      .where(eq(appUsers.id, partnerId))
-      .limit(1);
-    projectId = partner?.projectId ?? null;
+  let staffProjectIds: string[] = [];
+  if (role === "STAFF" && partnerId) {
+    const [partnerRows, partnerMemberships] = await Promise.all([
+      db.select({ projectId: appUsers.projectId }).from(appUsers).where(eq(appUsers.id, partnerId)).limit(1),
+      db.select({ projectId: projectMembers.projectId }).from(projectMembers).where(eq(projectMembers.userId, partnerId)),
+    ]);
+    const partnerPrimary = partnerRows[0]?.projectId ?? null;
+    if (!projectId) projectId = partnerPrimary;
+    staffProjectIds = [
+      ...new Set([
+        ...(projectId ? [projectId] : []),
+        ...(partnerPrimary ? [partnerPrimary] : []),
+        ...partnerMemberships.map((m) => m.projectId),
+      ]),
+    ];
   }
 
   const [row] = await db
@@ -271,9 +291,17 @@ export async function createManagedUser(input: CreateUserInput, actor: ViewerSco
     })
     .returning({ id: appUsers.id });
 
-  if (role === "PARTNER_ADMIN") await replacePageGrants(row.id, pageIds);
-  if (projectId && (role === "PARTNER_ADMIN" || role === "STAFF")) {
-    await addProjectMember(projectId, row.id);
+  if (role === "PARTNER_ADMIN") {
+    await replacePageGrants(row.id, pageIds);
+    const partnerProjectIds = [...new Set([...(projectId ? [projectId] : []), ...requestedProjectIds])];
+    for (const pid of partnerProjectIds) {
+      await addProjectMember(pid, row.id);
+    }
+  } else if (role === "STAFF") {
+    const targetProjectIds = staffProjectIds.length > 0 ? staffProjectIds : projectId ? [projectId] : [];
+    for (const pid of targetProjectIds) {
+      await addProjectMember(pid, row.id);
+    }
   }
 
   const users = await listManagedUsers(actor);
@@ -298,6 +326,10 @@ export async function updateManagedUser(
   const nextEmail = input.email !== undefined ? normalizeEmail(input.email) : row.email;
   let nextPartnerId = input.partnerId !== undefined ? input.partnerId : row.partnerId;
   let nextProjectId = input.projectId !== undefined ? input.projectId : row.projectId;
+  const requestedProjectIds =
+    input.projectIds !== undefined
+      ? [...new Set(input.projectIds.map((id) => id.trim()).filter(Boolean))]
+      : undefined;
   let nextAi = row.aiEnabled;
 
   if (!nextFullName) throw new Error("Họ tên không được để trống.");
@@ -325,8 +357,12 @@ export async function updateManagedUser(
     }
     if (nextRole === "PARTNER_ADMIN") {
       nextPartnerId = null;
-      if (input.projectId !== undefined) nextProjectId = input.projectId;
-      if (!nextProjectId) throw new Error("Partner admin phải thuộc một project.");
+      if (requestedProjectIds !== undefined) {
+        nextProjectId = requestedProjectIds[0] ?? input.projectId ?? null;
+      } else if (input.projectId !== undefined) {
+        nextProjectId = input.projectId;
+      }
+      if (!nextProjectId) throw new Error("Partner admin phải thuộc ít nhất một dự án.");
       if (input.aiEnabled !== undefined) nextAi = input.aiEnabled;
     }
     if (nextRole === "SUPER_ADMIN") {
@@ -373,16 +409,56 @@ export async function updateManagedUser(
   }
 
   if (nextRole === "PARTNER_ADMIN" && nextProjectId) {
-    if (row.projectId && row.projectId !== nextProjectId) {
-      await removePartnerAndStaffFromProject(row.id, row.projectId);
+    if (requestedProjectIds !== undefined) {
+      const desired = [...new Set([nextProjectId, ...requestedProjectIds])];
+      const currentMemberships = await db
+        .select({ projectId: projectMembers.projectId })
+        .from(projectMembers)
+        .where(eq(projectMembers.userId, row.id));
+      const existingIds = new Set([
+        ...(row.projectId ? [row.projectId] : []),
+        ...currentMemberships.map((m) => m.projectId),
+      ]);
+      for (const oldPid of existingIds) {
+        if (!desired.includes(oldPid)) {
+          await removePartnerAndStaffFromProject(row.id, oldPid);
+        }
+      }
+      for (const pid of desired) {
+        await assignPartnerAndStaffToProject(row.id, pid);
+      }
+      await db.update(appUsers).set({ projectId: nextProjectId }).where(eq(appUsers.id, row.id));
+    } else {
+      if (row.projectId && row.projectId !== nextProjectId) {
+        await removePartnerAndStaffFromProject(row.id, row.projectId);
+      }
+      await assignPartnerAndStaffToProject(row.id, nextProjectId);
     }
-    await assignPartnerAndStaffToProject(row.id, nextProjectId);
   } else if (nextRole === "STAFF") {
-    if (row.projectId && row.projectId !== nextProjectId) {
-      await removeProjectMember(row.projectId, row.id);
-    }
-    if (nextProjectId) {
-      await addProjectMember(nextProjectId, row.id);
+    if (row.partnerId !== nextPartnerId || row.role !== "STAFF") {
+      await db.delete(projectMembers).where(eq(projectMembers.userId, row.id));
+      if (nextPartnerId) {
+        const partnerMemberships = await db
+          .select({ projectId: projectMembers.projectId })
+          .from(projectMembers)
+          .where(eq(projectMembers.userId, nextPartnerId));
+        const targetPids = [
+          ...new Set([
+            ...(nextProjectId ? [nextProjectId] : []),
+            ...partnerMemberships.map((m) => m.projectId),
+          ]),
+        ];
+        for (const pid of targetPids) {
+          await addProjectMember(pid, row.id);
+        }
+      }
+    } else {
+      if (row.projectId && row.projectId !== nextProjectId) {
+        await removeProjectMember(row.projectId, row.id);
+      }
+      if (nextProjectId) {
+        await addProjectMember(nextProjectId, row.id);
+      }
     }
   }
 

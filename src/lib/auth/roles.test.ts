@@ -269,6 +269,19 @@ describe("accounts", () => {
     });
 
     expect(
+      prepareCreateAccount(
+        { role: "SUPER_ADMIN" },
+        { role: "PARTNER_ADMIN", projectIds: ["proj-2", "proj-3"], aiEnabled: false, pageIds: [] },
+      ),
+    ).toEqual({
+      role: "PARTNER_ADMIN",
+      partnerId: null,
+      projectId: "proj-2",
+      aiEnabled: false,
+      pageIds: [],
+    });
+
+    expect(
       prepareCreateAccount({ role: "SUPER_ADMIN" }, { role: "STAFF", partnerId: "partner-1", pageIds: ["p1"] }),
     ).toEqual({
       role: "STAFF",

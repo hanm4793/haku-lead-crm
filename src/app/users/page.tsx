@@ -5,7 +5,7 @@ import { canManageUsers, isPageVisible } from "@/lib/auth/roles";
 import { getScopedViewer } from "@/lib/auth/viewer";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { listFacebookPages } from "@/lib/db/facebook-pages-repo";
-import { listProjects, toProjectInfo } from "@/lib/db/project-repo";
+import { listProjects, listProjectsForSwitcher, toProjectInfo } from "@/lib/db/project-repo";
 import { listManagedUsers } from "@/lib/db/users-repo";
 import type { ProjectInfo } from "@/lib/types";
 
@@ -16,7 +16,6 @@ export default async function Page() {
   const viewer = await getScopedViewer();
   if (!viewer) redirect("/login?next=%2Fusers");
   if (!canManageUsers(viewer.role)) redirect("/leads");
-  const projectId = viewer.activeProjectId ?? undefined;
 
   if (!isDatabaseConfigured()) {
     return (
@@ -29,17 +28,21 @@ export default async function Page() {
     );
   }
 
-  const [projectRows, users, facebookPages] = await Promise.all([
-    viewer.role === "SUPER_ADMIN" ? listProjects().catch(() => []) : Promise.resolve([]),
+  const [projects, users, facebookPages] = await Promise.all([
+    viewer.role === "SUPER_ADMIN"
+      ? listProjects()
+          .then((rows) => rows.map(toProjectInfo))
+          .catch(() => [] as ProjectInfo[])
+      : listProjectsForSwitcher(viewer).catch(() => [] as ProjectInfo[]),
     listManagedUsers(viewer),
-    listFacebookPages(projectId ? { projectId } : undefined),
+    listFacebookPages(),
   ]);
-  const projects: ProjectInfo[] = projectRows.map(toProjectInfo);
   const pages = facebookPages
     .filter((page) => page.active && isPageVisible(viewer, page.facebookPageId))
     .map((page) => ({
       value: page.facebookPageId,
       label: page.name?.trim() || page.facebookPageId,
+      projectId: page.projectId ?? null,
     }));
   const partners = users
     .filter((user) => user.role === "PARTNER_ADMIN")
