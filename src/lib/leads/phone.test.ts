@@ -30,6 +30,9 @@ describe("phone utilities", () => {
 
     it("preserves non-VN international numbers with leading +", () => {
       expect(normalizePhone("+1 (415) 555-2671")).toBe("+14155552671");
+      expect(normalizePhone("+82 10-3516-6618")).toBe("+821035166618");
+      expect(normalizePhone("+81 90-2303-1257")).toBe("+819023031257");
+      expect(normalizePhone("+886 937 259 846")).toBe("+886937259846");
     });
 
     it("returns empty string for empty input", () => {

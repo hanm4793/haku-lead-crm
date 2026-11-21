@@ -44,9 +44,17 @@ describe("mapFacebookLeadFields", () => {
     });
   });
 
-  it("accepts alternate phone keys", () => {
+  it("accepts alternate phone keys and normalizes +84 VN prefix to 0", () => {
     const r = mapFacebookLeadFields([{ name: "phone", values: ["+84901234567"] }]);
-    expect(r.phone).toContain("84901234567");
+    expect(r.phone).toBe("0901234567");
+  });
+
+  it("preserves foreign international phone numbers on Lead Forms", () => {
+    const r = mapFacebookLeadFields([
+      { name: "full_name", values: ["Kim Minjun"] },
+      { name: "phone_number", values: ["+82 10-3516-6618"] },
+    ]);
+    expect(r.phone).toBe("+821035166618");
   });
 
   it("normalizes Vietnamese and custom Lead Form question keys for name and phone", () => {
@@ -56,7 +64,7 @@ describe("mapFacebookLeadFields", () => {
       { name: "tỉnh/thành_phố", values: ["Yên Kiên (2)"] },
     ]);
     expect(r1.name).toBe("Ngoc Quynh Le");
-    expect(r1.phone).toBe("+84981876469");
+    expect(r1.phone).toBe("0981876469");
     expect(r1.attrs).toEqual({ "tỉnh/thành_phố": "Yên Kiên (2)" });
 
     const r2 = mapFacebookLeadFields([
@@ -81,6 +89,15 @@ describe("extractPhoneFromText", () => {
     expect(extractPhoneFromText("SĐT mình: +84987654321 nhé")).toBe("0987654321");
     expect(extractPhoneFromText("Liên hệ o904.111.222")).toBe("0904111222");
     expect(extractPhoneFromText("Không có số điện thoại")).toBeNull();
+  });
+
+  it("extracts international numbers starting with + and ignores FB IDs inside URLs", () => {
+    expect(extractPhoneFromText("My number in Korea is +82 10-3516-6618")).toBe("+821035166618");
+    expect(
+      extractPhoneFromText(
+        "Xem bình luận(https://facebook.com/story.php?story_fbid=abc&id=100070767341843) | Giá sao ạ",
+      ),
+    ).toBeNull();
   });
 });
 
@@ -123,6 +140,72 @@ describe("mapFacebookConversationLead", () => {
     expect(lead?.phone).toBe("0988123456");
     expect(lead?.attrs.psid).toBe("u_999");
     expect(lead?.attrs.noi_dung_tin_nhan).toContain("0988 123 456");
+    expect(lead?.isOnlyFormEcho).toBe(false);
+  });
+
+  it("never extracts Fanpage hotline phone when customer has not sent a phone number", () => {
+    const lead = mapFacebookConversationLead(
+      {
+        id: "t_hotline",
+        updated_time: "2026-10-18T08:00:00+0000",
+        participants: {
+          data: [
+            { id: "101", name: "Thaco Bắc Giang" },
+            { id: "u_555", name: "Tuấn Nguyễn" },
+          ],
+        },
+        messages: {
+          data: [
+            {
+              id: "m_page",
+              message: "Cảm ơn bạn đã liên hệ! Vui lòng để lại SĐT hoặc gọi Hotline: 0901888087.",
+              created_time: "2026-10-18T08:00:05+0000",
+              from: { id: "101", name: "Thaco Bắc Giang" },
+            },
+            {
+              id: "m_cust",
+              message: "Xin giá lăn bánh Seltos ạ",
+              created_time: "2026-10-18T08:00:00+0000",
+              from: { id: "u_555", name: "Tuấn Nguyễn" },
+            },
+          ],
+        },
+      },
+      "101",
+    );
+
+    expect(lead?.phone).toBe("");
+    expect(lead?.attrs.noi_dung_tin_nhan).toBe("Xin giá lăn bánh Seltos ạ");
+  });
+
+  it("marks Meta auto-generated Lead Form echo message with isOnlyFormEcho = true", () => {
+    const lead = mapFacebookConversationLead(
+      {
+        id: "t_form_echo",
+        updated_time: "2026-11-18T14:10:53+0000",
+        participants: {
+          data: [
+            { id: "101", name: "KIA Quảng Ninh" },
+            { id: "u_777", name: "Bá Hưng" },
+          ],
+        },
+        messages: {
+          data: [
+            {
+              id: "m_echo",
+              message:
+                "Xin chào! Tôi đã điền mẫu và muốn biết thêm về doanh nghiệp bạn.\nFull name: Bá Hưng\nPhone number: 096 536 21 11",
+              created_time: "2026-11-18T14:10:53+0000",
+              from: { id: "u_777", name: "Bá Hưng" },
+            },
+          ],
+        },
+      },
+      "101",
+    );
+
+    expect(lead?.phone).toBe("0965362111");
+    expect(lead?.isOnlyFormEcho).toBe(true);
   });
 });
 

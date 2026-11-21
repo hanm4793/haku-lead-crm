@@ -1,7 +1,8 @@
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { activityLogs, facebookPages, leads, metaSyncRuns } from "@/lib/db/schema";
+import { normalizePhone, phoneKey } from "@/lib/leads/phone";
 
 import { getFacebookConfig } from "./env";
 import {
@@ -213,16 +214,73 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
     const pageTokens = await resolvePageAccessTokens(pageIds);
     const fallbackProjectId = (await getDefaultProject().catch(() => null))?.id ?? null;
 
-    async function findExistingLead(fbLeadId: string) {
+    const phoneLocks = new Map<string, Promise<void>>();
+    async function withPhoneLock(
+      projectId: string | null,
+      phone: string,
+      fn: () => Promise<void>,
+    ): Promise<void> {
+      const pKey = phone ? phoneKey(phone) : "";
+      if (!pKey) {
+        await fn();
+        return;
+      }
+      const lockKey = `${projectId ?? "__null__"}::${pKey}`;
+      const prev = phoneLocks.get(lockKey) ?? Promise.resolve();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const current = prev.then(() => gate);
+      phoneLocks.set(lockKey, current);
+      await prev;
+      try {
+        await fn();
+      } finally {
+        release();
+        if (phoneLocks.get(lockKey) === current) {
+          phoneLocks.delete(lockKey);
+        }
+      }
+    }
+
+    async function findExistingLead(
+      fbLeadId: string,
+      projectId: string | null,
+      phone?: string,
+    ) {
+      const pKey = phone ? phoneKey(phone) : "";
+      const whereClause =
+        pKey.length >= 9
+          ? or(
+              eq(leads.facebookLeadId, fbLeadId),
+              and(
+                projectId ? eq(leads.projectId, projectId) : isNull(leads.projectId),
+                ne(leads.phone, ""),
+                sql`regexp_replace(regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^840(\\d{9,10})$', '0\\1'), '^84(\\d{9}|2\\d{9})$', '0\\1') = ${pKey}`,
+              ),
+            )!
+          : eq(leads.facebookLeadId, fbLeadId);
+
       const [row] = await db
         .select({
           id: leads.id,
+          facebookLeadId: leads.facebookLeadId,
+          channelDetail: leads.channelDetail,
+          name: leads.name,
           phone: leads.phone,
+          campaign: leads.campaign,
+          adContent: leads.adContent,
+          facebookFormId: leads.facebookFormId,
           careNote: leads.careNote,
           attrs: leads.attrs,
         })
         .from(leads)
-        .where(eq(leads.facebookLeadId, fbLeadId))
+        .where(whereClause)
+        .orderBy(
+          sql`case when ${leads.facebookLeadId} = ${fbLeadId} then 0 else 1 end`,
+          asc(leads.createdAt),
+        )
         .limit(1);
       return row ?? null;
     }
@@ -282,82 +340,101 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
                 adName: facebookLead.ad_name,
               });
 
-              try {
-                const existing = await findExistingLead(facebookLead.id);
-                const hasAttrs = Object.keys(mapped.attrs).length > 0;
-                const facebookMetadata = {
-                  ...(mapped.name !== null ? { name: mapped.name } : {}),
-                  ...(mapped.campaign !== null ? { campaign: mapped.campaign } : {}),
-                  ...(mapped.adContent !== null ? { adContent: mapped.adContent } : {}),
-                  ...(projectId ? { projectId } : {}),
-                  ...(hasAttrs ? { attrs: { ...(existing?.attrs ?? {}), ...mapped.attrs } } : {}),
-                  facebookFormId: form.id,
-                  facebookPageId: pageId,
-                  facebookAdId: optionalText(facebookLead.ad_id),
-                  facebookAdsetId: optionalText(facebookLead.adset_id),
-                  facebookCampaignId: optionalText(facebookLead.campaign_id),
-                };
+              await withPhoneLock(projectId, mapped.phone, async () => {
+                try {
+                  const existing = await findExistingLead(facebookLead.id, projectId, mapped.phone);
+                  const hasAttrs = Object.keys(mapped.attrs).length > 0;
+                  const isCrossLead = Boolean(
+                    existing?.facebookLeadId && existing.facebookLeadId !== facebookLead.id,
+                  );
 
-                if (existing) {
-                  if (cutoffMs === null || (!existing.phone && mapped.phone)) {
-                    await db
-                      .update(leads)
-                      .set({ ...facebookMetadata, updatedAt: new Date() })
-                      .where(eq(leads.id, existing.id));
+                  const shouldKeepExistingName =
+                    isCrossLead &&
+                    Boolean(existing?.name?.trim()) &&
+                    existing?.name?.trim() !== "Khách bình luận Facebook";
+
+                  const facebookMetadata = {
+                    ...(!shouldKeepExistingName && mapped.name !== null ? { name: mapped.name } : {}),
+                    ...(mapped.campaign !== null ? { campaign: mapped.campaign } : {}),
+                    ...(mapped.adContent !== null ? { adContent: mapped.adContent } : {}),
+                    ...(projectId ? { projectId } : {}),
+                    ...(hasAttrs ? { attrs: { ...(existing?.attrs ?? {}), ...mapped.attrs } } : {}),
+                    facebookFormId: form.id,
+                    facebookPageId: pageId,
+                    facebookAdId: optionalText(facebookLead.ad_id),
+                    facebookAdsetId: optionalText(facebookLead.adset_id),
+                    facebookCampaignId: optionalText(facebookLead.campaign_id),
+                  };
+
+                  if (existing) {
+                    const needsPhoneUpdate =
+                      Boolean(mapped.phone) &&
+                      existing.phone !== undefined &&
+                      existing.phone !== mapped.phone;
+                    if (cutoffMs === null || isCrossLead || (!existing.phone && mapped.phone) || needsPhoneUpdate) {
+                      await db
+                        .update(leads)
+                        .set({
+                          ...facebookMetadata,
+                          ...(needsPhoneUpdate ? { phone: mapped.phone } : {}),
+                          updatedAt: new Date(),
+                        })
+                        .where(eq(leads.id, existing.id));
+                    }
+                    counts.updated += 1;
+                    byChannel.form += 1;
+                    return;
                   }
-                  counts.updated += 1;
+
+                  const createdAt = parseCreatedAt(facebookLead.created_time);
+                  const insertedId = await db.transaction(async (tx) => {
+                    const [inserted] = await tx
+                      .insert(leads)
+                      .values({
+                        ...facebookMetadata,
+                        ...(createdAt ? { createdAt } : {}),
+                        phone: mapped.phone,
+                        source: "FACEBOOK",
+                        channelDetail: "FORM",
+                        facebookLeadId: facebookLead.id,
+                        projectId,
+                        brandId: null,
+                        productId: null,
+                        locationId: null,
+                        assigneeId: null,
+                        attrs: mapped.attrs,
+                        costPerLead: null,
+                      })
+                      .returning({ id: leads.id });
+
+                    if (!inserted) {
+                      throw new Error(`Could not insert Facebook lead ${facebookLead.id}`);
+                    }
+
+                    await tx.insert(activityLogs).values({
+                      leadId: inserted.id,
+                      kind: "CREATE",
+                      message: "Lead created from Facebook Lead Ads (Form).",
+                      actorName: "Facebook sync",
+                    });
+
+                    return inserted.id;
+                  });
+                  counts.imported += 1;
                   byChannel.form += 1;
-                  continue;
-                }
-
-                const createdAt = parseCreatedAt(facebookLead.created_time);
-                const insertedId = await db.transaction(async (tx) => {
-                  const [inserted] = await tx
-                    .insert(leads)
-                    .values({
-                      ...facebookMetadata,
-                      ...(createdAt ? { createdAt } : {}),
-                      phone: mapped.phone,
-                      source: "FACEBOOK",
-                      channelDetail: "FORM",
-                      facebookLeadId: facebookLead.id,
-                      projectId,
-                      brandId: null,
-                      productId: null,
-                      locationId: null,
-                      assigneeId: null,
-                      attrs: mapped.attrs,
-                      costPerLead: null,
-                    })
-                    .returning({ id: leads.id });
-
-                  if (!inserted) {
-                    throw new Error(`Could not insert Facebook lead ${facebookLead.id}`);
+                  if (!createdAt || createdAt.getTime() >= recentPushThresholdMs) {
+                    newlyImportedLeads.push({
+                      leadId: insertedId,
+                      name: mapped.name,
+                      phone: mapped.phone || "Chưa có SĐT",
+                      pageId,
+                      pageName: pageAuth.name ?? null,
+                    });
                   }
-
-                  await tx.insert(activityLogs).values({
-                    leadId: inserted.id,
-                    kind: "CREATE",
-                    message: "Lead created from Facebook Lead Ads (Form).",
-                    actorName: "Facebook sync",
-                  });
-
-                  return inserted.id;
-                });
-                counts.imported += 1;
-                byChannel.form += 1;
-                if (!createdAt || createdAt.getTime() >= recentPushThresholdMs) {
-                  newlyImportedLeads.push({
-                    leadId: insertedId,
-                    name: mapped.name,
-                    phone: mapped.phone || "Chưa có SĐT",
-                    pageId,
-                    pageName: pageAuth.name ?? null,
-                  });
+                } catch (error) {
+                  recordError(error);
                 }
-              } catch (error) {
-                recordError(error);
-              }
+              });
             }
           }),
         );
@@ -383,75 +460,94 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
           const mapped = mapFacebookConversationLead(conv, pageId);
           if (!mapped || !mapped.phone) continue;
 
-          try {
-            const existing = await findExistingLead(mapped.facebookLeadId);
-            if (existing) {
-              const nextAttrs = { ...(existing.attrs ?? {}), ...mapped.attrs };
-              const nextPhone = !existing.phone && mapped.phone ? mapped.phone : existing.phone;
-              const nextCareNote =
-                !existing.careNote && mapped.careNote ? mapped.careNote : existing.careNote;
+          await withPhoneLock(projectId, mapped.phone, async () => {
+            try {
+              const existing = await findExistingLead(mapped.facebookLeadId, projectId, mapped.phone);
+              if (existing) {
+                const isCrossChannel =
+                  Boolean(existing.facebookLeadId && existing.facebookLeadId !== mapped.facebookLeadId) ||
+                  (existing.channelDetail !== undefined && existing.channelDetail !== "TIN_NHAN");
 
-              await db
-                .update(leads)
-                .set({
-                  ...(mapped.name ? { name: mapped.name } : {}),
-                  ...(nextPhone !== undefined ? { phone: nextPhone } : {}),
-                  ...(nextCareNote !== undefined ? { careNote: nextCareNote } : {}),
-                  attrs: nextAttrs,
-                  ...(projectId ? { projectId } : {}),
-                  facebookPageId: pageId,
-                  updatedAt: new Date(),
-                })
-                .where(eq(leads.id, existing.id));
-              counts.updated += 1;
-              byChannel.message += 1;
-              continue;
-            }
+                const incomingAttrs = { ...mapped.attrs };
+                if (isCrossChannel && mapped.isOnlyFormEcho) {
+                  delete incomingAttrs.noi_dung_tin_nhan;
+                }
+                const nextAttrs = { ...(existing.attrs ?? {}), ...incomingAttrs };
 
-            const insertedId = await db.transaction(async (tx) => {
-              const [inserted] = await tx
-                .insert(leads)
-                .values({
-                  name: mapped.name,
-                  phone: mapped.phone,
-                  source: "FACEBOOK",
-                  channelDetail: "TIN_NHAN",
-                  facebookLeadId: mapped.facebookLeadId,
-                  facebookPageId: pageId,
-                  projectId,
-                  ...(mapped.createdAt ? { createdAt: mapped.createdAt } : {}),
-                  careNote: mapped.careNote ?? "",
-                  attrs: mapped.attrs,
-                })
-                .returning({ id: leads.id });
+                const normalizedExistingPhone = existing.phone ? normalizePhone(existing.phone) : "";
+                const nextPhone = normalizedExistingPhone || mapped.phone;
+                const nextCareNote =
+                  !existing.careNote && mapped.careNote && !(isCrossChannel && mapped.isOnlyFormEcho)
+                    ? mapped.careNote
+                    : existing.careNote;
+                const nextName = isCrossChannel
+                  ? !existing.name && mapped.name
+                    ? mapped.name
+                    : undefined
+                  : mapped.name || undefined;
 
-              if (!inserted) {
-                throw new Error(`Could not insert Messenger lead ${mapped.facebookLeadId}`);
+                await db
+                  .update(leads)
+                  .set({
+                    ...(nextName ? { name: nextName } : {}),
+                    ...(nextPhone ? { phone: nextPhone } : {}),
+                    ...(nextCareNote !== undefined ? { careNote: nextCareNote } : {}),
+                    attrs: nextAttrs,
+                    ...(projectId ? { projectId } : {}),
+                    facebookPageId: pageId,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(leads.id, existing.id));
+                counts.updated += 1;
+                byChannel.message += 1;
+                return;
               }
 
-              await tx.insert(activityLogs).values({
-                leadId: inserted.id,
-                kind: "CREATE",
-                message: "Lead đồng bộ từ Hộp thư Tin nhắn Fanpage (Messenger).",
-                actorName: "Facebook sync",
-              });
+              const insertedId = await db.transaction(async (tx) => {
+                const [inserted] = await tx
+                  .insert(leads)
+                  .values({
+                    name: mapped.name,
+                    phone: mapped.phone,
+                    source: "FACEBOOK",
+                    channelDetail: "TIN_NHAN",
+                    facebookLeadId: mapped.facebookLeadId,
+                    facebookPageId: pageId,
+                    projectId,
+                    ...(mapped.createdAt ? { createdAt: mapped.createdAt } : {}),
+                    careNote: mapped.careNote ?? "",
+                    attrs: mapped.attrs,
+                  })
+                  .returning({ id: leads.id });
 
-              return inserted.id;
-            });
-            counts.imported += 1;
-            byChannel.message += 1;
-            if (!mapped.createdAt || mapped.createdAt.getTime() >= recentPushThresholdMs) {
-              newlyImportedLeads.push({
-                leadId: insertedId,
-                name: mapped.name,
-                phone: mapped.phone,
-                pageId,
-                pageName: pageAuth.name ?? null,
+                if (!inserted) {
+                  throw new Error(`Could not insert Messenger lead ${mapped.facebookLeadId}`);
+                }
+
+                await tx.insert(activityLogs).values({
+                  leadId: inserted.id,
+                  kind: "CREATE",
+                  message: "Lead đồng bộ từ Hộp thư Tin nhắn Fanpage (Messenger).",
+                  actorName: "Facebook sync",
+                });
+
+                return inserted.id;
               });
+              counts.imported += 1;
+              byChannel.message += 1;
+              if (!mapped.createdAt || mapped.createdAt.getTime() >= recentPushThresholdMs) {
+                newlyImportedLeads.push({
+                  leadId: insertedId,
+                  name: mapped.name,
+                  phone: mapped.phone,
+                  pageId,
+                  pageName: pageAuth.name ?? null,
+                });
+              }
+            } catch (error) {
+              recordError(error);
             }
-          } catch (error) {
-            recordError(error);
-          }
+          });
         }
       } catch (error) {
         if (isPermissionError(error)) {
@@ -518,72 +614,84 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
             });
             if (!mapped || !mapped.phone) continue;
 
-            try {
-              const existing = await findExistingLead(mapped.facebookLeadId);
-              if (existing) {
-                const nextAttrs = { ...(existing.attrs ?? {}), ...mapped.attrs };
-                const nextPhone = !existing.phone && mapped.phone ? mapped.phone : existing.phone;
-                await db
-                  .update(leads)
-                  .set({
-                    ...(mapped.name ? { name: mapped.name } : {}),
-                    ...(nextPhone !== undefined ? { phone: nextPhone } : {}),
-                    attrs: nextAttrs,
-                    ...(projectId ? { projectId } : {}),
-                    facebookPageId: pageId,
-                    updatedAt: new Date(),
-                  })
-                  .where(eq(leads.id, existing.id));
-                counts.updated += 1;
-                byChannel.comment += 1;
-                continue;
-              }
+            await withPhoneLock(projectId, mapped.phone, async () => {
+              try {
+                const existing = await findExistingLead(mapped.facebookLeadId, projectId, mapped.phone);
+                if (existing) {
+                  const isCrossChannel =
+                    Boolean(existing.facebookLeadId && existing.facebookLeadId !== mapped.facebookLeadId) ||
+                    (existing.channelDetail !== undefined && existing.channelDetail !== "COMMENT");
+                  const nextAttrs = { ...(existing.attrs ?? {}), ...mapped.attrs };
+                  const normalizedExistingPhone = existing.phone ? normalizePhone(existing.phone) : "";
+                  const nextPhone = normalizedExistingPhone || mapped.phone;
+                  const nextName = isCrossChannel
+                    ? !existing.name && mapped.name
+                      ? mapped.name
+                      : undefined
+                    : mapped.name || undefined;
 
-              const insertedId = await db.transaction(async (tx) => {
-                const [inserted] = await tx
-                  .insert(leads)
-                  .values({
-                    name: mapped.name,
-                    phone: mapped.phone,
-                    source: "FACEBOOK",
-                    channelDetail: "COMMENT",
-                    facebookLeadId: mapped.facebookLeadId,
-                    facebookPageId: pageId,
-                    projectId,
-                    ...(mapped.createdAt ? { createdAt: mapped.createdAt } : {}),
-                    adContent: mapped.adContent,
-                    careNote: mapped.careNote ?? "",
-                    attrs: mapped.attrs,
-                  })
-                  .returning({ id: leads.id });
-
-                if (!inserted) {
-                  throw new Error(`Could not insert Comment lead ${mapped.facebookLeadId}`);
+                  await db
+                    .update(leads)
+                    .set({
+                      ...(nextName ? { name: nextName } : {}),
+                      ...(nextPhone ? { phone: nextPhone } : {}),
+                      attrs: nextAttrs,
+                      ...(projectId ? { projectId } : {}),
+                      facebookPageId: pageId,
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(leads.id, existing.id));
+                  counts.updated += 1;
+                  byChannel.comment += 1;
+                  return;
                 }
 
-                await tx.insert(activityLogs).values({
-                  leadId: inserted.id,
-                  kind: "CREATE",
-                  message: "Lead đồng bộ từ Bình luận Fanpage (Comment).",
-                  actorName: "Facebook sync",
-                });
+                const insertedId = await db.transaction(async (tx) => {
+                  const [inserted] = await tx
+                    .insert(leads)
+                    .values({
+                      name: mapped.name,
+                      phone: mapped.phone,
+                      source: "FACEBOOK",
+                      channelDetail: "COMMENT",
+                      facebookLeadId: mapped.facebookLeadId,
+                      facebookPageId: pageId,
+                      projectId,
+                      ...(mapped.createdAt ? { createdAt: mapped.createdAt } : {}),
+                      adContent: mapped.adContent,
+                      careNote: mapped.careNote ?? "",
+                      attrs: mapped.attrs,
+                    })
+                    .returning({ id: leads.id });
 
-                return inserted.id;
-              });
-              counts.imported += 1;
-              byChannel.comment += 1;
-              if (!mapped.createdAt || mapped.createdAt.getTime() >= recentPushThresholdMs) {
-                newlyImportedLeads.push({
-                  leadId: insertedId,
-                  name: mapped.name,
-                  phone: mapped.phone,
-                  pageId,
-                  pageName: pageAuth.name ?? null,
+                  if (!inserted) {
+                    throw new Error(`Could not insert Comment lead ${mapped.facebookLeadId}`);
+                  }
+
+                  await tx.insert(activityLogs).values({
+                    leadId: inserted.id,
+                    kind: "CREATE",
+                    message: "Lead đồng bộ từ Bình luận Fanpage (Comment).",
+                    actorName: "Facebook sync",
+                  });
+
+                  return inserted.id;
                 });
+                counts.imported += 1;
+                byChannel.comment += 1;
+                if (!mapped.createdAt || mapped.createdAt.getTime() >= recentPushThresholdMs) {
+                  newlyImportedLeads.push({
+                    leadId: insertedId,
+                    name: mapped.name,
+                    phone: mapped.phone,
+                    pageId,
+                    pageName: pageAuth.name ?? null,
+                  });
+                }
+              } catch (error) {
+                recordError(error);
               }
-            } catch (error) {
-              recordError(error);
-            }
+            });
           }
         }
       } catch (error) {

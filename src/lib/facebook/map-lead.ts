@@ -1,3 +1,5 @@
+import { normalizePhone } from "@/lib/leads/phone";
+
 export type FacebookFieldDatum = { name: string; values: string[] };
 
 export type MappedFacebookLead = {
@@ -101,17 +103,6 @@ function firstMatchingValue(
   return null;
 }
 
-function normalizePhone(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return null;
-
-  const hasPlus = trimmed.startsWith("+");
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 0) return null;
-
-  return hasPlus ? `+${digits}` : digits;
-}
-
 function resolveName(fieldData: FacebookFieldDatum[]): string | null {
   const full = firstMatchingValue(fieldData, isFullNameFieldKey);
   if (full) return full;
@@ -159,7 +150,7 @@ export function mapFacebookLeadFields(
   meta?: { campaignName?: string | null; adName?: string | null },
 ): MappedFacebookLead {
   const rawPhone = firstMatchingValue(fieldData, isPhoneFieldKey);
-  const phone = rawPhone ? normalizePhone(rawPhone) ?? "" : "";
+  const phone = rawPhone ? normalizePhone(rawPhone) : "";
 
   return {
     phone,
@@ -170,23 +161,36 @@ export function mapFacebookLeadFields(
   };
 }
 
+/** Nhận diện tin nhắn tóm tắt tự động do Meta bắn vào Messenger ngay khi khách điền Lead Form. */
+export function isMetaLeadFormAutoMessage(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return /tôi đã điền mẫu và muốn biết thêm về doanh nghiệp|filled out your form and would like to know more about your business/i.test(
+    text,
+  );
+}
+
+function isFacebookSystemNotice(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return /^facebook tạo đoạn chat này vì\b|^facebook created this chat because\b/i.test(
+    text.trim(),
+  );
+}
+
 /**
- * Trích xuất số điện thoại Việt Nam từ nội dung tin nhắn Messenger hoặc bình luận (Comment).
- * Hỗ trợ các biến thể: 0912345678, 0912 345 678, 0912.345.678, +84912345678, 84912345678, o912345678.
+ * Trích xuất số điện thoại từ nội dung tin nhắn Messenger hoặc bình luận (Comment).
+ * - Chuẩn hóa số VN (+84/84/0/o9...) về đầu 0...
+ * - Giữ nguyên số quốc tế có mã vùng dấu cộng (+82..., +81..., +886..., +1...).
+ * - Loại bỏ URL trước khi quét và kiểm tra ranh giới chữ số để không bóc nhầm Facebook ID trong link.
  */
 export function extractPhoneFromText(text: string | null | undefined): string | null {
   if (!text) return null;
-  const normalizedInput = text.replace(/[oO]/g, (m, offset, str) => {
-    const next = str[offset + 1];
-    return next && /\d/.test(next) ? "0" : m;
-  });
+  const withoutUrls = text.replace(/https?:\/\/\S+/gi, " ");
+  const normalizedInput = withoutUrls.replace(/(^|[\s:.,\-()[\]])[oO](?=\d)/g, "$10");
 
-  const regex = /(?:\+?84|0)(?:[\s.\-_]*\d){8,9}\b/g;
-  const matches = normalizedInput.match(regex);
-  if (!matches) return null;
-
-  for (const raw of matches) {
-    const digits = raw.replace(/\D/g, "");
+  const vnRegex = /(?:^|[^\d+])((?:\+?84|0)(?:[\s.\-_]*\d){8,9})(?!\d)/g;
+  let match: RegExpExecArray | null;
+  while ((match = vnRegex.exec(normalizedInput)) !== null) {
+    const digits = match[1]!.replace(/\D/g, "");
     if (/^840\d{9}$/.test(digits)) {
       const local = `0${digits.slice(3)}`;
       if (/^0[235789]\d{8}$/.test(local)) return local;
@@ -199,6 +203,15 @@ export function extractPhoneFromText(text: string | null | undefined): string | 
       return digits;
     }
   }
+
+  const intlRegex = /(?:^|[^\w+])(\+[1-9]\d(?:[\s.\-()]*\d){7,13})(?!\d)/g;
+  while ((match = intlRegex.exec(withoutUrls)) !== null) {
+    const digits = match[1]!.replace(/\D/g, "");
+    if (digits.length >= 9 && digits.length <= 15) {
+      return normalizePhone(`+${digits}`);
+    }
+  }
+
   return null;
 }
 
@@ -261,11 +274,14 @@ export type MappedMessengerLead = {
   createdAt: Date | undefined;
   careNote: string | null;
   attrs: Record<string, string>;
+  /** True nếu khách chỉ mới có tin nhắn tóm tắt Form tự động của Meta, chưa nhắn câu hỏi thêm. */
+  isOnlyFormEcho?: boolean;
 };
 
 /**
  * Chuyển 1 cuộc hội thoại Messenger (`/{pageId}/conversations`) thành Lead kênh `TIN_NHAN`.
- * Trả về `null` nếu cuộc hội thoại không có khách hàng hoặc không có tin nhắn nào từ khách.
+ * Chỉ trích xuất SĐT từ tin nhắn của chính khách hàng — tuyệt đối không fallback sang tin nhắn của Fanpage
+ * để tránh bóc nhầm số Hotline trong câu chào tự động của Page.
  */
 export function mapFacebookConversationLead(
   conv: FacebookConversationNode,
@@ -275,10 +291,13 @@ export function mapFacebookConversationLead(
   const customer = participants.find((p) => p.id && p.id !== pageId);
   const messages = conv.messages?.data ?? [];
 
-  const customerMessages = messages.filter(
-    (m) => m.from?.id !== pageId && (m.message ?? "").trim().length > 0,
-  );
-  const allMessagesWithText = messages.filter((m) => (m.message ?? "").trim().length > 0);
+  const customerMessages = messages.filter((m) => {
+    const text = (m.message ?? "").trim();
+    if (!text || isFacebookSystemNotice(text)) return false;
+    if (!m.from?.id || m.from.id === pageId) return false;
+    if (customer?.id && m.from.id !== customer.id) return false;
+    return true;
+  });
 
   if (!customer && customerMessages.length === 0) {
     return null;
@@ -289,29 +308,27 @@ export function mapFacebookConversationLead(
     extractedPhone = extractPhoneFromText(m.message);
     if (extractedPhone) break;
   }
-  if (!extractedPhone) {
-    for (const m of allMessagesWithText) {
-      extractedPhone = extractPhoneFromText(m.message);
-      if (extractedPhone) break;
-    }
-  }
 
   const customerName =
     customer?.name?.trim() ||
     customerMessages.find((m) => m.from?.name)?.from?.name?.trim() ||
     null;
 
+  const realCustomerMessages = customerMessages.filter(
+    (m) => !isMetaLeadFormAutoMessage(m.message),
+  );
+  const isOnlyFormEcho = customerMessages.length > 0 && realCustomerMessages.length === 0;
+  const messagesForSummary =
+    realCustomerMessages.length > 0 ? realCustomerMessages : customerMessages;
+
   // Lấy tối đa 5 tin nhắn gần nhất của khách để đưa vào ghi chú / attrs
-  const recentCustomerTexts = customerMessages
+  const recentCustomerTexts = messagesForSummary
     .slice(0, 5)
     .reverse()
     .map((m) => (m.message ?? "").trim())
     .filter(Boolean);
 
-  const summaryText =
-    recentCustomerTexts.join(" | ").slice(0, MAX_ATTR_VALUE) ||
-    allMessagesWithText[0]?.message?.trim().slice(0, MAX_ATTR_VALUE) ||
-    "";
+  const summaryText = recentCustomerTexts.join(" | ").slice(0, MAX_ATTR_VALUE);
 
   const attrs: Record<string, string> = {};
   if (summaryText) {
@@ -339,6 +356,7 @@ export function mapFacebookConversationLead(
     createdAt,
     careNote: summaryText ? `[Messenger] ${summaryText}` : null,
     attrs,
+    isOnlyFormEcho,
   };
 }
 
@@ -372,6 +390,11 @@ export function mapFacebookCommentLead(
   if (comment.from?.id === pageId) return null;
   const message = (comment.message ?? "").trim();
   if (!message) return null;
+
+  // Bỏ qua các bình luận quảng cáo/ghim Hotline của Page/Seeder bị ẩn danh tính (không có comment.from.id)
+  if (!comment.from?.id && /\bhotline\b/i.test(message)) {
+    return null;
+  }
 
   const phone = extractPhoneFromText(message);
   if (!phone && !hasCommentLeadIntent(message)) {

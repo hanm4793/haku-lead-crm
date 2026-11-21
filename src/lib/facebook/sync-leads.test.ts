@@ -31,15 +31,24 @@ vi.mock("./graph-client", async (importOriginal) => {
 
 import { syncFacebookLeads } from "./sync-leads";
 
-function createDb(existingLeadIds: string[] = []) {
+function createDb(
+  existingRows: Array<string | Record<string, unknown>> = [],
+) {
   const inserted: Array<{
     table: unknown;
     values: Record<string, unknown>;
     inTransaction: boolean;
   }> = [];
   const updated: Array<{ table: unknown; values: Record<string, unknown> }> = [];
-  const existing = [...existingLeadIds];
+  const existing = existingRows.map((item) =>
+    typeof item === "string" ? { id: item } : item,
+  );
   let transactionDepth = 0;
+
+  const limitFn = vi.fn(async () => {
+    const row = existing.shift();
+    return row ? [row] : [];
+  });
 
   const db = {
     insert: vi.fn((table: unknown) => ({
@@ -55,10 +64,8 @@ function createDb(existingLeadIds: string[] = []) {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn(() => ({
-          limit: vi.fn(async () => {
-            const id = existing.shift();
-            return id ? [{ id }] : [];
-          }),
+          orderBy: vi.fn(() => ({ limit: limitFn })),
+          limit: limitFn,
         })),
       })),
     })),
@@ -346,6 +353,97 @@ describe("syncFacebookLeads", () => {
         channelDetail: "COMMENT",
       }),
       inTransaction: true,
+    });
+  });
+
+  it("deduplicates Messenger auto-echo and follow-up chats into existing Form lead with same normalized phone", async () => {
+    // 1st select (Form lead): not found -> inserts Form lead (+84985909293 normalized to 0985909293)
+    // 2nd select (Messenger echo with 098 590 92 93): matches the Form lead by phoneKey -> updates Form lead instead of inserting duplicate!
+    const { db, inserted, updated } = createDb([
+      undefined as unknown as Record<string, unknown>,
+      {
+        id: "lead-new",
+        facebookLeadId: "form-lead-1",
+        channelDetail: "FORM",
+        name: "Vũ Minh Toàn",
+        phone: "0985909293",
+        careNote: "Khách hẹn chiều gọi lại",
+        attrs: { dong_xe: "Kia Sonet" },
+      },
+    ]);
+    mocks.getDb.mockReturnValue(db);
+    mocks.graphGetAllData
+      .mockResolvedValueOnce([{ id: "form-1" }])
+      .mockResolvedValueOnce([
+        {
+          id: "form-lead-1",
+          created_time: "2026-11-17T16:34:32+0000",
+          field_data: [
+            { name: "full_name", values: ["Vũ Minh Toàn"] },
+            { name: "phone_number", values: ["+84985909293"] },
+            { name: "dong_xe", values: ["Kia Sonet"] },
+          ],
+          campaign_name: "KIA Quảng Ninh T11",
+        },
+      ]);
+    mocks.graphGet
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "t_151451",
+            updated_time: "2026-11-17T16:34:46+0000",
+            link: "/594731690545560/inbox/298643/?section=messages",
+            participants: {
+              data: [
+                { id: "page-1" },
+                { id: "psid_999", name: "Minh Toàn" },
+              ],
+            },
+            messages: {
+              data: [
+                {
+                  id: "m_echo",
+                  message:
+                    "Xin chào! Tôi đã điền mẫu và muốn biết thêm về doanh nghiệp bạn.\nFull name: Vũ Minh Toàn\nPhone number: 098 590 92 93",
+                  created_time: "2026-11-17T16:34:46+0000",
+                  from: { id: "psid_999", name: "Minh Toàn" },
+                },
+              ],
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ data: [] });
+
+    const result = await syncFacebookLeads();
+
+    expect(result).toMatchObject({
+      imported: 1,
+      updated: 1,
+      errors: 0,
+      byChannel: { form: 1, message: 1, comment: 0 },
+    });
+    const leadInserts = inserted.filter((entry) => entry.table === leads);
+    expect(leadInserts).toHaveLength(1);
+    expect(leadInserts[0]?.values).toMatchObject({
+      facebookLeadId: "form-lead-1",
+      name: "Vũ Minh Toàn",
+      phone: "0985909293",
+      channelDetail: "FORM",
+      campaign: "KIA Quảng Ninh T11",
+    });
+
+    const leadUpdates = updated.filter((entry) => entry.table === leads);
+    expect(leadUpdates).toHaveLength(1);
+    // Preserves Form full name & Sale's careNote, attaches Messenger link_inbox + psid without redundant form echo text
+    expect(leadUpdates[0]?.values).not.toHaveProperty("name");
+    expect(leadUpdates[0]?.values).toMatchObject({
+      careNote: "Khách hẹn chiều gọi lại",
+      attrs: {
+        dong_xe: "Kia Sonet",
+        psid: "psid_999",
+        link_inbox: "https://business.facebook.com/594731690545560/inbox/298643/?section=messages",
+      },
     });
   });
 });

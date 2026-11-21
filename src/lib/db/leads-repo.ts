@@ -170,7 +170,7 @@ export function criteriaConditions(criteria: LeadCriteria, viewer: ViewerScope, 
     const searchDigits = phoneKey(search);
     if (searchDigits.length >= 3 && /^[\d+\s().-]+$/.test(search)) {
       parts.push(
-        sql`(lower(unaccent(coalesce(${leads.name}, '') || ' ' || ${leads.phone})) like ${`%${search}%`} or regexp_replace(regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^840(\\d{9})$', '0\\1'), '^84(\\d{9})$', '0\\1') like ${`%${searchDigits}%`})`,
+        sql`(lower(unaccent(coalesce(${leads.name}, '') || ' ' || ${leads.phone})) like ${`%${search}%`} or regexp_replace(regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^840(\\d{9,10})$', '0\\1'), '^84(\\d{9}|2\\d{9})$', '0\\1') like ${`%${searchDigits}%`})`,
       );
     } else {
       // unaccent để "nguyen" khớp được "Nguyễn" — extension bật ở migration 0001.
@@ -874,7 +874,7 @@ export async function updateLead(
 export async function findLeadByPhone(projectId: string | null, phone: string, excludeId?: string) {
   const key = phoneKey(phone);
   const conditions: SQL[] = [
-    sql`regexp_replace(regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^840(\\d{9})$', '0\\1'), '^84(\\d{9})$', '0\\1') = ${key}`,
+    sql`regexp_replace(regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^840(\\d{9,10})$', '0\\1'), '^84(\\d{9}|2\\d{9})$', '0\\1') = ${key}`,
   ];
   if (excludeId) conditions.push(ne(leads.id, excludeId));
   if (projectId) conditions.push(eq(leads.projectId, projectId));
