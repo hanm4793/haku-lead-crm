@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { useToast } from "@/components/providers/toast-provider";
+import { openPwaInstallGuide } from "@/components/pwa/pwa-install-prompt";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -28,6 +29,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import {
+  detectPwaBrowserEnv,
+  isRunningStandalone,
+  isWebPushSupportedInWindow,
+} from "@/lib/pwa/environment";
 import { cn } from "@/lib/utils";
 
 export interface PushPrefsState {
@@ -58,10 +64,26 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   return outputArray;
 }
 
+function requestNotificationPermissionCompat(): Promise<NotificationPermission> {
+  return new Promise((resolve, reject) => {
+    try {
+      const maybePromise = window.Notification.requestPermission((result) => {
+        resolve(result);
+      });
+      if (maybePromise && typeof maybePromise.then === "function") {
+        maybePromise.then(resolve, reject);
+      }
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 interface PushEnvironmentState {
   ready: boolean;
   supported: boolean;
   isIosNeedInstall: boolean;
+  isIosOldVersionStandalone: boolean;
   permission: NotificationPermission | "unsupported";
   configured: boolean;
   vapidPublicKey: string;
@@ -77,6 +99,7 @@ function usePushController(enabled = true) {
     ready: false,
     supported: false,
     isIosNeedInstall: false,
+    isIosOldVersionStandalone: false,
     permission: "unsupported",
     configured: true,
     vapidPublicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "",
@@ -92,23 +115,21 @@ function usePushController(enabled = true) {
     await Promise.resolve();
     if (!enabled || typeof window === "undefined") return;
 
-    const ua = window.navigator.userAgent || "";
-    const isIos = /iphone|ipad|ipod/i.test(ua);
-    const isStandalone =
-      window.matchMedia?.("(display-mode: standalone)")?.matches ||
-      (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-
-    const supported =
-      "serviceWorker" in window.navigator &&
-      "PushManager" in window &&
-      "Notification" in window;
+    const env = detectPwaBrowserEnv({
+      userAgent: window.navigator.userAgent || "",
+      platform: window.navigator.platform || "",
+      maxTouchPoints: window.navigator.maxTouchPoints ?? 0,
+    });
+    const isStandalone = isRunningStandalone(window);
+    const supported = isWebPushSupportedInWindow(window);
 
     if (!supported) {
       setState((prev) => ({
         ...prev,
         ready: true,
         supported: false,
-        isIosNeedInstall: isIos && !isStandalone,
+        isIosNeedInstall: env.isIos && !isStandalone,
+        isIosOldVersionStandalone: env.isIos && isStandalone && !env.supportsIosWebPushVersion,
         permission: "unsupported",
       }));
       return;
@@ -118,8 +139,11 @@ function usePushController(enabled = true) {
     let currentEndpoint: string | null = null;
 
     try {
-      const reg = await window.navigator.serviceWorker.register("/sw.js", { scope: "/" });
-      const existingSub = await reg.pushManager.getSubscription();
+      const reg = await window.navigator.serviceWorker.register("/sw.js", {
+        scope: "/",
+        updateViaCache: "none",
+      });
+      const existingSub = await reg.pushManager?.getSubscription();
       currentEndpoint = existingSub?.endpoint ?? null;
     } catch (err) {
       console.warn("[pwa-push] SW register warning:", err);
@@ -140,6 +164,7 @@ function usePushController(enabled = true) {
           ready: true,
           supported: true,
           isIosNeedInstall: false,
+          isIosOldVersionStandalone: false,
           permission,
           configured: Boolean(json.configured),
           vapidPublicKey: json.vapidPublicKey || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "",
@@ -159,6 +184,7 @@ function usePushController(enabled = true) {
       ready: true,
       supported: true,
       isIosNeedInstall: false,
+      isIosOldVersionStandalone: false,
       permission,
       endpoint: currentEndpoint,
     }));
@@ -190,7 +216,7 @@ function usePushController(enabled = true) {
 
     setBusy(true);
     try {
-      const permission = await window.Notification.requestPermission();
+      const permission = await requestNotificationPermissionCompat();
       if (permission !== "granted") {
         setState((prev) => ({ ...prev, permission }));
         toast.error(
@@ -200,12 +226,16 @@ function usePushController(enabled = true) {
         return;
       }
 
-      const reg = await window.navigator.serviceWorker.register("/sw.js", { scope: "/" });
-      await window.navigator.serviceWorker.ready;
+      const reg = await window.navigator.serviceWorker.register("/sw.js", {
+        scope: "/",
+        updateViaCache: "none",
+      });
+      const activeReg = await window.navigator.serviceWorker.ready;
+      const pushMgr = activeReg.pushManager ?? reg.pushManager;
 
-      let sub = await reg.pushManager.getSubscription();
+      let sub = await pushMgr.getSubscription();
       if (!sub) {
-        sub = await reg.pushManager.subscribe({
+        sub = await pushMgr.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(state.vapidPublicKey),
         });
@@ -395,7 +425,7 @@ const CHANNEL_ITEMS: {
   },
 ];
 
-export function PushNotificationPanel() {
+export function PushNotificationPanel({ onCloseParent }: { onCloseParent?: () => void } = {}) {
   const {
     state,
     busy,
@@ -427,7 +457,7 @@ export function PushNotificationPanel() {
               Cài đặt ra Màn hình chính để nhận thông báo trên iPhone / iPad
             </p>
             <p className="leading-relaxed text-amber-800">
-              Apple yêu cầu mở web dưới dạng Ứng dụng (PWA) để bật Push Notification như App gốc:
+              Apple yêu cầu thêm web ra Màn hình chính (PWA) để bật Push Notification như App gốc:
             </p>
           </div>
         </div>
@@ -437,7 +467,7 @@ export function PushNotificationPanel() {
               1
             </span>
             <span>
-              Bấm nút <strong>Chia sẻ</strong> <Share className="inline size-3.5 text-primary" /> ở thanh dưới trình duyệt Safari
+              Bấm nút <strong>Chia sẻ</strong> <Share className="inline size-3.5 text-primary" /> trên thanh công cụ trình duyệt
             </span>
           </li>
           <li className="flex items-center gap-2">
@@ -457,6 +487,31 @@ export function PushNotificationPanel() {
             </span>
           </li>
         </ol>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => {
+            onCloseParent?.();
+            window.setTimeout(() => openPwaInstallGuide(), onCloseParent ? 60 : 0);
+          }}
+          className="h-9 w-full text-xs font-semibold"
+        >
+          Xem hướng dẫn cài đặt theo trình duyệt đang mở
+        </Button>
+      </div>
+    );
+  }
+
+  if (state.isIosOldVersionStandalone) {
+    return (
+      <div className="flex items-start gap-2.5 rounded-xl border border-border bg-slate-50 p-3.5 text-xs text-muted-foreground">
+        <BellOff className="mt-0.5 size-4 shrink-0 text-slate-400" />
+        <div>
+          <p className="font-semibold text-slate-700">Ứng dụng đã cài đặt thành công trên Màn hình chính</p>
+          <p className="mt-0.5 leading-relaxed">
+            Tính năng Thông báo đẩy nền (Web Push) được Apple bổ sung từ <strong>iOS / iPadOS 16.4</strong> trở lên. Bạn vẫn sử dụng đầy đủ mọi tính năng CRM toàn màn hình trên phiên bản iOS hiện tại.
+          </p>
+        </div>
       </div>
     );
   }
@@ -711,7 +766,7 @@ export function PushNotificationBell({
               Nhận cảnh báo Lead mới, nhắc lịch hẹn gọi lại và điểm danh hàng ngày ngay cả khi đóng ứng dụng.
             </DialogDescription>
           </DialogHeader>
-          <PushNotificationPanel />
+          <PushNotificationPanel onCloseParent={() => setOpen(false)} />
         </DialogContent>
       </Dialog>
     </>

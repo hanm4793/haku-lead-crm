@@ -127,6 +127,7 @@
 
   html {
     max-width: 100%;
+    overflow-x: hidden;
     overflow-x: clip;
   }
 
@@ -137,7 +138,19 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.011em;
+    overflow-x: hidden;
     overflow-x: clip;
+  }
+
+  /* Fallback chiều cao cho các máy iOS < 15.4 chưa hỗ trợ đơn vị `dvh` */
+  @supports not (min-height: 100dvh) {
+    .min-h-dvh {
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+    }
+    .h-dvh {
+      height: 100vh;
+    }
   }
 
   /* Loại bỏ độ trễ 300ms khi chạm trên thiết bị di động */

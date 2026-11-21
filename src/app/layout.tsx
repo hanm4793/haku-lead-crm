@@ -26,7 +26,23 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: "SEMTOP Marketing CRM",
+  applicationName: "SEMTOP CRM",
   description: "SEMTOP Marketing CRM — quản lý lead đa kênh, marketing Insights và trợ lý AI.",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: ["/icons/icon-192.png"],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+      { url: "/icons/apple-icon-180.png", sizes: "180x180", type: "image/png" },
+      { url: "/icons/apple-icon-167.png", sizes: "167x167", type: "image/png" },
+      { url: "/icons/apple-icon-152.png", sizes: "152x152", type: "image/png" },
+      { url: "/icons/apple-icon-120.png", sizes: "120x120", type: "image/png" },
+    ],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -34,6 +50,10 @@ export const metadata: Metadata = {
   },
   formatDetection: {
     telephone: false,
+  },
+  other: {
+    // Next.js 16 chỉ sinh `<meta name="mobile-web-app-capable">`; giữ thêm thẻ chuẩn Apple cho iOS 9–16+
+    "apple-mobile-web-app-capable": "yes",
   },
 };
 

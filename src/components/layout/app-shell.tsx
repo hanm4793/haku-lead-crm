@@ -38,6 +38,7 @@ import {
   type NavGate,
   type UserRole,
 } from "@/lib/auth/roles";
+import { subscribeMediaQuery } from "@/lib/pwa/environment";
 import type { ProjectInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -154,6 +155,7 @@ export function AppShell({
 
   // Trên Tablet (768px - 1023px), mặc định thu gọn thành Navigation Rail để nhường diện tích cho bảng dữ liệu
   React.useEffect(() => {
+    if (!window.matchMedia) return;
     const mql = window.matchMedia("(max-width: 1023px)");
     const raf = window.requestAnimationFrame(() => {
       if (mql.matches) setCollapsed(true);
@@ -161,10 +163,10 @@ export function AppShell({
     const handleChange = (event: MediaQueryListEvent) => {
       if (event.matches) setCollapsed(true);
     };
-    mql.addEventListener("change", handleChange);
+    const unsubscribe = subscribeMediaQuery(mql, handleChange);
     return () => {
       window.cancelAnimationFrame(raf);
-      mql.removeEventListener("change", handleChange);
+      unsubscribe();
     };
   }, []);
 
@@ -192,7 +194,14 @@ export function AppShell({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [showAi, pathname]);
 
-  if (pathname.startsWith("/login")) return <>{children}</>;
+  if (pathname.startsWith("/login")) {
+    return (
+      <>
+        {children}
+        <PwaInstallFloatingBanner withBottomNav={false} />
+      </>
+    );
+  }
 
   const navItems = NAV_ITEMS.filter((item) => canSeeNav(user.role, item.access));
   const effectivePathname = pendingHref ?? pathname;
@@ -611,7 +620,7 @@ export function AppShell({
                 Tài khoản cá nhân
               </div>
               <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
-                <PwaInstallMenuRow />
+                <PwaInstallMenuRow onAfterClick={() => setMobileMenuOpen(false)} />
                 <Link
                   href="/account"
                   prefetch

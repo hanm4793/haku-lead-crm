@@ -2,23 +2,24 @@
 
 import * as React from "react";
 
+import { subscribeMediaQuery } from "@/lib/pwa/environment";
+
 /**
- * Theo dõi media query đồng bộ, an toàn với SSR & React 19 concurrent rendering.
- * Trả về `false` trên server để khớp hydration ban đầu, sau đó cập nhật ngay trên client.
+ * Theo dõi media query đồng bộ, an toàn với SSR, React 19 concurrent rendering
+ * và tương thích ngược cả iOS Safari 12–13 (`addListener`) lẫn Safari 14+ (`addEventListener`).
  */
 export function useMediaQuery(query: string): boolean {
   const subscribe = React.useCallback(
     (onStoreChange: () => void) => {
-      if (typeof window === "undefined") return () => {};
+      if (typeof window === "undefined" || !window.matchMedia) return () => {};
       const mql = window.matchMedia(query);
-      mql.addEventListener("change", onStoreChange);
-      return () => mql.removeEventListener("change", onStoreChange);
+      return subscribeMediaQuery(mql, onStoreChange);
     },
     [query],
   );
 
   const getSnapshot = React.useCallback(() => {
-    if (typeof window === "undefined") return false;
+    if (typeof window === "undefined" || !window.matchMedia) return false;
     return window.matchMedia(query).matches;
   }, [query]);
 

@@ -2,7 +2,20 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/env";
 
-const PUBLIC_PATHS = ["/login", "/auth", "/api/cron/", "/manifest.webmanifest", "/sw.js"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/auth",
+  "/api/cron/",
+  "/manifest.webmanifest",
+  "/manifest.json",
+  "/sw.js",
+  "/apple-icon",
+  "/apple-touch-icon",
+  "/icon",
+  "/favicon.ico",
+  "/icons/",
+  "/brand/",
+];
 
 /**
  * Làm mới access token của Supabase trên mỗi request và chặn người chưa đăng
@@ -18,7 +31,10 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((path) => pathname.startsWith(path));
-  if (isPublic) return NextResponse.next();
+
+  // Với các tệp tĩnh của PWA (manifest, sw, icons) thì đi thẳng không qua auth;
+  // riêng `/login` vẫn kiểm tra nhẹ session để chuyển thẳng vào `/leads` nếu đã đăng nhập.
+  if (isPublic && pathname !== "/login") return NextResponse.next();
 
   let response = NextResponse.next({ request });
 
@@ -39,16 +55,21 @@ export async function middleware(request: NextRequest) {
   const user = session?.user ?? (await supabase.auth.getUser()).data.user;
 
   if (!user) {
+    if (pathname === "/login") {
+      return response;
+    }
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
     }
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
-    redirect.searchParams.set("next", pathname);
+    if (pathname !== "/") {
+      redirect.searchParams.set("next", pathname);
+    }
     return NextResponse.redirect(redirect);
   }
 
-  if (user && pathname === "/login") {
+  if (pathname === "/login" || pathname === "/") {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/leads";
     redirect.search = "";
@@ -60,6 +81,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest\\.webmanifest|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest)$).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|manifest\\.webmanifest|manifest\\.json|sw\\.js|apple-touch-icon.*|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest)$).*)",
   ],
 };
