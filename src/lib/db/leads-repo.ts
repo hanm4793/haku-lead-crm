@@ -1116,7 +1116,7 @@ export async function resolveLocationId(name: string, projectId?: string | null)
 }
 
 export interface CreateManualLeadInput {
-  name: string;
+  name?: string | null;
   phone: string;
   email?: string | null;
   brand?: BrandCode | null;
@@ -1143,8 +1143,7 @@ export async function createManualLead(
     throw new Error("Bạn không có quyền tạo lead.");
   }
 
-  const name = input.name.trim();
-  if (!name) throw new Error("Họ tên khách hàng không được để trống.");
+  const name = (input.name ?? "").trim();
   if (name.length > 250) throw new Error("Họ tên tối đa 250 ký tự.");
 
   const phoneProblem = validatePhone(input.phone);
@@ -1195,7 +1194,7 @@ export async function createManualLead(
     const [inserted] = await tx
       .insert(leads)
       .values({
-        name,
+        name: name || null,
         phone,
         source: "MANUAL",
         channelDetail: input.channelDetail ?? "FORM",
@@ -1291,8 +1290,9 @@ export async function insertImportedLeads(
   const leadsToInsert: (typeof leads.$inferInsert)[] = [];
 
   for (const row of rows) {
-    const name = row.name?.trim() ?? "";
-    if (!name || name.length > 250) continue;
+    const rawName = row.name?.trim() ?? "";
+    if (rawName.length > 250) continue;
+    const name = rawName || null;
 
     const phone = normalizePhone(row.phone);
     if (!phone || validatePhone(phone)) continue;

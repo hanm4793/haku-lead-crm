@@ -126,10 +126,6 @@ export function CreateLeadDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      toast.error("Thiếu thông tin", "Vui lòng nhập họ tên khách hàng.");
-      return;
-    }
     if (!phone.trim()) {
       toast.error("Thiếu thông tin", "Vui lòng nhập số điện thoại.");
       return;
@@ -144,7 +140,7 @@ export function CreateLeadDialog({
     setSubmitting(true);
     try {
       const res = await createManualLeadAction({
-        name: name.trim(),
+        name: name.trim() || null,
         phone: phone.trim(),
         email: email.trim() || null,
         brand,
@@ -164,7 +160,10 @@ export function CreateLeadDialog({
         return;
       }
 
-      toast.success("Đã tạo lead thủ công", `${res.lead.name ?? ""} (${res.lead.phone})`);
+      toast.success(
+        "Đã tạo lead thủ công",
+        res.lead.name ? `${res.lead.name} (${res.lead.phone})` : res.lead.phone,
+      );
       resetForm();
       onOpenChange(false);
       onCreated(res.lead);
@@ -191,15 +190,12 @@ export function CreateLeadDialog({
             {/* Thông tin định danh */}
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium">
-                  Họ tên khách hàng <span className="text-rose-500">*</span>
-                </Label>
+                <Label className="text-xs font-medium">Họ tên khách hàng</Label>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Nguyễn Văn A"
+                  placeholder="Nguyễn Văn A (tùy chọn)"
                   maxLength={120}
-                  required
                   className="max-md:h-10"
                 />
               </div>

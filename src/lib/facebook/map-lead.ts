@@ -1,4 +1,4 @@
-import { normalizePhone } from "@/lib/leads/phone";
+import { normalizePhone, stripPhonePrefixLabel } from "@/lib/leads/phone";
 
 export type FacebookFieldDatum = { name: string; values: string[] };
 
@@ -228,7 +228,7 @@ function firstMatchingField(
  * hoặc SĐT Việt Nam khi tên câu hỏi Form viết bằng ngôn ngữ lạ / nhãn tùy biến.
  */
 function looksLikeFormPhoneValue(raw: string): boolean {
-  const trimmed = raw.trim();
+  const trimmed = stripPhonePrefixLabel(raw);
   if (!trimmed || /^https?:\/\//i.test(trimmed) || trimmed.includes("@")) return false;
   if (/^\+[1-9]\d(?:[\s.\-()]*\d){7,14}$/.test(trimmed)) {
     const digits = trimmed.replace(/\D/g, "");
@@ -236,8 +236,9 @@ function looksLikeFormPhoneValue(raw: string): boolean {
   }
   const digits = trimmed.replace(/\D/g, "");
   if (/^[\d\s.\-()]+$/.test(trimmed)) {
-    if (/^(?:840|84)\d{9}$/.test(digits)) return true;
-    if (/^0[235789]\d{8,9}$/.test(digits)) return true;
+    if (/^(?:840|84)\d{9,10}$/.test(digits)) return true;
+    if (/^0[1235789]\d{8,9}$/.test(digits)) return true;
+    if (/^(?:3[2-9]|5[25689]|7[06-9]|8[1-9]|9\d)\d{7}$/.test(digits)) return true;
   }
   return false;
 }
@@ -391,20 +392,12 @@ export function extractPhoneFromText(text: string | null | undefined): string | 
   const withoutUrls = text.replace(/https?:\/\/\S+/gi, " ");
   const normalizedInput = withoutUrls.replace(/(^|[\s:.,\-()[\]])[oO](?=\d)/g, "$10");
 
-  const vnRegex = /(?:^|[^\d+])((?:\+?84|0)(?:[\s.\-_]*\d){8,9})(?!\d)/g;
+  const vnRegex = /(?:^|[^\d+])((?:\+?84|0)(?:[\s.\-_]*\d){8,10})(?!\d)/g;
   let match: RegExpExecArray | null;
   while ((match = vnRegex.exec(normalizedInput)) !== null) {
-    const digits = match[1]!.replace(/\D/g, "");
-    if (/^840\d{9}$/.test(digits)) {
-      const local = `0${digits.slice(3)}`;
-      if (/^0[235789]\d{8}$/.test(local)) return local;
-    }
-    if (/^84\d{9}$/.test(digits)) {
-      const local = `0${digits.slice(2)}`;
-      if (/^0[235789]\d{8}$/.test(local)) return local;
-    }
-    if (/^0[235789]\d{8,9}$/.test(digits)) {
-      return digits;
+    const normalized = normalizePhone(match[1]!);
+    if (/^0[235789]\d{8,9}$/.test(normalized)) {
+      return normalized;
     }
   }
 

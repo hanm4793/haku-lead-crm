@@ -230,7 +230,7 @@ describe("lead import template & validator", () => {
     expect(adminReport.rows[0].payload?.assignee).toBeNull();
   });
 
-  it("blocks rows with empty name or missing required custom fields and rejects invalid calendar dates", async () => {
+  it("allows empty name (stored as null) while still blocking missing required custom fields and invalid calendar dates", async () => {
     const requiredAttr: AttrFieldRow = {
       id: "f-req",
       projectId: "proj-1",
@@ -244,7 +244,7 @@ describe("lead import template & validator", () => {
     };
 
     const buffer = await makeWorkbookBuffer(
-      ["Họ tên *", "Số điện thoại *", "CCCD *", "Hẹn gọi lại (yyyy-MM-dd)"],
+      ["Họ tên", "Số điện thoại *", "CCCD *", "Hẹn gọi lại (yyyy-MM-dd)"],
       [
         ["", "0911222333", "012345678901", "2026-10-25"],
         ["Nguyễn Văn C", "0911222444", "", "2026-02-31"],
@@ -261,8 +261,9 @@ describe("lead import template & validator", () => {
     });
 
     expect(report.totalRows).toBe(3);
-    expect(report.rows[0].canImport).toBe(false);
-    expect(report.rows[0].blockingError).toMatch(/Họ tên/);
+    expect(report.rows[0].canImport).toBe(true);
+    expect(report.rows[0].status).toBe("valid");
+    expect(report.rows[0].payload?.name).toBeNull();
 
     expect(report.rows[1].canImport).toBe(false);
     expect(report.rows[1].blockingError).toMatch(/CCCD/);
@@ -270,6 +271,58 @@ describe("lead import template & validator", () => {
     expect(report.rows[2].canImport).toBe(true);
     expect(report.rows[2].status).toBe("partial");
     expect(report.rows[2].payload?.callbackAt).toBeNull();
+  });
+
+  it("imports a headerless single-column phone sheet (p:+84..., 9-digit, legacy 11-digit) without losing row 1", async () => {
+    const wb = new ExcelJS.Workbook();
+    const sheet = wb.addWorksheet("Sheet1");
+    sheet.addRow(["p:+84903438685"]);
+    sheet.addRow(["936884986"]);
+    sheet.addRow(["p:+841696969691"]);
+    sheet.addRow(["p:+840978332668"]);
+    sheet.addRow(["p:+84903438685"]); // duplicate of row 1
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const report = await parseAndValidateImportWorkbook(buf, {
+      catalog: DEFAULT_LEAD_CATALOG,
+      attrFields: [],
+      assignees: [],
+      existingLeads: [],
+      viewer: { role: "SUPER_ADMIN", appUserId: "admin-1" },
+    });
+
+    expect(report.unrecognizedColumns).toEqual([]);
+    expect(report.totalRows).toBe(5);
+    expect(report.importableCount).toBe(4);
+    expect(report.duplicateCount).toBe(1);
+    expect(report.rows[0].payload).toMatchObject({ name: null, phone: "0903438685" });
+    expect(report.rows[1].payload).toMatchObject({ name: null, phone: "0936884986" });
+    expect(report.rows[2].payload).toMatchObject({ name: null, phone: "0396969691" });
+    expect(report.rows[3].payload).toMatchObject({ name: null, phone: "0978332668" });
+    expect(report.rows[4].canImport).toBe(false);
+  });
+
+  it("does not infer another phone-like column as phone when phone_number column already exists", async () => {
+    const buffer = await makeWorkbookBuffer(
+      ["full_name", "phone_number", "sdt_nguoi_than", "created_time", "ad_name"],
+      [["Phạm Minh", "p:+84912413413", "0988777666", "2026-11-19T10:00:00+07:00", "Ad 01"]],
+    );
+
+    const report = await parseAndValidateImportWorkbook(buffer, {
+      catalog: DEFAULT_LEAD_CATALOG,
+      attrFields: [],
+      assignees: [],
+      existingLeads: [],
+      viewer: { role: "SUPER_ADMIN", appUserId: "admin-1" },
+    });
+
+    expect(report.unrecognizedColumns).toEqual(["sdt_nguoi_than"]);
+    expect(report.totalRows).toBe(1);
+    expect(report.rows[0].canImport).toBe(true);
+    expect(report.rows[0].payload).toMatchObject({
+      name: "Phạm Minh",
+      phone: "0912413413",
+    });
   });
 
   it("auto-detects header row when row 1 has group titles, ignores STT, maps LOẠI XE / TÊN ĐẠI LÝ, and treats malformed email as partial warning", async () => {

@@ -9,7 +9,8 @@ import {
 } from "@/lib/constants";
 import type { AttrFieldRow, AttrFieldType } from "@/lib/db/attr-fields-repo";
 import type { CreateManualLeadInput, ExistingLeadUniqueEntry } from "@/lib/db/leads-repo";
-import { normalizePhone, phoneKey, validatePhone } from "@/lib/leads/phone";
+import { isFullNameFieldKey, isPhoneFieldKey } from "@/lib/facebook/map-lead";
+import { normalizePhone, phoneKey, stripPhonePrefixLabel, validatePhone } from "@/lib/leads/phone";
 import type { BrandCode, ChannelDetail, FailReason, LeadCategory } from "@/lib/types";
 
 const HEADER_FILL = "FF12479E";
@@ -118,7 +119,7 @@ export async function buildLeadImportTemplateWorkbook({
   const sheet = workbook.addWorksheet("Nhập lead");
 
   const fixedCols: { header: string; key: string; width: number }[] = [
-    { header: "Họ tên *", key: "name", width: 24 },
+    { header: "Họ tên", key: "name", width: 24 },
     { header: "Số điện thoại *", key: "phone", width: 18 },
     ...(hasCustomEmail ? [] : [{ header: "Email", key: "email", width: 26 }]),
     { header: labels.brand, key: "brand", width: 18 },
@@ -188,16 +189,16 @@ export async function buildLeadImportTemplateWorkbook({
 
   const guideRows: { field: string; type: string; required: string; options: string }[] = [
     {
-      field: "Họ tên *",
-      type: "Văn bản (tối đa 120 ký tự)",
-      required: "Có",
-      options: "Tên khách hàng",
+      field: "Họ tên",
+      type: "Văn bản (tối đa 250 ký tự)",
+      required: "Không",
+      options: "Tên khách hàng (nếu để trống sẽ lưu trống)",
     },
     {
       field: "Số điện thoại *",
       type: "Số điện thoại (9–15 chữ số, không trùng)",
       required: "Có (Unique)",
-      options: "Ví dụ: 0901234567 hoặc +84901234567. Nếu trùng SĐT đã có thì dòng đó không được import.",
+      options: "Ví dụ: 0901234567, +84901234567 hoặc p:+84901234567. Nếu trùng SĐT đã có thì dòng đó không được import.",
     },
     ...(hasCustomEmail
       ? []
@@ -436,17 +437,77 @@ type ColumnTarget =
   | { kind: "attr"; def: AttrFieldRow }
   | { kind: "unknown"; header: string };
 
-const HEADER_DETECT_ANCHORS = new Set([
+const PHONE_HEADER_ALIASES = new Set([
   "số điện thoại",
   "so dien thoai",
   "sđt",
   "sdt",
+  "điện thoại",
+  "dien thoai",
   "phone",
+  "phone number",
+  "phone_number",
+  "mobile",
+  "mobile phone",
+  "mobile_phone",
+  "zalo",
+  "số zalo",
+  "so zalo",
+  "tel",
+  "telephone",
+]);
+
+const NAME_HEADER_ALIASES = new Set([
   "họ tên",
   "ho ten",
+  "họ và tên",
+  "ho va ten",
+  "khách hàng",
+  "khach hang",
   "tên khách hàng",
   "ten khach hang",
+  "name",
+  "full name",
+  "full_name",
+  "tên đầy đủ",
+  "ten day du",
+  "customer name",
+  "customer_name",
 ]);
+
+const RAW_EXPORT_SYSTEM_COLUMNS = new Set([
+  "id",
+  "lead_id",
+  "created_time",
+  "ad_id",
+  "ad_name",
+  "adset_id",
+  "adset_name",
+  "campaign_id",
+  "campaign_name",
+  "form_id",
+  "form_name",
+  "is_organic",
+  "platform",
+  "lead_status",
+]);
+
+function isPhoneHeaderNorm(norm: string): boolean {
+  return PHONE_HEADER_ALIASES.has(norm) || isPhoneFieldKey(norm);
+}
+
+function isNameHeaderNorm(norm: string): boolean {
+  return NAME_HEADER_ALIASES.has(norm) || isFullNameFieldKey(norm);
+}
+
+function isLikelyPhoneCellValue(raw: string): boolean {
+  const cleaned = stripPhonePrefixLabel(raw);
+  if (!cleaned || /^https?:\/\//i.test(cleaned) || cleaned.includes("@")) return false;
+  if (!/^\+?[\d\s.\-()]+$/.test(cleaned)) return false;
+  const normalized = normalizePhone(raw);
+  if (validatePhone(normalized) !== null) return false;
+  return /^0[235789]\d{8,9}$/.test(normalized) || /^\+[1-9]\d{8,14}$/.test(normalized);
+}
 
 function findHeaderRowIndex(sheet: ExcelJS.Worksheet): number {
   const maxScan = Math.min(10, sheet.rowCount);
@@ -455,7 +516,7 @@ function findHeaderRowIndex(sheet: ExcelJS.Worksheet): number {
     let matchedAnchor = false;
     row.eachCell({ includeEmpty: false }, (cell) => {
       const norm = normalizeHeader(extractCellString(cell.value));
-      if (HEADER_DETECT_ANCHORS.has(norm)) {
+      if (isPhoneHeaderNorm(norm) || isNameHeaderNorm(norm)) {
         matchedAnchor = true;
       }
     });
@@ -470,8 +531,8 @@ function findHeaderRowIndex(sheet: ExcelJS.Worksheet): number {
  * Quy tắc:
  * - Kiểm tra trùng SĐT & Email với dữ liệu đã có trong DB và giữa các dòng trong cùng file.
  * - Nếu SĐT trống/sai định dạng hoặc trùng SĐT / trùng Email (các trường unique) → chặn không cho import dòng đó (`canImport = false`).
- * - Với các trường khác (brand, product, location, ngày tháng, field phụ...): phân loại rõ trường nào hợp lệ (`validFields`), trường nào không hợp lệ (`invalidFields`).
- *   Nếu dòng có trường hợp lệ và không vi phạm SĐT/Email unique thì vẫn cho phép import các trường hợp lệ (`canImport = true`).
+ * - Họ tên là tùy chọn (để trống lưu `null`). Field phụ có `required = true` vẫn bắt buộc.
+ * - Chỉ khi không có cột nào khớp tiêu đề SĐT chuẩn mới tự kiểm tra giá trị SĐT trong cột (bao gồm file không có dòng tiêu đề).
  */
 export async function parseAndValidateImportWorkbook(
   buffer: ArrayBuffer | Buffer,
@@ -501,6 +562,7 @@ export async function parseAndValidateImportWorkbook(
   const headerRowIndex = findHeaderRowIndex(sheet);
   const headerRow = sheet.getRow(headerRowIndex);
   const columnMap = new Map<number, ColumnTarget>();
+  const claimedFixedIds = new Set<string>();
   const unrecognizedColumns: string[] = [];
 
   headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
@@ -512,15 +574,30 @@ export async function parseAndValidateImportWorkbook(
       columnMap.set(colNumber, { kind: "ignore" });
       return;
     }
-    if (["họ tên", "ho ten", "khách hàng", "khach hang", "tên khách hàng", "ten khach hang", "name"].includes(norm)) {
+
+    // Nếu dự án đã cấu hình sẵn field phụ khớp chính xác tên cột (vd sdt_nguoi_than) thì ưu tiên map vào field phụ
+    const exactAttr = activeAttrs.find(
+      (f) =>
+        normalizeHeader(f.label) === norm ||
+        f.key.toLowerCase() === norm ||
+        `attr:${f.key.toLowerCase()}` === norm,
+    );
+    if (exactAttr && !PHONE_HEADER_ALIASES.has(norm) && !NAME_HEADER_ALIASES.has(norm)) {
+      columnMap.set(colNumber, { kind: "attr", def: exactAttr });
+      return;
+    }
+
+    if (!claimedFixedIds.has("name") && isNameHeaderNorm(norm)) {
+      claimedFixedIds.add("name");
       columnMap.set(colNumber, { kind: "fixed", id: "name" });
       return;
     }
-    if (["số điện thoại", "so dien thoai", "sđt", "sdt", "điện thoại", "dien thoai", "phone"].includes(norm)) {
+    if (!claimedFixedIds.has("phone") && isPhoneHeaderNorm(norm)) {
+      claimedFixedIds.add("phone");
       columnMap.set(colNumber, { kind: "fixed", id: "phone" });
       return;
     }
-    if (["email", "e-mail", "thư điện tử", "thu dien tu"].includes(norm)) {
+    if (["email", "e-mail", "thư điện tử", "thu dien tu", "email_address"].includes(norm)) {
       const customEmail = activeAttrs.find((f) => f.key.toLowerCase() === "email");
       if (customEmail) {
         columnMap.set(colNumber, { kind: "attr", def: customEmail });
@@ -612,9 +689,83 @@ export async function parseAndValidateImportWorkbook(
       return;
     }
 
+    if (RAW_EXPORT_SYSTEM_COLUMNS.has(norm)) {
+      columnMap.set(colNumber, { kind: "ignore" });
+      return;
+    }
+
     columnMap.set(colNumber, { kind: "unknown", header: rawHeader });
     unrecognizedColumns.push(rawHeader);
   });
+
+  // Chỉ khi KHÔNG có cột nào khớp tiêu đề SĐT chuẩn mới quét nhận diện cột SĐT theo giá trị (vd file không có dòng Header)
+  let dataStartRow = headerRowIndex + 1;
+  const hasMappedPhoneColumn = [...columnMap.values()].some(
+    (t) => t.kind === "fixed" && t.id === "phone",
+  );
+
+  if (!hasMappedPhoneColumn && sheet.rowCount >= 1) {
+    const maxScanRow = Math.min(15, sheet.rowCount);
+    let maxCol = 0;
+    for (let r = 1; r <= maxScanRow; r++) {
+      sheet.getRow(r).eachCell({ includeEmpty: false }, (_cell, colNumber) => {
+        if (colNumber > maxCol) maxCol = colNumber;
+      });
+    }
+
+    // TH1: Dòng 1 đã là SĐT hợp lệ (file không có dòng tiêu đề, vd cột A chạy thẳng từ p:+84903438685)
+    let headerlessPhoneCol: number | null = null;
+    for (let col = 1; col <= maxCol; col++) {
+      const row1Val = extractCellString(sheet.getRow(1).getCell(col).value, true);
+      if (!isLikelyPhoneCellValue(row1Val)) continue;
+      let nonEmpty = 0;
+      let phoneCount = 0;
+      for (let r = 1; r <= maxScanRow; r++) {
+        const val = extractCellString(sheet.getRow(r).getCell(col).value, true);
+        if (!val) continue;
+        nonEmpty += 1;
+        if (isLikelyPhoneCellValue(val)) phoneCount += 1;
+      }
+      if (nonEmpty > 0 && phoneCount / nonEmpty >= 0.6) {
+        headerlessPhoneCol = col;
+        break;
+      }
+    }
+
+    if (headerlessPhoneCol !== null) {
+      dataStartRow = 1;
+      columnMap.clear();
+      unrecognizedColumns.length = 0;
+      for (let col = 1; col <= maxCol; col++) {
+        if (col === headerlessPhoneCol) {
+          columnMap.set(col, { kind: "fixed", id: "phone" });
+        } else {
+          const label = `Cột ${col}`;
+          columnMap.set(col, { kind: "unknown", header: label });
+          unrecognizedColumns.push(label);
+        }
+      }
+    } else {
+      // TH2: File có dòng tiêu đề nhưng cột SĐT đặt tên khác chưa khớp từ điển
+      for (const [col, target] of columnMap.entries()) {
+        if (target.kind !== "unknown") continue;
+        let nonEmpty = 0;
+        let phoneCount = 0;
+        for (let r = headerRowIndex + 1; r <= Math.min(headerRowIndex + 15, sheet.rowCount); r++) {
+          const val = extractCellString(sheet.getRow(r).getCell(col).value, true);
+          if (!val) continue;
+          nonEmpty += 1;
+          if (isLikelyPhoneCellValue(val)) phoneCount += 1;
+        }
+        if (nonEmpty > 0 && phoneCount / nonEmpty >= 0.6) {
+          columnMap.set(col, { kind: "fixed", id: "phone" });
+          const idx = unrecognizedColumns.indexOf(target.header);
+          if (idx !== -1) unrecognizedColumns.splice(idx, 1);
+          break;
+        }
+      }
+    }
+  }
 
   // Bản đồ tra cứu trùng SĐT và Email trong DB
   const existingPhoneMap = new Map<string, { name: string | null; phone: string }>();
@@ -632,7 +783,7 @@ export async function parseAndValidateImportWorkbook(
 
   const validatedRows: ValidatedImportRow[] = [];
 
-  for (let r = headerRowIndex + 1; r <= sheet.rowCount; r++) {
+  for (let r = dataStartRow; r <= sheet.rowCount; r++) {
     const row = sheet.getRow(r);
     const fixedValues: Record<string, string> = {};
     const attrRawValues: Record<string, string> = {};
@@ -660,18 +811,14 @@ export async function parseAndValidateImportWorkbook(
     let blockingError: string | null = null;
     let isDuplicate = false;
 
-    // 1. Kiểm tra Họ tên
+    // 1. Kiểm tra Họ tên (Tùy chọn — để trống lưu null đồng nhất với toàn hệ thống)
     const rawName = (fixedValues.name ?? "").trim();
-    let validName = "";
-    if (!rawName) {
-      const msg = "Họ tên đang để trống";
-      invalidFields.push({ field: "Họ tên", value: "(trống)", error: msg });
-      blockingError = blockingError ?? msg;
-    } else if (rawName.length > 250) {
+    let validName: string | null = null;
+    if (rawName.length > 250) {
       const msg = "Tối đa 250 ký tự";
       invalidFields.push({ field: "Họ tên", value: `${rawName.slice(0, 25)}…`, error: msg });
       blockingError = blockingError ?? msg;
-    } else {
+    } else if (rawName) {
       validName = rawName;
       validFields.push({ field: "Họ tên", value: validName });
     }
@@ -972,7 +1119,7 @@ export async function parseAndValidateImportWorkbook(
 
     const payload: CreateManualLeadInput | null = canImport
       ? {
-          name: validName || "Khách chưa có tên",
+          name: validName,
           phone: normalizedPhone,
           email: validEmail,
           brand: validBrand,

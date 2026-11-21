@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { normalizePhone } from "@/lib/leads/phone";
 import type { ContactStatus, FailReason, LeadCategory, LeadSource } from "@/lib/types";
 
 export type AudienceExportFormat = "meta_csv" | "google_csv" | "tiktok_csv" | "zalo_txt";
@@ -80,7 +81,8 @@ const EMAIL_REGEX = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
  */
 export function normalizeAudiencePhone(raw: string | null | undefined): NormalizedAudiencePhone | null {
   if (!raw) return null;
-  const digits = raw.replace(/\D/g, "");
+  const preNormalized = normalizePhone(raw);
+  const digits = preNormalized.replace(/\D/g, "");
   if (!digits) return null;
 
   let nationalNine: string | null = null;
