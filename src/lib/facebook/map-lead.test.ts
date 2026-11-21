@@ -57,6 +57,41 @@ describe("mapFacebookLeadFields", () => {
     expect(r.phone).toBe("+821035166618");
   });
 
+  it("maps multilingual Lead Form keys (Chinese/Korean/Japanese) and keeps raw foreign keys in attrs", () => {
+    const cn = mapFacebookLeadFields([
+      { name: "全名", values: ["彭九"] },
+      { name: "電話號碼", values: ["+8613178681983"] },
+    ]);
+    expect(cn.name).toBe("彭九");
+    expect(cn.phone).toBe("+8613178681983");
+    expect(cn.attrs).toEqual({
+      全名: "彭九",
+      電話號碼: "+8613178681983",
+    });
+
+    const cnVnPhone = mapFacebookLeadFields([
+      { name: "全名", values: ["Bá Vĩnh"] },
+      { name: "電話號碼", values: ["+84363138921"] },
+    ]);
+    expect(cnVnPhone.name).toBe("Bá Vĩnh");
+    expect(cnVnPhone.phone).toBe("0363138921");
+  });
+
+  it("falls back to E.164 / VN phone value detection (Layer 2) regardless of unknown language keys", () => {
+    const unknownLang = mapFacebookLeadFields([
+      { name: "الاسم_الكامل", values: ["Omar Al-Farsi"] },
+      { name: "رقم_التواصل", values: ["+971 50 123 4567"] },
+      { name: "city", values: ["Dubai"] },
+    ]);
+    expect(unknownLang.phone).toBe("+971501234567");
+    expect(unknownLang.name).toBe("Omar Al-Farsi");
+    expect(unknownLang.attrs).toEqual({
+      الاسم_الكامل: "Omar Al-Farsi",
+      رقم_التواصل: "+971 50 123 4567",
+      city: "Dubai",
+    });
+  });
+
   it("normalizes Vietnamese and custom Lead Form question keys for name and phone", () => {
     const r1 = mapFacebookLeadFields([
       { name: "tên_đầy_đủ", values: ["Ngoc Quynh Le"] },

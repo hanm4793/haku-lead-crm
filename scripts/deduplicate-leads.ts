@@ -3,7 +3,11 @@ import { existsSync } from "node:fs";
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");
 
 import postgres from "postgres";
-import { extractPhoneFromText, isMetaLeadFormAutoMessage } from "../src/lib/facebook/map-lead";
+import {
+  extractPhoneFromText,
+  isMetaLeadFormAutoMessage,
+  mapFacebookLeadFields,
+} from "../src/lib/facebook/map-lead";
 import { normalizePhone, phoneKey } from "../src/lib/leads/phone";
 
 const applyChanges = process.argv.includes("--apply");
@@ -214,8 +218,40 @@ async function main() {
     console.log(`- Lead TIN_NHAN/COMMENT rỗng SĐT cần dọn: ${emptyChatIds.length}`);
     console.log(`- Lead TIN_NHAN/COMMENT dính nhầm SĐT Hotline Page / URL ID cần dọn: ${bogusHotlineIds.size}`);
 
-    // 2. Gom nhóm các lead hợp lệ còn lại theo (project_id, phoneKey) để gộp trùng
+    // 2. Khôi phục Tên & SĐT từ attrs cho các Form đa ngôn ngữ / câu hỏi tùy biến trước khi gom trùng
     const remainingLeads = allLeads.filter((l) => !purgeIds.has(l.id));
+    const originalSnap = new Map<string, { name: string | null; phone: string }>();
+    let recoveredFromAttrsCount = 0;
+
+    for (const lead of remainingLeads) {
+      originalSnap.set(lead.id, { name: lead.name, phone: lead.phone });
+      if (
+        lead.source === "FACEBOOK" &&
+        lead.channel_detail === "FORM" &&
+        (!lead.phone?.trim() || !lead.name?.trim()) &&
+        lead.attrs &&
+        Object.keys(lead.attrs).length > 0
+      ) {
+        const fieldData = Object.entries(lead.attrs).map(([name, val]) => ({
+          name,
+          values: [String(val ?? "")],
+        }));
+        const recovered = mapFacebookLeadFields(fieldData);
+        let changed = false;
+        if (!lead.phone?.trim() && recovered.phone) {
+          lead.phone = recovered.phone;
+          changed = true;
+        }
+        if (!lead.name?.trim() && recovered.name) {
+          lead.name = recovered.name;
+          changed = true;
+        }
+        if (changed) recoveredFromAttrsCount += 1;
+      }
+    }
+    console.log(`- Lead FORM khôi phục được Tên/SĐT từ attrs (đa ngôn ngữ / fallback): ${recoveredFromAttrsCount}`);
+
+    // 3. Gom nhóm các lead hợp lệ còn lại theo (project_id, phoneKey) để gộp trùng
     const groupsByProjectPhone = new Map<string, LeadRecord[]>();
 
     for (const lead of remainingLeads) {
@@ -256,14 +292,19 @@ async function main() {
     }
 
     const mergePlans: MergePlan[] = [];
-    const standalonePhoneFixes: Array<{ id: string; oldPhone: string; newPhone: string }> = [];
+    const standalonePhoneFixes: Array<{
+      id: string;
+      newPhone: string;
+      newName: string | null;
+    }> = [];
 
     for (const [, group] of groupsByProjectPhone) {
       if (group.length === 1) {
         const single = group[0]!;
-        const norm = normalizePhone(single.phone);
-        if (norm && norm !== single.phone) {
-          standalonePhoneFixes.push({ id: single.id, oldPhone: single.phone, newPhone: norm });
+        const orig = originalSnap.get(single.id);
+        const norm = normalizePhone(single.phone) || single.phone;
+        if (norm !== (orig?.phone ?? single.phone) || single.name !== (orig?.name ?? single.name)) {
+          standalonePhoneFixes.push({ id: single.id, newPhone: norm, newName: single.name });
         }
         continue;
       }
@@ -450,11 +491,11 @@ async function main() {
         `;
       }
 
-      // 3. Chuẩn hóa SĐT (+84 -> 0...) cho các lead đơn lẻ còn lại
+      // 3. Cập nhật SĐT / Tên khôi phục hoặc chuẩn hóa (+84 -> 0...) cho các lead đơn lẻ
       for (const fix of standalonePhoneFixes) {
         await tx`
           update leads
-          set phone = ${fix.newPhone}, updated_at = now()
+          set phone = ${fix.newPhone}, name = ${fix.newName}, updated_at = now()
           where id = ${fix.id}
         `;
       }

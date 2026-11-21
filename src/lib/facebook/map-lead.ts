@@ -22,6 +22,36 @@ const PHONE_KEYS = new Set([
   "điện_thoại",
   "dien_thoai",
 ]);
+const MULTILINGUAL_PHONE_KEYS = new Set([
+  "電話號碼",
+  "电话号码",
+  "手機號碼",
+  "手机号码",
+  "聯絡電話",
+  "联系电话",
+  "電話",
+  "电话",
+  "전화번호",
+  "휴대폰_번호",
+  "휴대폰번호",
+  "휴대전화",
+  "연락처",
+  "電話番号",
+  "携帯電話番号",
+  "เบอร์โทรศัพท์",
+  "โทรศัพท์",
+  "nomor_telepon",
+  "no_telepon",
+  "no_hp",
+  "numero_de_telefono",
+  "numéro_de_téléphone",
+  "telefonnummer",
+  "номер_телефона",
+  "телефон",
+  "whatsapp",
+  "whatsapp_number",
+]);
+
 const FULL_NAME_KEYS = new Set([
   "full_name",
   "tên_đầy_đủ",
@@ -31,8 +61,66 @@ const FULL_NAME_KEYS = new Set([
   "họ_tên",
   "ho_ten",
 ]);
+const MULTILINGUAL_FULL_NAME_KEYS = new Set([
+  "全名",
+  "姓名",
+  "성명",
+  "이름",
+  "전체_이름",
+  "氏名",
+  "フルネーム",
+  "お名前",
+  "名前",
+  "ชื่อ-นามสกุล",
+  "ชื่อ_นามสกุล",
+  "ชื่อ",
+  "nama_lengkap",
+  "nama",
+  "nombre_completo",
+  "nom_complet",
+  "vollständiger_name",
+  "полное_имя",
+  "фио",
+  "имя",
+]);
+
 const FIRST_NAME_KEYS = new Set(["first_name", "tên", "ten"]);
+const MULTILINGUAL_FIRST_NAME_KEYS = new Set(["名字", "名", "이름_first", "下の名前"]);
+
 const LAST_NAME_KEYS = new Set(["last_name", "họ", "ho"]);
+const MULTILINGUAL_LAST_NAME_KEYS = new Set(["姓氏", "姓", "성"]);
+
+/** Các key địa lý / ghi chú / định danh không bao giờ dùng làm fallback Họ tên. */
+const NON_NAME_FALLBACK_KEYS = new Set([
+  "email",
+  "e-mail",
+  "city",
+  "province",
+  "state",
+  "country",
+  "zip",
+  "post_code",
+  "postal_code",
+  "street_address",
+  "address",
+  "dia_chi",
+  "tinh_thanh_pho",
+  "tỉnh/thành_phố",
+  "ghi_chu",
+  "note",
+  "company",
+  "company_name",
+  "cong_ty",
+  "job_title",
+  "chuc_vu",
+  "inbox_url",
+  "link_inbox",
+  "psid",
+  "post_id",
+  "link_comment",
+  "noi_dung_tin_nhan",
+  "noi_dung_comment",
+]);
 
 /** Field Meta tự sinh, không có giá trị nghiệp vụ. */
 const IGNORED_KEYS = new Set(["lead_id", "created_time", "platform", "is_organic"]);
@@ -55,7 +143,7 @@ export function toAsciiFieldKey(name: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
-export function isPhoneFieldKey(name: string): boolean {
+function isStandardPhoneFieldKey(name: string): boolean {
   const k = fieldKey(name);
   if (PHONE_KEYS.has(k)) return true;
   const ascii = toAsciiFieldKey(name);
@@ -65,7 +153,15 @@ export function isPhoneFieldKey(name: string): boolean {
   );
 }
 
-export function isFullNameFieldKey(name: string): boolean {
+export function isPhoneFieldKey(name: string): boolean {
+  if (isStandardPhoneFieldKey(name)) return true;
+  const k = fieldKey(name);
+  if (MULTILINGUAL_PHONE_KEYS.has(k)) return true;
+  const ascii = toAsciiFieldKey(name);
+  return MULTILINGUAL_PHONE_KEYS.has(ascii);
+}
+
+function isStandardFullNameFieldKey(name: string): boolean {
   const k = fieldKey(name);
   if (FULL_NAME_KEYS.has(k)) return true;
   const ascii = toAsciiFieldKey(name);
@@ -75,44 +171,145 @@ export function isFullNameFieldKey(name: string): boolean {
   );
 }
 
-function isFirstNameFieldKey(name: string): boolean {
+export function isFullNameFieldKey(name: string): boolean {
+  if (isStandardFullNameFieldKey(name)) return true;
+  const k = fieldKey(name);
+  if (MULTILINGUAL_FULL_NAME_KEYS.has(k)) return true;
+  const ascii = toAsciiFieldKey(name);
+  return MULTILINGUAL_FULL_NAME_KEYS.has(ascii);
+}
+
+function isStandardFirstNameFieldKey(name: string): boolean {
   const k = fieldKey(name);
   return FIRST_NAME_KEYS.has(k) || FIRST_NAME_KEYS.has(toAsciiFieldKey(name));
 }
 
-function isLastNameFieldKey(name: string): boolean {
+function isFirstNameFieldKey(name: string): boolean {
+  if (isStandardFirstNameFieldKey(name)) return true;
+  const k = fieldKey(name);
+  return MULTILINGUAL_FIRST_NAME_KEYS.has(k);
+}
+
+function isStandardLastNameFieldKey(name: string): boolean {
   const k = fieldKey(name);
   return LAST_NAME_KEYS.has(k) || LAST_NAME_KEYS.has(toAsciiFieldKey(name));
 }
 
-function isNameFieldKey(name: string): boolean {
-  return isFullNameFieldKey(name) || isFirstNameFieldKey(name) || isLastNameFieldKey(name);
+function isLastNameFieldKey(name: string): boolean {
+  if (isStandardLastNameFieldKey(name)) return true;
+  const k = fieldKey(name);
+  return MULTILINGUAL_LAST_NAME_KEYS.has(k);
 }
 
-function firstMatchingValue(
+function isStandardNameFieldKey(name: string): boolean {
+  return (
+    isStandardFullNameFieldKey(name) ||
+    isStandardFirstNameFieldKey(name) ||
+    isStandardLastNameFieldKey(name)
+  );
+}
+
+function firstMatchingField(
   fieldData: FacebookFieldDatum[],
   predicate: (name: string) => boolean,
-): string | null {
+): { fieldName: string; value: string } | null {
   for (const field of fieldData) {
     if (!predicate(field.name)) continue;
     const raw = field.values?.[0];
     if (raw == null) continue;
     const trimmed = raw.trim();
-    if (trimmed.length > 0) return trimmed;
+    if (trimmed.length > 0) return { fieldName: field.name, value: trimmed };
   }
   return null;
 }
 
-function resolveName(fieldData: FacebookFieldDatum[]): string | null {
-  const full = firstMatchingValue(fieldData, isFullNameFieldKey);
-  if (full) return full;
+/**
+ * Tầng 2 (Value Fallback cho SĐT): Nhận diện giá trị SĐT chuẩn E.164 (+<mã nước>...)
+ * hoặc SĐT Việt Nam khi tên câu hỏi Form viết bằng ngôn ngữ lạ / nhãn tùy biến.
+ */
+function looksLikeFormPhoneValue(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed || /^https?:\/\//i.test(trimmed) || trimmed.includes("@")) return false;
+  if (/^\+[1-9]\d(?:[\s.\-()]*\d){7,14}$/.test(trimmed)) {
+    const digits = trimmed.replace(/\D/g, "");
+    return digits.length >= 9 && digits.length <= 15;
+  }
+  const digits = trimmed.replace(/\D/g, "");
+  if (/^[\d\s.\-()]+$/.test(trimmed)) {
+    if (/^(?:840|84)\d{9}$/.test(digits)) return true;
+    if (/^0[235789]\d{8,9}$/.test(digits)) return true;
+  }
+  return false;
+}
 
-  const first = firstMatchingValue(fieldData, isFirstNameFieldKey);
-  const last = firstMatchingValue(fieldData, isLastNameFieldKey);
-  if (first && last) return `${first} ${last}`.trim();
-  if (first) return first;
-  if (last) return last;
+function resolveFallbackPhoneField(
+  fieldData: FacebookFieldDatum[],
+): { fieldName: string; value: string } | null {
+  for (const field of fieldData) {
+    const k = fieldKey(field.name);
+    if (!k || IGNORED_KEYS.has(k) || NON_NAME_FALLBACK_KEYS.has(k) || isFullNameFieldKey(field.name)) {
+      continue;
+    }
+    const raw = field.values?.[0]?.trim();
+    if (raw && looksLikeFormPhoneValue(raw)) {
+      return { fieldName: field.name, value: raw };
+    }
+  }
   return null;
+}
+
+/**
+ * Tầng 2 (Value Fallback cho Họ tên): Chỉ chạy khi Tầng 1 không khớp tên trường nào
+ * và đã xác định được trường SĐT khác trong cùng Form.
+ */
+function resolveFallbackNameValue(
+  fieldData: FacebookFieldDatum[],
+  usedPhoneFieldName: string | null,
+): string | null {
+  if (!usedPhoneFieldName) return null;
+  for (const field of fieldData) {
+    if (field.name === usedPhoneFieldName) continue;
+    const k = fieldKey(field.name);
+    const ascii = toAsciiFieldKey(field.name);
+    if (
+      !k ||
+      IGNORED_KEYS.has(k) ||
+      NON_NAME_FALLBACK_KEYS.has(k) ||
+      NON_NAME_FALLBACK_KEYS.has(ascii) ||
+      isPhoneFieldKey(field.name)
+    ) {
+      continue;
+    }
+    if (/[?:\/]/.test(k) || k.length > 30) continue;
+    if ((field.values?.length ?? 0) !== 1) continue;
+    const val = (field.values?.[0] ?? "").trim();
+    if (
+      val.length < 2 ||
+      val.length > 50 ||
+      /[@_\d\r\n]/.test(val) ||
+      /^https?:\/\//i.test(val)
+    ) {
+      continue;
+    }
+    return val;
+  }
+  return null;
+}
+
+function resolveName(
+  fieldData: FacebookFieldDatum[],
+  usedPhoneFieldName: string | null,
+): string | null {
+  const full = firstMatchingField(fieldData, isFullNameFieldKey);
+  if (full) return full.value;
+
+  const first = firstMatchingField(fieldData, isFirstNameFieldKey);
+  const last = firstMatchingField(fieldData, isLastNameFieldKey);
+  if (first && last) return `${first.value} ${last.value}`.trim();
+  if (first) return first.value;
+  if (last) return last.value;
+
+  return resolveFallbackNameValue(fieldData, usedPhoneFieldName);
 }
 
 function nonEmptyMeta(value: string | null | undefined): string | null {
@@ -122,14 +319,20 @@ function nonEmptyMeta(value: string | null | undefined): string | null {
 }
 
 /**
- * Mọi field còn lại (email, thành phố, câu hỏi tùy chọn của form…) đi vào
- * `attrs`. Key giữ dạng lowercase như Meta trả; nhiều giá trị nối bằng ", ".
+ * Mọi field còn lại (email, thành phố, câu hỏi tùy chọn của form…) đi vào `attrs`.
+ * Riêng các trường ngoại ngữ hoặc trường bóc qua Tầng 2 (Value Fallback) vẫn giữ nguyên
+ * bản gốc trong `attrs` để đối chiếu an toàn kép.
  */
 function collectAttrs(fieldData: FacebookFieldDatum[]): Record<string, string> {
   const attrs: Record<string, string> = {};
   for (const field of fieldData) {
     const key = fieldKey(field.name);
-    if (!key || isPhoneFieldKey(field.name) || isNameFieldKey(field.name) || IGNORED_KEYS.has(key)) {
+    if (
+      !key ||
+      isStandardPhoneFieldKey(field.name) ||
+      isStandardNameFieldKey(field.name) ||
+      IGNORED_KEYS.has(key)
+    ) {
       continue;
     }
     if (key in attrs) continue;
@@ -144,27 +347,28 @@ function collectAttrs(fieldData: FacebookFieldDatum[]): Record<string, string> {
   return attrs;
 }
 
-/** Map Meta field_data → CRM fields. Thiếu SĐT vẫn import (phone = ""). */
+/** Map Meta field_data → CRM fields (2 tầng: Key đa ngôn ngữ + Value Fallback). Thiếu SĐT vẫn import (phone = ""). */
 export function mapFacebookLeadFields(
   fieldData: FacebookFieldDatum[],
   meta?: { campaignName?: string | null; adName?: string | null },
 ): MappedFacebookLead {
-  const rawPhone = firstMatchingValue(fieldData, isPhoneFieldKey);
-  const phone = rawPhone ? normalizePhone(rawPhone) : "";
+  const keyMatchedPhone = firstMatchingField(fieldData, isPhoneFieldKey);
+  const fallbackPhone = keyMatchedPhone ?? resolveFallbackPhoneField(fieldData);
+  const phone = fallbackPhone ? normalizePhone(fallbackPhone.value) : "";
 
   return {
     phone,
-    name: resolveName(fieldData),
+    name: resolveName(fieldData, fallbackPhone?.fieldName ?? null),
     campaign: nonEmptyMeta(meta?.campaignName),
     adContent: nonEmptyMeta(meta?.adName),
     attrs: collectAttrs(fieldData),
   };
 }
 
-/** Nhận diện tin nhắn tóm tắt tự động do Meta bắn vào Messenger ngay khi khách điền Lead Form. */
+/** Nhận diện tin nhắn tóm tắt tự động do Meta bắn vào Messenger ngay khi khách điền Lead Form (đa ngôn ngữ). */
 export function isMetaLeadFormAutoMessage(text: string | null | undefined): boolean {
   if (!text) return false;
-  return /tôi đã điền mẫu và muốn biết thêm về doanh nghiệp|filled out your form and would like to know more about your business/i.test(
+  return /tôi đã điền mẫu và muốn biết thêm về doanh nghiệp|filled out your form and would like to know more about your business|我已填[寫写]你的表[格單单]|작성한 설문지를 제출했습니다|フォームに記入しました/i.test(
     text,
   );
 }
