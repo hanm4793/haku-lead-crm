@@ -325,6 +325,9 @@ function PwaInstallGuideDialog({
         ) : state.platform === "ios" && state.iosBrowser !== "safari" ? (
           /* Trường hợp iOS >= 16.4 đang mở bằng Chrome / Edge / Firefox */
           <div className="space-y-2.5">
+            <p className="rounded-lg border border-sky-200/80 bg-sky-50/70 px-3 py-2 text-xs leading-relaxed text-sky-950">
+              <strong>Lưu ý trên iPhone / iPad:</strong> Apple iOS chặn cài tự động 1 chạm từ trang web. Bạn chỉ cần thao tác nhanh 3 bước dưới đây để lưu thành App:
+            </p>
             <ol className="space-y-2.5 rounded-xl border border-border bg-slate-50/80 p-3.5 text-[13px] text-slate-800">
               <li className="flex items-start gap-2.5">
                 <span className="mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-white">
@@ -359,47 +362,51 @@ function PwaInstallGuideDialog({
           </div>
         ) : state.platform === "ios" ? (
           /* Safari trên iPhone / iPad (tương thích iOS 12 → iOS 18 / iOS 26) */
-          <ol className="space-y-2.5 rounded-xl border border-border bg-slate-50/80 p-3.5 text-[13px] text-slate-800">
-            <li className="flex items-start gap-2.5">
-              <span className="mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-white">
-                1
-              </span>
-              <span>
-                {state.isIpad ? (
-                  <>
-                    Bấm nút <strong>Chia sẻ</strong>{" "}
-                    <Share className="mx-0.5 inline size-4 text-primary" /> ở{" "}
-                    <strong>thanh địa chỉ phía trên cùng</strong> của Safari.
-                  </>
-                ) : (
-                  <>
-                    Bấm nút <strong>Chia sẻ</strong>{" "}
-                    <Share className="mx-0.5 inline size-4 text-primary" /> trên thanh công cụ Safari (trên iOS mới, nếu thanh địa chỉ thu gọn hãy bấm{" "}
-                    <MoreHorizontal className="mx-0.5 inline size-4 text-primary" /> trước rồi chọn <strong>Chia sẻ</strong>).
-                  </>
-                )}
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <span className="mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-white">
-                2
-              </span>
-              <span>
-                Cuộn bảng chia sẻ xuống dưới (hoặc bấm <strong>Xem thêm</strong>) và chọn{" "}
-                <strong>«Thêm vào MH chính»</strong>{" "}
-                <PlusSquare className="mx-0.5 inline size-4 text-primary" /> (<em>Add to Home Screen</em>).
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <span className="mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-white">
-                3
-              </span>
-              <span>
-                Giữ bật tùy chọn <strong>«Mở dưới dạng ứng dụng web»</strong> (nếu có) rồi bấm{" "}
-                <strong>«Thêm»</strong> ở góc trên bên phải.
-              </span>
-            </li>
-          </ol>
+          <div className="space-y-2.5">
+            <p className="rounded-lg border border-sky-200/80 bg-sky-50/70 px-3 py-2 text-xs leading-relaxed text-sky-950">
+              <strong>Lưu ý trên iPhone / iPad:</strong> Do Apple iOS chặn trang web tự cài đặt 1 chạm, bạn hãy thêm ứng dụng qua menu của Safari theo 3 bước (10 giây):
+            </p>
+            <ol className="space-y-2.5 rounded-xl border border-border bg-slate-50/80 p-3.5 text-[13px] text-slate-800">
+              <li className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-white">
+                  1
+                </span>
+                <span>
+                  {state.isIpad ? (
+                    <>
+                      Bấm nút <strong>Chia sẻ</strong>{" "}
+                      <Share className="mx-0.5 inline size-4 text-primary" /> ở{" "}
+                      <strong>thanh địa chỉ phía trên cùng</strong> của Safari.
+                    </>
+                  ) : (
+                    <>
+                      Bấm nút <strong>Chia sẻ</strong>{" "}
+                      <Share className="mx-0.5 inline size-4 text-primary" /> trên thanh công cụ Safari (hoặc bấm{" "}
+                      <MoreHorizontal className="mx-0.5 inline size-4 text-primary" /> → <strong>Chia sẻ</strong> trên iOS mới).
+                    </>
+                  )}
+                </span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-white">
+                  2
+                </span>
+                <span>
+                  Cuộn xuống chọn <strong>«Thêm vào MH chính»</strong> / <strong>«Thêm vào Màn hình chính»</strong>{" "}
+                  <PlusSquare className="mx-0.5 inline size-4 text-primary" /> (không chọn <em>Thêm dấu trang</em> thường để app chạy toàn màn hình).
+                </span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-white">
+                  3
+                </span>
+                <span>
+                  Giữ bật <strong>«Mở dưới dạng ứng dụng web»</strong> (nếu có) rồi bấm{" "}
+                  <strong>«Thêm»</strong> ở góc trên bên phải.
+                </span>
+              </li>
+            </ol>
+          </div>
         ) : state.platform === "android" ? (
           <ol className="space-y-2.5 rounded-xl border border-border bg-slate-50/80 p-3.5 text-[13px] text-slate-800">
             <li className="flex items-start gap-2.5">
@@ -521,7 +528,7 @@ export function PwaInstallFloatingBanner({
               className="h-9 shrink-0 gap-1 rounded-xl px-3 text-xs font-semibold shadow-xs"
             >
               <Download className="size-3.5" />
-              Cài đặt
+              {state.hasNativePrompt ? "Cài đặt" : "Cách cài"}
             </Button>
 
             <button
