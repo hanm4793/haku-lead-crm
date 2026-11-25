@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 
 import { activityLogs, leads, metaSyncRuns } from "@/lib/db/schema";
 import { FacebookGraphError } from "./graph-client";
@@ -445,6 +447,151 @@ describe("syncFacebookLeads", () => {
         link_inbox: "https://business.facebook.com/594731690545560/inbox/298643/?section=messages",
       },
     });
+  });
+
+  it("scopes phone deduplication per Fanpage so 1 customer messaging 2 Fanpages in the same project creates 2 leads", async () => {
+    const dialect = new PgDialect();
+    const compiledQueries: Array<{ sql: string; params: unknown[] }> = [];
+    // Simulate a live in-memory leads store filtered by facebookPageId + phone
+    const storedLeads: Array<{
+      id: string;
+      facebookLeadId: string;
+      facebookPageId: string;
+      projectId: string;
+      phone: string;
+      name: string | null;
+      channelDetail: string;
+      attrs: Record<string, string>;
+    }> = [];
+
+    let txDepth = 0;
+    const db = {
+      insert: vi.fn((table: unknown) => ({
+        values: vi.fn((values: Record<string, unknown>) => {
+          if (table === leads) {
+            storedLeads.push({
+              id: `lead-${storedLeads.length + 1}`,
+              facebookLeadId: String(values.facebookLeadId ?? ""),
+              facebookPageId: String(values.facebookPageId ?? ""),
+              projectId: String(values.projectId ?? ""),
+              phone: String(values.phone ?? ""),
+              name: (values.name as string | null) ?? null,
+              channelDetail: String(values.channelDetail ?? ""),
+              attrs: (values.attrs as Record<string, string>) ?? {},
+            });
+          }
+          return {
+            returning: vi.fn(async () =>
+              table === metaSyncRuns
+                ? [{ id: "run-multi-page" }]
+                : [{ id: `lead-${storedLeads.length}` }],
+            ),
+          };
+        }),
+      })),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn((clause: SQL) => {
+            const compiled = dialect.sqlToQuery(clause);
+            compiledQueries.push(compiled);
+            const matched = storedLeads.find(
+              (l) =>
+                compiled.params.includes(l.facebookLeadId) ||
+                (compiled.params.includes(l.facebookPageId) && compiled.params.includes(l.phone)),
+            );
+            const limit = vi.fn(async () => (matched ? [matched] : []));
+            return {
+              orderBy: vi.fn(() => ({ limit })),
+              limit,
+            };
+          }),
+        })),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({ where: vi.fn(async () => undefined) })),
+      })),
+      transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
+        txDepth += 1;
+        try {
+          return await cb(db);
+        } finally {
+          txDepth -= 1;
+        }
+      }),
+    };
+
+    expect(txDepth).toBe(0);
+    mocks.getDb.mockReturnValue(db);
+    mocks.resolveActiveFacebookPageIds.mockResolvedValue(["page-kia", "page-mazda"]);
+    mocks.resolvePageAccessTokens.mockResolvedValue(
+      new Map([
+        ["page-kia", { token: "tok-kia", name: "Kia Hòa Bình" }],
+        ["page-mazda", { token: "tok-mazda", name: "MAZDA HÒA BÌNH" }],
+      ]),
+    );
+    // Both fanpages belong to the exact same project!
+    mocks.getFacebookPageProjectId.mockResolvedValue("project-hoa-binh");
+    mocks.graphGetAllData.mockResolvedValue([]);
+
+    // 1st page (page-kia): Messenger conversation with phone 0981486066 + posts empty
+    // 2nd page (page-mazda): Messenger conversation from SAME phone 0981486066 + posts empty
+    mocks.graphGet
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "conv_kia_1",
+            updated_time: "2026-11-23T02:00:00+0000",
+            participants: { data: [{ id: "page-kia" }, { id: "psid_1", name: "Anh Nam" }] },
+            messages: {
+              data: [
+                {
+                  id: "m1",
+                  message: "Báo giá Kia Carnival giúp anh 0981486066",
+                  created_time: "2026-11-23T02:00:00+0000",
+                  from: { id: "psid_1", name: "Anh Nam" },
+                },
+              ],
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "conv_mazda_1",
+            updated_time: "2026-11-23T02:05:00+0000",
+            participants: { data: [{ id: "page-mazda" }, { id: "psid_2", name: "Anh Nam" }] },
+            messages: {
+              data: [
+                {
+                  id: "m2",
+                  message: "Tư vấn CX-5 cho anh số 0981486066",
+                  created_time: "2026-11-23T02:05:00+0000",
+                  from: { id: "psid_2", name: "Anh Nam" },
+                },
+              ],
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ data: [] });
+
+    const res = await syncFacebookLeads({ projectId: "project-hoa-binh" });
+
+    expect(res).toMatchObject({
+      imported: 2,
+      updated: 0,
+      errors: 0,
+      byChannel: { form: 0, message: 2, comment: 0 },
+    });
+    expect(storedLeads).toHaveLength(2);
+    expect(storedLeads.map((l) => l.facebookPageId)).toEqual(["page-kia", "page-mazda"]);
+    // Verify SQL query uses facebook_page_id and NOT project_id for deduplication
+    for (const q of compiledQueries) {
+      expect(q.sql).toContain('"leads"."facebook_page_id"');
+      expect(q.sql).not.toContain('"leads"."project_id"');
+    }
   });
 });
 

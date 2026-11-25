@@ -124,6 +124,17 @@ function formatMetaAudienceError(error: unknown, adAccountId: string): Error {
     );
   }
 
+  if (error.code === 2654) {
+    if (/nguồn sự kiện|event source/i.test(msg)) {
+      return new Error(
+        `TKQC (${adAccountId}) chưa được cấp quyền trên Fanpage nguồn sự kiện trong Business Manager: ${msg}`,
+      );
+    }
+    return new Error(
+      `TKQC (${adAccountId}) chưa đủ điều kiện hoặc quyền tạo Tệp danh sách SĐT (Customer List) trên Meta (#2654): ${msg}. Vui lòng kiểm tra: (1) Chấp nhận điều khoản tại https://business.facebook.com/ads/manage/customaudiences/tos/?act=${cleanAct}, (2) TKQC thuộc BM đã xác minh & tài khoản Token có quyền Quản trị viên, hoặc dùng nút "Xuất file -> Facebook QC (.csv)" để tải lên trực tiếp.`,
+    );
+  }
+
   if (error.code === 200 || error.code === 10 || /ads_management|permission/i.test(msg)) {
     return new Error(
       `Tài khoản Facebook hoặc Token thiếu quyền quản trị quảng cáo (ads_management) trên TKQC ${adAccountId}: ${msg}`,
@@ -437,21 +448,46 @@ export async function syncContactsToMetaCustomAudience(input: {
     throw new Error("Tệp khách hàng chưa có số điện thoại hoặc email hợp lệ để đẩy lên Facebook.");
   }
 
-  // Luôn tạo mới Audience trên Meta để đảm bảo không đè lên bất kỳ tệp cũ nào
-  try {
-    if (chunks.length === 0 || totalRows === 0) {
-      throw new Error("EMPTY_CONTACTS");
-    }
-    const created = await createMetaCustomAudience({
+  // Nếu tệp lọc theo Fanpage chưa có SĐT/Email nào trong CRM -> tạo Tệp tương tác Fanpage
+  if (chunks.length === 0 || totalRows === 0) {
+    const pageEngagement = await createMetaPageEngagementAudience({
       adAccountId: targetAdAccountId,
-      name: input.name,
-      description: input.description,
+      baseName: input.name,
+      exactName: ensureCrmPrefix(input.name),
+      pageIds: cleanPageIds,
     });
+    return {
+      audienceId: pageEngagement.id,
+      adAccountId: targetAdAccountId,
+      uploadedCount: 0,
+      numReceived: 0,
+      numInvalidEntries: 0,
+      batches: 0,
+      createdNewAudience: true,
+      createdItems: [
+        {
+          id: pageEngagement.id,
+          name: pageEngagement.name,
+          kind: "SEED_PAGE",
+          detail: `Tương tác ${cleanPageIds.length} Fanpage (180 ngày)`,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    };
+  }
 
-    const audienceId = created.id;
-    let numReceived = 0;
-    let numInvalidEntries = 0;
+  // Khi có danh sách SĐT/Email từ CRM -> đẩy đúng Customer List (không nuốt lỗi sang Fanpage khác)
+  const created = await createMetaCustomAudience({
+    adAccountId: targetAdAccountId,
+    name: input.name,
+    description: input.description,
+  });
 
+  const audienceId = created.id;
+  let numReceived = 0;
+  let numInvalidEntries = 0;
+
+  try {
     for (let i = 0; i < chunks.length; i++) {
       const payload = chunks[i]!;
       const res = await graphPost<PushAudienceUsersResponse>(`/${audienceId}/users`, {
@@ -460,54 +496,28 @@ export async function syncContactsToMetaCustomAudience(input: {
       numReceived += res.num_received ?? payload.data.length;
       numInvalidEntries += res.num_invalid_entries ?? 0;
     }
-
-    return {
-      audienceId,
-      adAccountId: targetAdAccountId,
-      uploadedCount: totalRows,
-      numReceived,
-      numInvalidEntries,
-      batches: chunks.length,
-      createdNewAudience: true,
-      createdItems: [
-        {
-          id: audienceId,
-          name: created.name,
-          kind: "SEED_CRM",
-          detail: `${totalRows} khách hàng từ CRM`,
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    };
-  } catch (err) {
-    if (cleanPageIds.length > 0) {
-      const fallback = await createMetaPageEngagementAudience({
-        adAccountId: targetAdAccountId,
-        baseName: input.name,
-        exactName: ensureCrmPrefix(input.name),
-        pageIds: cleanPageIds,
-      });
-      return {
-        audienceId: fallback.id,
-        adAccountId: targetAdAccountId,
-        uploadedCount: totalRows,
-        numReceived: totalRows,
-        numInvalidEntries: 0,
-        batches: 1,
-        createdNewAudience: true,
-        createdItems: [
-          {
-            id: fallback.id,
-            name: fallback.name,
-            kind: "SEED_CRM",
-            detail: `${totalRows} khách hàng từ CRM`,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      };
-    }
-    throw err;
+  } catch (pushError) {
+    throw formatMetaAudienceError(pushError, targetAdAccountId);
   }
+
+  return {
+    audienceId,
+    adAccountId: targetAdAccountId,
+    uploadedCount: totalRows,
+    numReceived,
+    numInvalidEntries,
+    batches: chunks.length,
+    createdNewAudience: true,
+    createdItems: [
+      {
+        id: audienceId,
+        name: created.name,
+        kind: "SEED_CRM",
+        detail: `${totalRows} khách hàng từ CRM`,
+        createdAt: new Date().toISOString(),
+      },
+    ],
+  };
 }
 
 /**

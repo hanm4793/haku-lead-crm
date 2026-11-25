@@ -177,7 +177,10 @@ async function main() {
       }
 
       if (!hasCustomerPhoneInStoredText(lead)) {
-        const key = `${lead.project_id ?? "__null__"}::${phoneKey(lead.phone)}`;
+        const pageOrProj = lead.facebook_page_id
+          ? `page:${lead.facebook_page_id}`
+          : `proj:${lead.project_id ?? "__null__"}`;
+        const key = `${pageOrProj}::${phoneKey(lead.phone)}`;
         const list = noPhoneInTextCandidates.get(key) ?? [];
         list.push(lead);
         noPhoneInTextCandidates.set(key, list);
@@ -196,11 +199,14 @@ async function main() {
       }
     }
 
-    // Ngoài ra: nếu 1 SĐT đã được xác định là Hotline Page ở trên, kiểm tra các dòng TIN_NHAN/COMMENT còn lại cùng project + cùng SĐT Hotline đó mà khách cũng chỉ hỏi giá (không tự gõ SĐT khác)
-    const knownHotlineProjectPhoneKeys = new Set<string>();
+    // Ngoài ra: nếu 1 SĐT đã được xác định là Hotline Page ở trên, kiểm tra các dòng TIN_NHAN/COMMENT còn lại cùng Fanpage + cùng SĐT Hotline đó mà khách cũng chỉ hỏi giá (không tự gõ SĐT khác)
+    const knownHotlinePagePhoneKeys = new Set<string>();
     for (const lead of allLeads) {
       if (bogusHotlineIds.has(lead.id)) {
-        knownHotlineProjectPhoneKeys.add(`${lead.project_id ?? "__null__"}::${phoneKey(lead.phone)}`);
+        const pageOrProj = lead.facebook_page_id
+          ? `page:${lead.facebook_page_id}`
+          : `proj:${lead.project_id ?? "__null__"}`;
+        knownHotlinePagePhoneKeys.add(`${pageOrProj}::${phoneKey(lead.phone)}`);
       }
     }
     for (const lead of allLeads) {
@@ -208,8 +214,11 @@ async function main() {
         lead.source === "FACEBOOK" &&
         (lead.channel_detail === "TIN_NHAN" || lead.channel_detail === "COMMENT");
       if (!isFbChatOrComment || !lead.phone || !isUntouchedBySale(lead)) continue;
-      const pk = `${lead.project_id ?? "__null__"}::${phoneKey(lead.phone)}`;
-      if (knownHotlineProjectPhoneKeys.has(pk) && !isOnlyMetaFormEchoText(lead.care_note)) {
+      const pageOrProj = lead.facebook_page_id
+        ? `page:${lead.facebook_page_id}`
+        : `proj:${lead.project_id ?? "__null__"}`;
+      const pk = `${pageOrProj}::${phoneKey(lead.phone)}`;
+      if (knownHotlinePagePhoneKeys.has(pk) && !isOnlyMetaFormEchoText(lead.care_note)) {
         bogusHotlineIds.add(lead.id);
       }
     }
@@ -251,14 +260,17 @@ async function main() {
     }
     console.log(`- Lead FORM khôi phục được Tên/SĐT từ attrs (đa ngôn ngữ / fallback): ${recoveredFromAttrsCount}`);
 
-    // 3. Gom nhóm các lead hợp lệ còn lại theo (project_id, phoneKey) để gộp trùng
+    // 3. Gom nhóm các lead hợp lệ còn lại theo từng Fanpage (hoặc nhóm không gắn Fanpage trong cùng project) + phoneKey để gộp trùng
     const groupsByProjectPhone = new Map<string, LeadRecord[]>();
 
     for (const lead of remainingLeads) {
       if (!lead.phone || lead.phone.trim() === "") continue;
       const pk = phoneKey(lead.phone);
       if (pk.length < 9) continue;
-      const groupKey = `${lead.project_id ?? "__null__"}::${pk}`;
+      const scopeKey = lead.facebook_page_id
+        ? `page:${lead.facebook_page_id}`
+        : `proj:${lead.project_id ?? "__null__"}:nopage`;
+      const groupKey = `${scopeKey}::${pk}`;
       const list = groupsByProjectPhone.get(groupKey) ?? [];
       list.push(lead);
       groupsByProjectPhone.set(groupKey, list);

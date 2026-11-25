@@ -183,5 +183,66 @@ describe("custom-audiences", () => {
       expect(item.name.startsWith("CRM- ")).toBe(true);
     }
   });
+
+  it("surfaces real Customer List error (#2654 / TOS) without falling back to Page Engagement when contacts exist", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: "Customer list audiences are restricted",
+            code: 2654,
+            error_subcode: 1870217,
+          },
+        }),
+        { status: 400 },
+      ),
+    );
+
+    const { contacts } = deduplicateAudienceContacts([
+      {
+        id: "1",
+        name: "Trần Hải",
+        phone: "0912345678",
+        attrs: {},
+        category: "KHQT",
+        contactStatus: "DA_LIEN_HE",
+        source: "MANUAL",
+        facebookPageId: null,
+        createdAt: "2026-11-20T00:00:00Z",
+      },
+    ]);
+
+    await expect(
+      syncContactsToMetaCustomAudience({
+        adAccountId: "act_440182771846973",
+        name: "CRM- Data Andu Hải Phòng - Tệp KH",
+        contacts,
+        pageIds: ["1108825375808670"],
+      }),
+    ).rejects.toThrow(/act_440182771846973.*#2654/);
+
+    // Must NOT make a second call to create a Page Engagement audience
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates Page Engagement audience when contact list is empty and fanpages are specified", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "page-eng-999" }), { status: 200 }),
+      );
+
+    const res = await syncContactsToMetaCustomAudience({
+      adAccountId: "act_123456789",
+      name: "CRM- Peugeot Hà Nam - Tệp Khách Hàng",
+      contacts: [],
+      pageIds: ["105589125657497"],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(res.audienceId).toBe("page-eng-999");
+    expect(res.uploadedCount).toBe(0);
+    expect(res.createdItems?.[0]?.kind).toBe("SEED_PAGE");
+  });
 });
 

@@ -567,13 +567,17 @@ export async function syncAudienceSegmentToMeta(input: {
       filters: segment.filters ?? {},
     });
 
-    let targetPageIds = (segment.filters?.facebookPageIds ?? [])
-      .map((id) => id.trim())
-      .filter((id) => id && id !== NO_PAGE_FILTER_VALUE);
+    const rawFilterPages = (segment.filters?.facebookPageIds ?? []).map((id) => id.trim()).filter(Boolean);
+    const isExplicitNoPage =
+      (rawFilterPages.length > 0 && rawFilterPages.every((id) => id === NO_PAGE_FILTER_VALUE)) ||
+      (Boolean(segment.filters?.sources?.length) &&
+        segment.filters!.sources!.every((src) => src !== "FACEBOOK"));
+
+    let targetPageIds = rawFilterPages.filter((id) => id !== NO_PAGE_FILTER_VALUE);
     const filterProjectIds = (segment.filters?.projectIds ?? [])
       .map((id) => id.trim())
       .filter(Boolean);
-    if (targetPageIds.length === 0) {
+    if (!isExplicitNoPage && targetPageIds.length === 0) {
       if (filterProjectIds.length > 0) {
         const projPages = await db
           .select({ facebookPageId: facebookPages.facebookPageId })
@@ -586,14 +590,6 @@ export async function syncAudienceSegmentToMeta(input: {
           .from(facebookPages)
           .where(and(eq(facebookPages.projectId, segment.projectId), eq(facebookPages.active, true)));
         targetPageIds = projPages.map((p) => p.facebookPageId);
-      }
-      if (targetPageIds.length === 0) {
-        const fallbackPages = await db
-          .select({ facebookPageId: facebookPages.facebookPageId })
-          .from(facebookPages)
-          .where(eq(facebookPages.active, true))
-          .limit(3);
-        targetPageIds = fallbackPages.map((p) => p.facebookPageId);
       }
     }
 

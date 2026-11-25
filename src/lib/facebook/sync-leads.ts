@@ -216,7 +216,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
 
     const phoneLocks = new Map<string, Promise<void>>();
     async function withPhoneLock(
-      projectId: string | null,
+      pageId: string,
       phone: string,
       fn: () => Promise<void>,
     ): Promise<void> {
@@ -225,7 +225,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
         await fn();
         return;
       }
-      const lockKey = `${projectId ?? "__null__"}::${pKey}`;
+      const lockKey = `${pageId}::${pKey}`;
       const prev = phoneLocks.get(lockKey) ?? Promise.resolve();
       let release!: () => void;
       const gate = new Promise<void>((resolve) => {
@@ -246,7 +246,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
 
     async function findExistingLead(
       fbLeadId: string,
-      projectId: string | null,
+      pageId: string,
       phone?: string,
     ) {
       const pKey = phone ? phoneKey(phone) : "";
@@ -255,7 +255,7 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
           ? or(
               eq(leads.facebookLeadId, fbLeadId),
               and(
-                projectId ? eq(leads.projectId, projectId) : isNull(leads.projectId),
+                eq(leads.facebookPageId, pageId),
                 ne(leads.phone, ""),
                 sql`regexp_replace(regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^840(\\d{9,10})$', '0\\1'), '^84(\\d{9}|2\\d{9})$', '0\\1') = ${pKey}`,
               ),
@@ -340,9 +340,9 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
                 adName: facebookLead.ad_name,
               });
 
-              await withPhoneLock(projectId, mapped.phone, async () => {
+              await withPhoneLock(pageId, mapped.phone, async () => {
                 try {
-                  const existing = await findExistingLead(facebookLead.id, projectId, mapped.phone);
+                  const existing = await findExistingLead(facebookLead.id, pageId, mapped.phone);
                   const hasAttrs = Object.keys(mapped.attrs).length > 0;
                   const isCrossLead = Boolean(
                     existing?.facebookLeadId && existing.facebookLeadId !== facebookLead.id,
@@ -460,9 +460,9 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
           const mapped = mapFacebookConversationLead(conv, pageId);
           if (!mapped || !mapped.phone) continue;
 
-          await withPhoneLock(projectId, mapped.phone, async () => {
+          await withPhoneLock(pageId, mapped.phone, async () => {
             try {
-              const existing = await findExistingLead(mapped.facebookLeadId, projectId, mapped.phone);
+              const existing = await findExistingLead(mapped.facebookLeadId, pageId, mapped.phone);
               if (existing) {
                 const isCrossChannel =
                   Boolean(existing.facebookLeadId && existing.facebookLeadId !== mapped.facebookLeadId) ||
@@ -614,9 +614,9 @@ export async function syncFacebookLeads(options?: { projectId?: string; recentDa
             });
             if (!mapped || !mapped.phone) continue;
 
-            await withPhoneLock(projectId, mapped.phone, async () => {
+            await withPhoneLock(pageId, mapped.phone, async () => {
               try {
-                const existing = await findExistingLead(mapped.facebookLeadId, projectId, mapped.phone);
+                const existing = await findExistingLead(mapped.facebookLeadId, pageId, mapped.phone);
                 if (existing) {
                   const isCrossChannel =
                     Boolean(existing.facebookLeadId && existing.facebookLeadId !== mapped.facebookLeadId) ||

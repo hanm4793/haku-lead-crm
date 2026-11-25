@@ -17,21 +17,21 @@ export function Calendar({ className, classNames, showOutsideDays = true, ...pro
       locale={vi}
       className={cn("p-2", className)}
       classNames={{
-        months: "flex flex-col gap-3 sm:flex-row",
+        months: "relative flex flex-col gap-3 sm:flex-row",
         month: "space-y-3",
-        month_caption: "flex items-center justify-center pt-1 relative",
+        month_caption: "flex h-7 items-center justify-center px-8",
         caption_label: "text-sm font-semibold",
-        nav: "flex items-center gap-1",
+        nav: "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-7 items-center justify-between",
         button_previous:
-          "absolute left-1 top-0 inline-flex size-7 items-center justify-center rounded-md border border-input bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+          "pointer-events-auto inline-flex size-7 cursor-pointer touch-manipulation items-center justify-center rounded-md border border-input bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-40 aria-disabled:pointer-events-none aria-disabled:opacity-40",
         button_next:
-          "absolute right-1 top-0 inline-flex size-7 items-center justify-center rounded-md border border-input bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+          "pointer-events-auto inline-flex size-7 cursor-pointer touch-manipulation items-center justify-center rounded-md border border-input bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-40 aria-disabled:pointer-events-none aria-disabled:opacity-40",
         weekdays: "flex",
         weekday: "w-9 text-[0.7rem] font-medium text-muted-foreground",
         week: "mt-1 flex w-full",
         day: "relative p-0 text-center text-sm",
         day_button:
-          "inline-flex size-9 items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          "inline-flex size-9 cursor-pointer touch-manipulation items-center justify-center rounded-md tabular-nums hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
         selected:
           "[&>button]:bg-primary [&>button]:text-primary-foreground [&>button]:hover:bg-primary [&>button]:hover:text-primary-foreground",
         today: "[&>button]:bg-accent [&>button]:font-semibold [&>button]:text-accent-foreground",

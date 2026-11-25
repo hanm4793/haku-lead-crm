@@ -745,7 +745,7 @@ export async function updateLead(
   const now = new Date();
   const values: Record<string, unknown> = { updatedAt: now };
 
-  const projectId = await resolveLeadProjectId(id);
+  const { projectId, facebookPageId } = await resolveLeadScopeMeta(id);
 
   if (patch.name !== undefined && patch.name !== current.name) {
     if (!canEditLeadProfile(viewer, current)) {
@@ -763,7 +763,7 @@ export async function updateLead(
     if (problem) throw new Error(problem);
     const phone = normalizePhone(patch.phone);
     if (phoneKey(phone) !== phoneKey(current.phone)) {
-      const duplicate = await findLeadByPhone(projectId, phone, id);
+      const duplicate = await findLeadByPhone(projectId, phone, id, facebookPageId);
       if (duplicate) {
         throw new Error(
           `Số điện thoại ${phone} đã có ở lead «${duplicate.name?.trim() || "Khách chưa có tên"}» (tạo ${duplicate.createdAt.toLocaleDateString("vi-VN")}).`,
@@ -870,14 +870,24 @@ export async function updateLead(
   return getLeadById(id, viewer);
 }
 
-/** Lead khác cùng project có cùng SĐT (so sánh theo khóa đã bỏ ký tự thừa và đầu số 840/84). */
-export async function findLeadByPhone(projectId: string | null, phone: string, excludeId?: string) {
+/** Lead khác cùng Fanpage (hoặc cùng nhóm thủ công không gắn Fanpage trong project) có cùng SĐT. */
+export async function findLeadByPhone(
+  projectId: string | null,
+  phone: string,
+  excludeId?: string,
+  facebookPageId?: string | null,
+) {
   const key = phoneKey(phone);
   const conditions: SQL[] = [
     sql`regexp_replace(regexp_replace(regexp_replace(${leads.phone}, '\\D', '', 'g'), '^840(\\d{9,10})$', '0\\1'), '^84(\\d{9}|2\\d{9})$', '0\\1') = ${key}`,
   ];
   if (excludeId) conditions.push(ne(leads.id, excludeId));
-  if (projectId) conditions.push(eq(leads.projectId, projectId));
+  if (facebookPageId) {
+    conditions.push(eq(leads.facebookPageId, facebookPageId));
+  } else {
+    conditions.push(isNull(leads.facebookPageId));
+    if (projectId) conditions.push(eq(leads.projectId, projectId));
+  }
   const [row] = await getDb()
     .select({ name: leads.name, createdAt: leads.createdAt })
     .from(leads)
@@ -886,15 +896,25 @@ export async function findLeadByPhone(projectId: string | null, phone: string, e
   return row ?? null;
 }
 
-/** Lead khác cùng project có cùng email trong attrs (không phân biệt hoa thường). */
-export async function findLeadByEmail(projectId: string | null, email: string, excludeId?: string) {
+/** Lead khác cùng Fanpage (hoặc cùng nhóm thủ công không gắn Fanpage trong project) có cùng email. */
+export async function findLeadByEmail(
+  projectId: string | null,
+  email: string,
+  excludeId?: string,
+  facebookPageId?: string | null,
+) {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return null;
   const conditions: SQL[] = [
     sql`lower(trim(coalesce(${leads.attrs}->>'email', ''))) = ${normalized}`,
   ];
   if (excludeId) conditions.push(ne(leads.id, excludeId));
-  if (projectId) conditions.push(eq(leads.projectId, projectId));
+  if (facebookPageId) {
+    conditions.push(eq(leads.facebookPageId, facebookPageId));
+  } else {
+    conditions.push(isNull(leads.facebookPageId));
+    if (projectId) conditions.push(eq(leads.projectId, projectId));
+  }
   const [row] = await getDb()
     .select({ name: leads.name, createdAt: leads.createdAt })
     .from(leads)
@@ -909,7 +929,7 @@ export interface ExistingLeadUniqueEntry {
   email: string | null;
 }
 
-/** Đọc danh sách SĐT và email đang có trong project để kiểm tra trùng hàng loạt khi import. */
+/** Đọc danh sách SĐT và email của các lead thủ công/import (không gắn Fanpage) trong project để kiểm tra trùng khi import. */
 export async function listExistingPhonesAndEmails(
   projectId: string | null,
 ): Promise<ExistingLeadUniqueEntry[]> {
@@ -921,13 +941,22 @@ export async function listExistingPhonesAndEmails(
       email: sql<string | null>`nullif(trim(coalesce(${leads.attrs}->>'email', '')), '')`,
     })
     .from(leads)
-    .where(eq(leads.projectId, projectId));
+    .where(and(eq(leads.projectId, projectId), isNull(leads.facebookPageId)));
   return rows;
 }
 
-async function resolveLeadProjectId(leadId: string): Promise<string | null> {
-  const [row] = await getDb().select({ projectId: leads.projectId }).from(leads).where(eq(leads.id, leadId)).limit(1);
-  return row?.projectId ?? null;
+async function resolveLeadScopeMeta(
+  leadId: string,
+): Promise<{ projectId: string | null; facebookPageId: string | null }> {
+  const [row] = await getDb()
+    .select({ projectId: leads.projectId, facebookPageId: leads.facebookPageId })
+    .from(leads)
+    .where(eq(leads.id, leadId))
+    .limit(1);
+  return {
+    projectId: row?.projectId ?? null,
+    facebookPageId: row?.facebookPageId ?? null,
+  };
 }
 
 function isValidCalendarDate(y: number, m: number, day: number): boolean {
