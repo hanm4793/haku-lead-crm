@@ -201,6 +201,24 @@
     background: transparent;
   }
 
+  /* Hiển thị thanh cuộn mảnh cho Radix Select Viewport trên Desktop (mặc định Radix ẩn đi) */
+  [data-radix-select-viewport].select-scrollbar {
+    scrollbar-width: thin !important;
+    scrollbar-color: #b8c3d6 transparent !important;
+  }
+  [data-radix-select-viewport].select-scrollbar::-webkit-scrollbar {
+    display: block !important;
+    width: 7px !important;
+    height: 7px !important;
+  }
+  [data-radix-select-viewport].select-scrollbar::-webkit-scrollbar-thumb {
+    background: #b8c3d6 !important;
+    border-radius: 999px !important;
+  }
+  [data-radix-select-viewport].select-scrollbar::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+
   .no-scrollbar {
     scrollbar-width: none;
     -ms-overflow-style: none;

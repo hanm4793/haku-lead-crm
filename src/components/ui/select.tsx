@@ -289,27 +289,27 @@ function SelectContent({
         position={position}
         collisionPadding={collisionPadding}
         className={cn(
-          "relative z-50 max-h-80 min-w-[8rem] max-w-[calc(100vw-1.5rem)] overflow-hidden overscroll-contain rounded-xl border border-border bg-popover text-popover-foreground shadow-lg",
+          "relative z-50 max-h-[min(20rem,var(--radix-select-content-available-height,70vh))] min-w-[8rem] max-w-[calc(100vw-1.5rem)] overflow-hidden overscroll-contain rounded-xl border border-border bg-popover text-popover-foreground shadow-lg",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
           position === "popper" && "data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1",
           className,
         )}
         {...props}
       >
-        <SelectPrimitive.ScrollUpButton className="flex h-6 items-center justify-center">
-          <ChevronUpIcon className="size-4" />
+        <SelectPrimitive.ScrollUpButton className="flex h-5 cursor-default items-center justify-center bg-popover text-muted-foreground">
+          <ChevronUpIcon className="size-3.5" />
         </SelectPrimitive.ScrollUpButton>
         <SelectPrimitive.Viewport
           className={cn(
-            "p-1",
+            "select-scrollbar max-h-[min(18.5rem,calc(var(--radix-select-content-available-height,70vh)-1.5rem))] overflow-y-auto p-1 pr-1.5",
             position === "popper" &&
-              "h-[var(--radix-select-trigger-height)] min-w-[var(--radix-select-trigger-width)]",
+              "w-full min-w-[var(--radix-select-trigger-width)]",
           )}
         >
           {orderedChildren}
         </SelectPrimitive.Viewport>
-        <SelectPrimitive.ScrollDownButton className="flex h-6 items-center justify-center">
-          <ChevronDownIcon className="size-4" />
+        <SelectPrimitive.ScrollDownButton className="flex h-5 cursor-default items-center justify-center bg-popover text-muted-foreground">
+          <ChevronDownIcon className="size-3.5" />
         </SelectPrimitive.ScrollDownButton>
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>

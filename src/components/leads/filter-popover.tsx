@@ -200,7 +200,10 @@ export function LeadFilterPopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
-      <PopoverContent align="start" className="w-[min(560px,calc(100vw-2rem))] p-4">
+      <PopoverContent
+        align="start"
+        className="thin-scrollbar max-h-[min(80vh,var(--radix-popover-content-available-height,80vh))] w-[min(560px,calc(100vw-2rem))] overflow-y-auto overscroll-contain p-4"
+      >
         <div className="mb-3 flex items-center justify-between border-b border-border pb-2.5">
           <div>
             <div className="text-sm font-semibold">Bộ lọc nâng cao</div>

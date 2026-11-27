@@ -78,7 +78,7 @@ function MultiSelectBody({
         </div>
       )}
 
-      <div className="thin-scrollbar max-h-[52dvh] overflow-y-auto overscroll-contain md:max-h-56">
+      <div className="thin-scrollbar max-h-[52dvh] overflow-y-auto overscroll-contain pr-1 md:max-h-64">
         {filtered.length === 0 && (
           <div className="px-2 py-4 text-center text-xs text-muted-foreground">Không có kết quả</div>
         )}

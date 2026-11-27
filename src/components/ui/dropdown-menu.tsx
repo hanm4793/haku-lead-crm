@@ -129,7 +129,7 @@ function DropdownMenuContent({
         collisionPadding={collisionPadding}
         onClick={onClick}
         className={cn(
-          "z-50 min-w-[10rem] max-w-[calc(100vw-1.25rem)] overflow-hidden overscroll-contain rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg",
+          "thin-scrollbar z-50 max-h-[min(22rem,var(--radix-dropdown-menu-content-available-height,70vh))] min-w-[10rem] max-w-[calc(100vw-1.25rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
           className,
         )}
@@ -310,7 +310,10 @@ function DropdownMenuSubContent({ className, ...props }: React.ComponentProps<ty
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.SubContent
-        className={cn("z-50 min-w-[8rem] overflow-hidden overscroll-contain rounded-xl border border-border bg-popover p-1 shadow-lg", className)}
+        className={cn(
+          "thin-scrollbar z-50 max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,70vh))] min-w-[8rem] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-1 shadow-lg",
+          className,
+        )}
         {...props}
       />
     </DropdownMenuPrimitive.Portal>
