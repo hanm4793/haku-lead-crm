@@ -16,7 +16,10 @@
     "db:seed:demo": "tsx scripts/seed.ts --demo",
     "db:seed:attrs": "tsx scripts/seed-attr-fields.ts",
     "db:dedupe": "tsx scripts/deduplicate-leads.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:audit": "playwright test e2e/ui-ux-audit.spec.ts e2e/performance-audit.spec.ts"
   },
   "license": "UNLICENSED",
   "devEngines": {
@@ -65,6 +68,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",

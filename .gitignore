@@ -21,3 +21,6 @@ next-env.d.ts
 
 .worktrees
 .superpowers/
+playwright-report/
+test-results/
+blob-report/

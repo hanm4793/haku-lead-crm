@@ -586,7 +586,7 @@ export function LeadsPage({
                   type="button"
                   onClick={() => setFilters({ tab: tab.id })}
                   className={cn(
-                    "inline-flex h-8 min-w-0 items-center justify-center gap-1 rounded-md px-1.5 text-xs transition-all active:scale-98",
+                    "inline-flex h-8 min-w-0 items-center justify-center gap-1 rounded-md px-1.5 text-xs transition-[color,background-color,transform,box-shadow] active:scale-98",
                     active
                       ? "bg-white font-semibold text-primary shadow-2xs"
                       : "font-medium text-slate-600 hover:text-slate-900",

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDown,
@@ -27,14 +28,29 @@ import {
 } from "recharts";
 
 import { syncFacebookInsightsAction } from "@/app/settings/facebook-actions";
-import { listAdAccountsForAudienceAction } from "@/app/marketing/audience-actions";
+import {
+  listAdAccountsForAudienceAction,
+  loadAudienceTabDataAction,
+} from "@/app/marketing/audience-actions";
 import { DateRangePicker, type DateRange, type PresetId } from "@/components/common/date-range-picker";
 import { Pagination } from "@/components/common/pagination";
-import {
-  AudienceBuilderPanel,
-  type AudiencePageOption,
-  type AudienceProjectOption,
+import type {
+  AudiencePageOption,
+  AudienceProjectOption,
 } from "@/components/marketing/audience-builder-panel";
+
+const AudienceBuilderPanel = dynamic(
+  () =>
+    import("@/components/marketing/audience-builder-panel").then((m) => m.AudienceBuilderPanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+        Đang tải trình tạo tệp khách hàng…
+      </div>
+    ),
+  },
+);
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,6 +141,7 @@ export function MarketingPage({
   allPages = [],
   savedAudiences = [],
   audienceCampaigns = [],
+  audiencesInitiallyLoaded = false,
   canManageAudiences = false,
   tokenConfigured = false,
   hasSynced,
@@ -143,6 +160,7 @@ export function MarketingPage({
   allPages?: AudiencePageOption[];
   savedAudiences?: AudienceSegmentView[];
   audienceCampaigns?: AudienceCampaignOption[];
+  audiencesInitiallyLoaded?: boolean;
   canManageAudiences?: boolean;
   tokenConfigured?: boolean;
   hasSynced: boolean;
@@ -160,6 +178,36 @@ export function MarketingPage({
   const [activeTab, setActiveTab] = React.useState<"campaigns" | "audiences">(
     urlTab === "audiences" ? "audiences" : "campaigns",
   );
+  const [loadedAudiences, setLoadedAudiences] = React.useState<AudienceSegmentView[]>(savedAudiences);
+  const [loadedAudienceCampaigns, setLoadedAudienceCampaigns] =
+    React.useState<AudienceCampaignOption[]>(audienceCampaigns);
+  const [audiencesLoaded, setAudiencesLoaded] = React.useState(
+    audiencesInitiallyLoaded || savedAudiences.length > 0,
+  );
+  const audiencesRequestedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (activeTab !== "audiences" || !canManageAudiences || audiencesLoaded || audiencesRequestedRef.current) {
+      return;
+    }
+    audiencesRequestedRef.current = true;
+    let cancelled = false;
+    void loadAudienceTabDataAction()
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          setLoadedAudiences(res.segments);
+          setLoadedAudienceCampaigns(res.campaigns);
+        }
+        setAudiencesLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) setAudiencesLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, canManageAudiences, audiencesLoaded]);
   const [pending, setPending] = React.useState(false);
   const [isRefreshing, startRefreshTransition] = React.useTransition();
   const [preset, setPreset] = React.useState<PresetId>("ALL");
@@ -634,27 +682,35 @@ export function MarketingPage({
             <TabsTrigger value="audiences" className="gap-1.5">
               <Users className="size-3.5" />
               <span>Tệp KH</span>
-              <Badge
-                variant={activeTab === "audiences" ? "secondary" : "muted"}
-                className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums"
-              >
-                {savedAudiences.length}
-              </Badge>
+              {audiencesLoaded && (
+                <Badge
+                  variant={activeTab === "audiences" ? "secondary" : "muted"}
+                  className="ml-0.5 px-1.5 py-0 text-[10px] tabular-nums"
+                >
+                  {loadedAudiences.length}
+                </Badge>
+              )}
             </TabsTrigger>
           </TabsList>
         </Tabs>
       )}
 
       {activeTab === "audiences" && canManageAudiences ? (
-        <AudienceBuilderPanel
-          activeProjectId={activeProjectId}
-          projects={projects}
-          allPages={allPages}
-          campaignOptions={audienceCampaigns}
-          initialSegments={savedAudiences}
-          defaultAdAccountId={adAccountId}
-          tokenConfigured={tokenConfigured}
-        />
+        !audiencesLoaded ? (
+          <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+            Đang tải danh sách tệp khách hàng…
+          </div>
+        ) : (
+          <AudienceBuilderPanel
+            activeProjectId={activeProjectId}
+            projects={projects}
+            allPages={allPages}
+            campaignOptions={loadedAudienceCampaigns}
+            initialSegments={loadedAudiences}
+            defaultAdAccountId={adAccountId}
+            tokenConfigured={tokenConfigured}
+          />
+        )
       ) : (
         <>
           {canSync && !configured ? (
@@ -744,7 +800,7 @@ export function MarketingPage({
                     aria-pressed={active}
                     onClick={() => toggleBrand(brand.id)}
                     className={cn(
-                      "rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors",
+                      "rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors max-md:min-h-9 max-md:px-3",
                       active
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",

@@ -47,11 +47,17 @@ function getInitialMarketingWindow() {
   };
 }
 
-export default async function Page() {
-  const viewer = await getScopedViewer();
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const [viewer, resolvedSearchParams] = await Promise.all([getScopedViewer(), searchParams]);
   if (!viewer) redirect("/login?next=%2Fmarketing");
   if (!canViewMarketing(viewer.role)) redirect("/leads");
   const projectId = viewer.activeProjectId ?? undefined;
+  const loadAudiencesOnServer =
+    canManageAudiences(viewer.role) && resolvedSearchParams?.tab === "audiences";
 
   if (!isDatabaseConfigured()) {
     return (
@@ -75,7 +81,6 @@ export default async function Page() {
     accessibleProjects,
     savedAudiences,
     audienceCampaigns,
-    hasSynced,
     latestSync,
     latestDataAt,
     crmRows,
@@ -87,14 +92,20 @@ export default async function Page() {
     canManageProjects(viewer.role)
       ? listProjects({ activeOnly: true }).catch(() => [])
       : listProjectsForSwitcher(toProjectViewer(viewer)).catch(() => []),
-    canManageAudiences(viewer.role) ? listAudienceSegments().catch(() => []) : Promise.resolve([]),
-    canManageAudiences(viewer.role) ? listAudienceCampaignOptions().catch(() => []) : Promise.resolve([]),
-    hasSyncedInsights(),
+    loadAudiencesOnServer ? listAudienceSegments().catch(() => []) : Promise.resolve([]),
+    loadAudiencesOnServer ? listAudienceCampaignOptions().catch(() => []) : Promise.resolve([]),
     latestInsightSync(),
     getLatestDataTimestamp(projectId),
-    queryCrmAttributionByPage({ pageIds: viewerScopedPageIds }).catch(() => []),
+    queryCrmAttributionByPage({
+      from: range.from,
+      to: range.to,
+      pageIds: viewerScopedPageIds,
+    }).catch(() => []),
     getReferenceData(projectId).catch(() => null),
   ]);
+
+  const hasSynced =
+    campaignRows.length > 0 || adInsightRows.length > 0 ? true : await hasSyncedInsights();
 
   const adRows = adInsightRows.filter((row) => isMarketingRowVisible(viewer, row.pageId, viewerScopedPageIds));
   const campaignIds =
@@ -129,6 +140,7 @@ export default async function Page() {
       allPages={audiencePages}
       savedAudiences={savedAudiences}
       audienceCampaigns={audienceCampaigns}
+      audiencesInitiallyLoaded={loadAudiencesOnServer}
       canManageAudiences={canManageAudiences(viewer.role)}
       tokenConfigured={Boolean(config?.token)}
       hasSynced={hasSynced}

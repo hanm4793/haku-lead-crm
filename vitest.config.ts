@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     environment: "node",
     // Worktree copies resolve `@` to root src and break when schemas diverge.
-    exclude: ["**/node_modules/**", "**/dist/**", "**/.worktrees/**", "**/.kilo/**"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.worktrees/**", "**/.kilo/**", "e2e/**"],
   },
-  resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
+  resolve: { alias: { "@": path.resolve(import.meta.dirname, "./src") } },
 });

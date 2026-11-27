@@ -438,9 +438,30 @@ export function PushNotificationPanel({ onCloseParent }: { onCloseParent?: () =>
 
   if (!state.ready) {
     return (
-      <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
-        <Loader2 className="size-4 animate-spin text-primary" />
-        Đang kiểm tra trạng thái thông báo trên thiết bị...
+      <div
+        className="space-y-3.5 min-h-[380px]"
+        aria-busy="true"
+        aria-label="Đang kiểm tra trạng thái thông báo trên thiết bị"
+      >
+        <div className="h-[74px] animate-pulse rounded-xl border border-border bg-slate-100/80" />
+        <div className="divide-y divide-border/70 rounded-xl border border-border bg-white">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center justify-between gap-3 p-3">
+              <div className="flex items-center gap-2.5">
+                <div className="size-7.5 animate-pulse rounded-lg bg-slate-100" />
+                <div className="space-y-1.5">
+                  <div className="h-3.5 w-36 animate-pulse rounded bg-slate-100" />
+                  <div className="h-3 w-56 animate-pulse rounded bg-slate-100/80" />
+                </div>
+              </div>
+              <div className="h-5 w-9 animate-pulse rounded-full bg-slate-100" />
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-center gap-2 pt-1 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin text-primary" />
+          Đang kiểm tra trạng thái thông báo trên thiết bị…
+        </div>
       </div>
     );
   }

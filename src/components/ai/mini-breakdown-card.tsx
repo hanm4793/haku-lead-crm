@@ -33,13 +33,13 @@ export function MiniBreakdownCard({ rows }: { rows: StatsBreakdownRow[] }) {
                 <span className="font-medium text-slate-700 truncate max-w-[200px]" title={row.key}>
                   {row.key}
                 </span>
-                <span className="font-semibold text-slate-900">{formatNumber(row.leads)} lead</span>
+                <span className="font-semibold tabular-nums text-slate-900">{formatNumber(row.leads)} lead</span>
               </div>
 
               {/* Progress bar so sánh quy mô */}
               <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-primary/80 transition-all duration-300"
+                  className="h-full rounded-full bg-primary/80 transition-[width] duration-300"
                   style={{ width: `${widthPct}%` }}
                 />
               </div>

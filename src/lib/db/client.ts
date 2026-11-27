@@ -6,7 +6,7 @@ import * as schema from "./schema";
 export type Db = PostgresJsDatabase<typeof schema>;
 
 export function isDatabaseConfigured() {
-  return Boolean(process.env.DATABASE_URL);
+  return Boolean(process.env.DATABASE_URL?.trim());
 }
 
 /**

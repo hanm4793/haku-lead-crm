@@ -9,10 +9,12 @@ import {
   analyzeFanpagePersona,
   createAudienceSegments,
   deleteAudienceSegment,
+  listAudienceCampaignOptions,
   listAudienceSegments,
   previewAudienceSegment,
   syncAudienceSegmentToMeta,
   updateAudienceSegment,
+  type AudienceCampaignOption,
   type AudiencePreviewResult,
   type AudienceSegmentView,
 } from "@/lib/db/audiences-repo";
@@ -184,6 +186,27 @@ export async function listSavedAudiencesAction(
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Không tải được danh sách tệp khách hàng.",
+    };
+  }
+}
+
+export async function loadAudienceTabDataAction(): Promise<
+  | { ok: true; segments: AudienceSegmentView[]; campaigns: AudienceCampaignOption[] }
+  | { ok: false; error: string }
+> {
+  const gate = await requireAudienceAdmin();
+  if ("error" in gate) return { ok: false, error: gate.error };
+
+  try {
+    const [segments, campaigns] = await Promise.all([
+      listAudienceSegments().catch(() => []),
+      listAudienceCampaignOptions().catch(() => []),
+    ]);
+    return { ok: true, segments, campaigns };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Không tải được dữ liệu tệp khách hàng.",
     };
   }
 }

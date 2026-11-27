@@ -28,12 +28,6 @@ export default async function AccountPage() {
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-card empty:hidden">
-        <PwaInstallMenuRow />
-      </div>
-
-      {showPushSettings && <PushNotificationCard />}
-
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Hồ sơ</CardTitle>
@@ -65,6 +59,12 @@ export default async function AccountPage() {
           </CardContent>
         </Card>
       )}
+
+      {showPushSettings && <PushNotificationCard />}
+
+      <div className="overflow-hidden rounded-xl border border-border bg-card empty:hidden">
+        <PwaInstallMenuRow />
+      </div>
     </div>
   );
 }

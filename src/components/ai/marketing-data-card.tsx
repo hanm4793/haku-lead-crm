@@ -31,7 +31,7 @@ export function MarketingDataCard({ rows }: { rows: MarketingBreakdownRow[] }) {
           return (
             <div
               key={`${row.key}-${index}`}
-              className="group min-w-0 rounded-lg border border-border/70 bg-slate-50/60 p-2.5 transition-all hover:border-primary/40 hover:bg-white hover:shadow-xs"
+              className="group min-w-0 rounded-lg border border-border/70 bg-slate-50/60 p-2.5 transition-[border-color,background-color,box-shadow] hover:border-primary/40 hover:bg-white hover:shadow-xs"
             >
               {/* Tiêu đề mục & Rank badge */}
               <div className="flex items-start justify-between gap-2">
@@ -51,7 +51,7 @@ export function MarketingDataCard({ rows }: { rows: MarketingBreakdownRow[] }) {
 
                 {/* Badge số lead nổi bật */}
                 <div className="shrink-0 text-right">
-                  <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[12px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+                  <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[12px] font-bold tabular-nums text-emerald-700 ring-1 ring-emerald-200">
                     {formatNumber(row.leads)} lead
                   </span>
                 </div>
@@ -61,7 +61,7 @@ export function MarketingDataCard({ rows }: { rows: MarketingBreakdownRow[] }) {
               {row.leads > 0 && (
                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200/70">
                   <div
-                    className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                    className="h-full rounded-full bg-emerald-500 transition-[width] duration-300"
                     style={{ width: `${widthPct}%` }}
                   />
                 </div>

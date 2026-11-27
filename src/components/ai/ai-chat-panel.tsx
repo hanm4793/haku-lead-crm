@@ -448,9 +448,11 @@ export function AiChatPanel({
       {open && <div className="fixed inset-0 z-40 bg-slate-900/25 backdrop-blur-xs" onClick={() => onOpenChange(false)} />}
 
       <aside
+        aria-hidden={!open}
+        inert={!open}
         className={cn(
           "fixed right-0 top-0 z-50 flex h-dvh w-full flex-col border-l border-border bg-card shadow-2xl transition-transform duration-200 sm:w-[460px] sm:max-w-[94vw]",
-          open ? "translate-x-0" : "translate-x-full",
+          open ? "translate-x-0" : "pointer-events-none translate-x-full",
         )}
       >
         {/* Header hiện đại (hiển thị đúng Model đã cấu hình trong Cài đặt) */}
@@ -478,7 +480,8 @@ export function AiChatPanel({
               size="iconSm"
               onClick={resetChat}
               title="Làm mới cuộc trò chuyện"
-              className="text-muted-foreground hover:text-slate-800"
+              aria-label="Làm mới cuộc trò chuyện"
+              className="text-muted-foreground hover:text-slate-800 max-md:size-10"
             >
               <RotateCcw className="size-4" />
             </Button>
@@ -486,7 +489,9 @@ export function AiChatPanel({
               variant="ghost"
               size="iconSm"
               onClick={() => onOpenChange(false)}
-              className="text-muted-foreground hover:text-slate-800"
+              title="Đóng Trợ lý AI"
+              aria-label="Đóng Trợ lý AI"
+              className="text-muted-foreground hover:text-slate-800 max-md:size-10"
             >
               <X className="size-4" />
             </Button>
@@ -861,6 +866,7 @@ export function AiChatPanel({
                       <button
                         type="button"
                         onClick={() => setMentions((current) => current.filter((m) => m.id !== item.id))}
+                        aria-label={`Bỏ gắn ${item.label}`}
                         className="rounded-full hover:bg-black/10 p-0.5"
                       >
                         <X className="size-2.5" />
@@ -969,7 +975,7 @@ export function AiChatPanel({
                     else openCategoriesMenu();
                   }}
                   className={cn(
-                    "h-6.5 gap-1 px-2 text-[11.5px] font-medium text-slate-600 hover:bg-accent hover:text-primary",
+                    "h-7 gap-1 px-2 text-[11.5px] font-medium text-slate-600 hover:bg-accent hover:text-primary max-md:h-10 max-md:px-2.5",
                     mentionOpen && "bg-primary/10 text-primary",
                   )}
                 >
@@ -986,7 +992,9 @@ export function AiChatPanel({
                   size="iconSm"
                   onClick={() => send(input)}
                   disabled={loading || (!input.trim() && mentions.length === 0)}
-                  className="rounded-lg h-7 w-7"
+                  title="Gửi tin nhắn"
+                  aria-label="Gửi tin nhắn"
+                  className="h-7 w-7 rounded-lg max-md:size-10"
                 >
                   <Send className="size-3.5" />
                 </Button>
